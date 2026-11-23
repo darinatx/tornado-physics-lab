@@ -1,6 +1,6 @@
 # Spec 02 — Structural Loads
 
-Status: Approved (v1.0)
+Status: Approved (v2.0)
 
 ## Purpose
 
@@ -55,19 +55,28 @@ dΔp_in/dt = (Δp_out − Δp_in) / τ        τ = 2 s sealed, 0.05 s once breac
 p_APC = Δp_out − Δp_in                  (positive = pushes the envelope outward)
 ```
 
-### Net loads (positive = toward failure)
+### Net loads per component (positive = toward failure)
 
-| Part | Net load |
+| Component | Net load |
 |---|---|
-| Siding and trim | q·(−C_p,face + C_pi) + p_APC, worst face |
-| Roof covering | q·(1.8 + C_pi) + p_APC |
-| Windows on a face | abs(q·(C_p,face − C_pi) − p_APC) |
-| Garage door | abs(q·(C_p,face − C_pi) − p_APC) |
-| Roof deck | q·(1.2 + C_pi) + p_APC − w_deck |
-| Roof structure | q·(0.9 + C_pi) + p_APC − w_roof |
-| Lateral (foundation, walls) | q·(C_p,windward − C_p,leeward) = 1.3·q |
+| Siding (per face) | q·(−C_p,face + C_pi) + p_APC |
+| Roof covering section | q·(−C_p,cover + C_pi) + p_APC, C_p,cover = −1.8 (corner) / −1.0 (field) |
+| Roof deck section | q·(−C_p,deck + C_pi) + p_APC − w_deck, C_p,deck = −1.2 (corner) / −0.8 (field) |
+| Roof bay (rafters) | q·(0.9 + C_pi) + p_APC − w_roof |
+| Window pane, garage door | abs(q·(C_p,face − C_pi) − p_APC) |
+| Wall panel | abs(q·(C_p,face − C_pi) − p_APC); the sign says whether it's pushed in or pulled out |
+| Wall panel, open house | max of the above and q·1.3·|cos θ| (free-standing wall), once half the panels or the whole roof are gone |
+| Partitions, anchorage, sweep | lateral q·(C_p,windward − C_p,leeward) = 1.3·q (anchorage × standing-wall fraction) |
 
-w_deck and w_roof are dead loads (self-weight) that resist uplift.
+w_deck and w_roof are dead loads (self-weight) that resist uplift. A positive wall-panel net
+(q·(C_p − C_pi) − p_APC > 0) pushes the panel inward, so it falls into the house; negative
+pulls it out.
+
+### Openings
+
+Failed window panes (1.44 m² each), the garage door, failed deck sections (section area, at
+the roof C_p) and failed wall panels (panel area) all count as openings in the dominant-opening
+rule. A failed bay opens its four sections.
 
 ## Interface
 
@@ -103,6 +112,9 @@ Values live in `src/config/buildings.ts`.
   Δp_out·(1 − e^(−t/τ)) behavior; a breached building equalizes within 0.5 s; p_APC → 0 when
   Δp_out is steady.
 - **LOAD-05**: Roof uplift loads increase with C_pi and p_APC and are reduced by the dead load.
+- **LOAD-06**: Edge roof sections carry higher covering and deck loads than field sections in
+  the same wind, and a wall panel's load sign is inward on the windward face and outward on
+  side and leeward faces of an enclosed house.
 
 ## Simplifications / out of scope
 
@@ -113,5 +125,8 @@ Values live in `src/config/buildings.ts`.
   calibration in Spec 03 absorbs the difference.
 
 ## Changelog
+
+- v2.0: per-component loads (roof sections by edge/field zone, bays, panels, panes) and
+  more opening types (Phase 4); LOAD-06.
 
 - v1.0: written and approved for Phase 2.

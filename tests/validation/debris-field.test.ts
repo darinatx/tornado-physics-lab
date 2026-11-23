@@ -4,7 +4,7 @@ import { createSim } from "../../src/sim/loop";
 import { median } from "../houseHelpers";
 
 describe("validation — debris field", () => {
-  test("DEB-12 (validation): the debris field spreads across the path like its sources", () => {
+  test("DEB-12 / DEB-16 (validation): debris field spread and mass bookkeeping after an EF4", () => {
     const ef4 = PRESETS.find((p) => p.id === "ef4-wedge")!;
     const sim = createSim({}, 1, ef4.params);
     const v0 = sim.snapshot.tornado.velocity;
@@ -26,9 +26,24 @@ describe("validation — debris field", () => {
         const b = sim.world.buildings[p.sourceId]!;
         return Math.hypot(p.pos.x - b.x, p.pos.z - b.z);
       }));
-    const heavy = travel(["stud", "rafter", "chunk"]);
-    const sheets = travel(["osb", "garagePanel"]);
+    const heavy = travel(["wallPanel", "stud", "rafter", "chunk"]);
+    const sheets = travel(["shingle", "siding"]);
     expect(heavy).toBeLessThan(150);
     expect(sheets).toBeGreaterThan(heavy);
+
+    // DEB-16: mass bookkeeping balances, and destroyed houses keep much of their mass nearby.
+    const d = sim.debris;
+    const onMap = [...d.settled.filter((p) => !p.hidden), ...d.pieces].reduce((a, p) => a + p.def.mass * p.represents, 0);
+    const ledger = onMap + d.massLofted + d.massSkipped + d.massSwept + d.massLeftMap;
+    expect(Math.abs(ledger / d.massSpawned - 1)).toBeLessThan(0.01);
+    const destroyed = sim.world.buildings.filter((b) => b.dod >= 7);
+    const near = new Map<number, number>();
+    const byId = new Map(sim.world.buildings.map((b) => [b.id, b]));
+    for (const p of [...d.settled.filter((q) => !q.hidden), ...d.pieces]) {
+      const b = byId.get(p.sourceId)!;
+      if (Math.hypot(p.pos.x - b.x, p.pos.z - b.z) < 50) near.set(b.id, (near.get(b.id) ?? 0) + p.def.mass * p.represents);
+    }
+    const fracs = destroyed.map((b) => (near.get(b.id) ?? 0) / (d.massBySource.get(b.id) ?? 1));
+    expect(median(fracs)).toBeGreaterThanOrEqual(0.35);
   }, 180000);
 });

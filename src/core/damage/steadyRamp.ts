@@ -83,3 +83,32 @@ export function samplePassCase(rng: () => number): { state: TornadoState; offset
     offset: (rng() * 2 - 1) * 0.8 * rMax,
   };
 }
+
+
+/**
+ * Kaplan–Meier median for censored first-reach data: each house either reached the DOD at
+ * `t` (observed) or never did by its peak wind `t` (censored). Returns Infinity if the
+ * survival curve never drops to 0.5.
+ */
+export function kmMedian(samples: { t: number; observed: boolean }[]): number {
+  const s = [...samples].sort((a, b) => a.t - b.t || (a.observed === b.observed ? 0 : a.observed ? -1 : 1));
+  let atRisk = s.length;
+  let surv = 1;
+  let i = 0;
+  while (i < s.length) {
+    const t = s[i]!.t;
+    let events = 0;
+    let removed = 0;
+    while (i < s.length && s[i]!.t === t) {
+      if (s[i]!.observed) events++;
+      removed++;
+      i++;
+    }
+    if (events > 0 && atRisk > 0) {
+      surv *= 1 - events / atRisk;
+      if (surv <= 0.5) return t;
+    }
+    atRisk -= removed;
+  }
+  return Infinity;
+}

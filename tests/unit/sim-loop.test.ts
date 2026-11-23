@@ -3,6 +3,7 @@ import { SIM_DEFAULTS } from "../../src/config/sim";
 import { createSim } from "../../src/sim/loop";
 import { createRng } from "../../src/sim/rng";
 import { PRESETS } from "../../src/config/presets";
+import { allFailures } from "../../src/core/damage/building";
 
 describe("Spec 08 — simulation loop", () => {
   test("SIM-01: same state however elapsed time is split", () => {
@@ -113,7 +114,7 @@ describe("Spec 08 — simulation loop", () => {
     while (sim.time < 100) {
       sim.advance(1 / 30);
       const failures = sim.world.buildings.reduce(
-        (a, b) => a + Object.keys(b.failed).length + b.windowFailed.filter(Boolean).length,
+        (a, b) => a + allFailures(b).length,
         0,
       );
       if (failures > lastFailures) {

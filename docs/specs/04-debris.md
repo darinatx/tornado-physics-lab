@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v1.2) — Phase 3 scope: flight, landing and re-lofting. Impacts on buildings arrive in Phase 4.
+Status: Approved (v1.4) — Phase 3 scope: flight, landing and re-lofting. Impacts on buildings arrive in Phase 4.
 
 ## Purpose
 
@@ -53,9 +53,21 @@ x' = x + v'·dt
 The spin rate is ω ≈ 0.6·|v_rel| / L for sheets, 0.4·|v_rel| / L for rods and 0.3·|v_rel| / L
 for compact pieces (Tachikawa's autorotation measurements). It drives the visual tumbling.
 
+### Turbulent dispersion
+
+The wind field (Spec 01) is a smooth mean flow, so every piece from one house would follow the
+same streamlines and land on one line. Real near-ground wind gusts by 20% (open), 30%
+(suburban) or 40% (urban) of its mean speed. Each flying or sliding piece therefore feels its
+own gust, a first-order random process (Ornstein–Uhlenbeck) with that intensity, a 2 s
+correlation time and half the intensity vertically, using the pool's seeded RNG. Tumbling
+sheets also get a random lift roll of up to ±90° about the relative wind, since their spin
+axis has no preferred orientation, so their lift pushes sideways as well as up. Together these
+fan a house's debris out downwind instead of leaving a thin streak.
+
 ### Ground
 
-- Pieces never go below the ground. On landing they bounce a little (restitution 0.2) and
+- Pieces never go below the ground: contact is at the piece's lowest corner given its size
+  and current tilt, not its center, so a tumbling 4 m panel doesn't sink in. On landing they bounce a little (restitution 0.2) and
   lose horizontal speed to sliding friction (μ_k = 0.5).
 - Landed debris snags on grass, crops, fences and other debris, so it takes more to start it
   moving than to keep it moving: a resting piece holds unless drag beats μ_s·(m·g − F_up)
@@ -71,11 +83,46 @@ for compact pieces (Tachikawa's autorotation measurements). It drives the visual
   short hops rather than riding along with the vortex.
 - **Debris field:** resting pieces more than 3·R_max from the tornado can't be moved by the
   ground-level wind there, so they move to a permanent debris field: drawn, never simulated
-  again, and never recycled (up to 60,000 pieces). This keeps the whole damage path's debris
+  again, and never recycled (up to 150,000 pieces). Each piece is drawn once: drawing settled
+  pieces as several copies (tried first) made one landing piece look like several; the
+  component rubble supplies the real density instead. This keeps the whole damage path's debris
   visible while freeing the active pool.
   Resting pieces are re-checked at 30 Hz, and only within 6·R_max of the tornado.
 
-### Spawning
+### Spawning from components (Phase 4)
+
+Each failed component releases pieces shaped and placed like itself, so what leaves the
+house is what you saw fail:
+
+| Component | Released as |
+|---|---|
+| Siding on a wall panel | 1 siding strip torn off that panel's face (stands for ~12) |
+| Roof covering section | 2 shingles from that section |
+| Roof deck section | one sheet the size of the section (deck + covering), 10 kg/m² |
+| Roof bay | one roof panel per slope with its sections' size and pitch, 18 kg/m², or 2 bare rafters per slope if the deck was already gone |
+| Window pane | 2 glass shards at the pane |
+| Garage door | one door panel, 12 kg/m² |
+| Wall panel | one wall panel of its size, 25 kg/m², tipping in its fall direction |
+| Partition | 2 studs and 2 wall chunks |
+| Slab swept | 4 studs and 6 chunks; that house's rubble on the slab is carried off |
+
+Pieces with house-specific sizes compute drag and lift from their own dimensions (same
+formulas as the table above).
+
+**Launch:** a roof section or deck panel that fails in uplift (not one that collapsed because a
+bearing wall fell) leaves moving: upward at √(2·a·0.5 m) with a = net uplift force / mass, and
+downwind at 0.3 × the wind's horizontal speed. It tears away and tumbles into the storm.
+
+**Rubble:** if the wind at the moment of failure can neither lift a piece nor overcome its
+holding friction (and it isn't a launched roof piece), it doesn't fly: it drops beside or onto the house (a wall panel falls flat
+in its fall direction; roof pieces land on the slab) and goes straight into the debris field.
+That's where much of a destroyed house's material ends up. If the active pool is completely
+full of flying pieces, a component piece is placed as rubble rather than dropped.
+
+**Mass bookkeeping:** every component has a mass, and each house's failed mass is split into
+rubble, ground debris, flying debris and lofted debris.
+
+### Spawning (Phase 3 representative sets)
 
 When a part fails (Spec 03), it releases a representative set of pieces from where that part
 is: the roof at roof height, walls between the ground and the eaves, windows on their face.
@@ -99,8 +146,9 @@ Pieces start at rest; the local wind picks them up.
 
 ### Budget
 
-At most 3,000 pieces exist at once (each stands for many real objects; see `represents`). When the pool is full, the oldest resting piece is
-recycled; if every piece is airborne, the new spawn is skipped and counted. Pieces leaving
+At most 3,000 pieces are simulated at once. When the pool is full, the oldest resting piece is
+frozen in place into the debris field (never erased); if every piece is airborne, the new
+spawn is skipped and counted. Pieces leaving
 the 12 km map are removed.
 
 **Lofted into the storm:** the core updraft (30 m/s by default) exceeds the falling speed of
@@ -148,15 +196,28 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 - **DEB-11**: Resting pieces beyond 3·R_max move to the permanent debris field unchanged,
   freeing the active pool; resting pieces near the tornado stay active.
 - **DEB-12** *(validation)*: After an EF4 pass, the debris field's spread across the path
-  (interquartile range) is at least 60% of its source houses' spread; heavy pieces (lumber,
-  wall chunks) travel a median under 150 m, and sheets travel farther.
+  (interquartile range) is at least 60% of its source houses' spread; heavy pieces (wall
+  panels, lumber, wall chunks) travel a median under 150 m, and light sheets (shingles,
+  siding) travel farther.
 - **DEB-05**: Each failure spawns the specified pieces within the part's location (roof pieces
   at roof height over the footprint, window shards on their face), deterministically.
-- **DEB-06**: The pool never exceeds its cap; full pools recycle the oldest resting piece first
-  and count skipped spawns.
+- **DEB-06**: The pool never exceeds its cap; a full pool freezes its oldest resting piece into
+  the debris field (never erasing it) and counts skipped spawns.
 - **DEB-07** *(sanity)*: In a tornado, no piece moves faster than the fastest wind it has met
   plus its terminal speed, with 20% margin for lift.
 - **DEB-09**: Pieces that rise above the cloud base are removed and counted as lofted.
+- **DEB-13**: In a steady uniform wind, debris from one house lands in a fan, not a line: the
+  across-wind spread σ is between 8% and 40% of the mean downwind distance.
+- **DEB-14**: Component spawning: each failed component releases the pieces in the component
+  table, at its own position (and, for panels and roof pieces, its size and orientation).
+- **DEB-15**: Rubble: a component whose piece the current wind can neither lift nor slide goes
+  straight into the debris field next to its house; one that can move enters the active pool.
+- **DEB-16** *(validation)*: Mass bookkeeping: rubble + ground + flying + lofted + skipped
+  mass equals the failed component mass (±1%), and after an EF4 pass at least 35% of each
+  destroyed house's (envelope) mass lies within 50 m of it. Only the envelope is modeled; real
+  houses also leave floors and contents, most of which stay put.
+- **DEB-17**: A roof section or deck panel leaves its house moving upward and downwind, with
+  the upward speed set by its net uplift force.
 - **DEB-08**: Same seed and same failures → identical debris trajectories.
 
 ## Simplifications / out of scope
@@ -169,6 +230,11 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- v1.4: component spawning, rubble, mass bookkeeping, frozen (not erased) overflow, debris
+  field drawn with multiplicity (DEB-14 to DEB-16; DEB-06 updated). Found by the user: hardly
+  any debris was left in town (about 7 pieces and 0.2 t per destroyed house).
+- v1.3: turbulent dispersion (per-piece gusts) and random lift roll (DEB-13). Found by the
+  user: each house's debris landed in a thin straight streak, sorted by kind.
 - v1.2: permanent debris field (DEB-11); snag release depends on wind direction (DEB-10);
   landing-spread validation (DEB-12). Found by the user: debris landed in a single narrow
   band 100–250 m right of the path. Causes: recycling erased earlier debris, near-ground wind

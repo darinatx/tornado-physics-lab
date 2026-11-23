@@ -15,8 +15,11 @@ export interface ParamDef {
 /** User-tunable wind parameters. Every entry gets a UI control (INST-01). */
 export const WIND_PARAMS = {
   vPeak: {
-    label: "Peak wind (V_peak)", unit: "m/s", default: 60, min: 15, max: 135, step: 1,
-    source: "Aloft speed; with the near-ground overshoot and translation, spans sub-EF0 to upper EF5",
+    label: "Peak wind (V_peak)", unit: "m/s", default: 60, min: 15, max: 128, step: 1,
+    source:
+      "Aloft speed. With the near-ground overshoot and a typical forward speed, 94 m/s matches the " +
+      "strongest tornado winds ever measured (~135 m/s / 302 mph, mobile radar, Bridge Creek–Moore " +
+      "1999 and El Reno 2013). Settings above that are hypothetical, up to ~400 mph at 10 m.",
   },
   rMax: {
     label: "Core radius (R_max)", unit: "m", default: 150, min: 20, max: 800, step: 5,
@@ -89,6 +92,9 @@ export const CELL_STRUCTURE = {
  * terrain power law below it (Spec 01 v1.4).
  */
 export const ENV_REFERENCE_HEIGHT = 10;
+
+/** Strongest tornado wind ever measured near the ground (m/s): ~302 mph, mobile radar. */
+export const RECORD_WIND_MS = 135;
 
 /** Height at which the EF rating is evaluated (m). Standard 10 m anemometer height. */
 export const EF_REFERENCE_HEIGHT = 10;

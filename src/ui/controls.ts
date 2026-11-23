@@ -22,7 +22,7 @@ export interface ControlDef {
 const UI: Partial<Record<keyof TornadoParams, { label: string; group: ControlGroup; help: string }>> = {
   vPeak: {
     label: "Strength", group: "Basic",
-    help: "Peak spinning wind speed above the ground. Higher = stronger tornado and higher EF rating. Winds near rooftop height run about 30% faster than this.",
+    help: "Peak spinning wind speed above the ground. Higher = stronger tornado and higher EF rating. Winds near rooftop height run about 30% faster than this. Above ~94 m/s the tornado exceeds the strongest winds ever measured (≈302 mph) and is hypothetical, up to ~400 mph.",
   },
   rMax: {
     label: "Size (core radius)", group: "Basic",

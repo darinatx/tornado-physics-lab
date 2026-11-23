@@ -11,7 +11,7 @@ const view = createRenderer(
   app,
   () => sim.world.buildings,
   () => sim.debris.pieces,
-  () => ({ pieces: sim.debris.settled, dropped: sim.debris.settledDropped }),
+  () => ({ pieces: sim.debris.settled, dropped: sim.debris.settledDropped, version: sim.debris.settledVersion }),
 );
 const panel = createPanel(sim, (state) => {
   view.setFollow(state.follow);

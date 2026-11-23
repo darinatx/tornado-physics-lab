@@ -1,5 +1,5 @@
 /** EF readout (INST-02). */
-import { EF_REFERENCE_HEIGHT } from "../config/wind";
+import { EF_REFERENCE_HEIGHT, RECORD_WIND_MS } from "../config/wind";
 import { efRating, msToMph } from "../core/wind/efScale";
 import type { EFRating } from "../core/wind/efScale";
 import type { Phase } from "../core/wind/lifecycle";
@@ -32,6 +32,8 @@ export type CellStructure = "one-cell" | "transitioning" | "two-cell";
 
 export interface Readout {
   ef: EFRating | null;
+  /** True when the peak wind exceeds the strongest ever measured (INST-11). */
+  hypothetical: boolean;
   /** Swirl ratio S = V_max / W_max. */
   swirl: number;
   cells: CellStructure;
@@ -50,6 +52,7 @@ export function computeReadout(snap: SimSnapshot): Readout {
   const b = twoCellBlend(snap.tornado);
   return {
     ef: efRating(ms),
+    hypothetical: ms > RECORD_WIND_MS,
     swirl: swirlRatio(snap.tornado),
     cells: b < 0.1 ? "one-cell" : b > 0.9 ? "two-cell" : "transitioning",
     ms,
@@ -83,6 +86,7 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
   el.innerHTML = `
     <div class="ef"></div>
     <div class="speed"></div>
+    <div class="hypo" hidden>Beyond the strongest winds ever measured (≈302 mph): hypothetical</div>
     <div class="phase"></div>
     <div class="cells"></div>
     <div class="tally"></div>
@@ -94,6 +98,7 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
   host.appendChild(el);
   const ef = el.querySelector<HTMLElement>(".ef")!;
   const speed = el.querySelector<HTMLElement>(".speed")!;
+  const hypo = el.querySelector<HTMLElement>(".hypo")!;
   const phase = el.querySelector<HTMLElement>(".phase")!;
   const cells = el.querySelector<HTMLElement>(".cells")!;
   const tally = el.querySelector<HTMLElement>(".tally")!;
@@ -104,6 +109,7 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
       ef.textContent = r.ef === null ? "Below EF0" : `EF${r.ef}`;
       ef.style.color = hex(r.ef === null ? BELOW_EF0_COLOR : EF_COLORS[r.ef]);
       speed.textContent = `${Math.round(r.mph)} mph · ${r.ms.toFixed(1)} m/s`;
+      hypo.hidden = !r.hypothetical;
       const swirl = Number.isFinite(r.swirl) ? r.swirl.toFixed(1) : "∞";
       cells.textContent = r.phase === "dissipated" ? "" : `${CELL_LABEL[r.cells]} · swirl ${swirl}`;
       const t = r.tally;

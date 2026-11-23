@@ -52,6 +52,13 @@ body {
   color: #aab4c0;
 }
 
+.readout .hypo {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffb84f;
+}
+
 .readout .tally {
   margin-top: 8px;
   font-size: 13px;

@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.4) — Phases 1–3
+Status: Approved (v1.5) — Phases 1–4
 
 ## Purpose
 
@@ -41,19 +41,26 @@ Phase 1 scope:
   cloud around the tornado; overcast storm lighting and fog; procedurally textured farmland.
   Lighting favors readability over a realistically dark storm, and a Brightness control
   (exposure 0.5–2×) lets the viewer adjust it.
-- **Houses (Phase 2):** instanced wall boxes, gable roofs and slabs. The visual follows the
-  damage state: the roof disappears when the roof structure fails, a shifted house is offset
-  2 m downwind, and walls shrink to 55% / 30% / 10% of their height at DOD 7 / 8 / 9, leaving
-  only the slab at DOD 10. With "Damage colors" on (the default), houses are tinted by DOD:
-  yellow (1–2), orange (3–4), red-orange (5–6), red (7–8), purple (9–10). Instances refresh only
-  when the sim's damage version changes.
+- **Component houses (Phase 4):** each house is drawn from its components (Spec 03): wall
+  panels, window panes, garage door, roof sections (covering color while intact, bare plywood
+  once the covering is gone, gone with the deck), rafters (visible where the deck is gone),
+  gable ends, interior partitions, slab, sill plates (visible once walls are down) and anchor
+  bolts (visible on a swept slab). A panel that lost its siding shows bare sheathing, a
+  section that lost its covering shows bare plywood, and a broken pane shows a dark opening;
+  these always show through the damage tint, so stripped walls and roofs look stripped. Each
+  failed component disappears from the house as its debris or rubble appears (Spec 04). A
+  shifted house is drawn offset from its slab. "Damage colors" tints a house's remaining walls
+  and roof by its DOD band: yellow (1–2), orange (3–4), red-orange (5–6), red (7–8), purple
+  (9–10). Each house redraws only when its own damage changes.
 - **Flying debris (Phase 3):** one instanced unit box per piece, scaled to the piece's real
   dimensions and rotated by its tumbling orientation. Colored by kind: the house's roof color
   for shingles, its wall color for siding, tan for OSB and lumber, pale blue for glass, gray for
   wall chunks. Resting pieces lie flat. A "Flying debris" layer toggle controls it.
   Real-size pieces (1–4 m) are nearly invisible from the default 1–2 km view, as they are when
-  filming real tornadoes, so an "Enlarge debris ×3" display option is on by default. It changes
-  drawing only, never the physics.
+  filming real tornadoes. An "Enlarge debris ×3" display option exists for spotting small
+  debris from afar but is off by default: everything is drawn at true size. It changes
+  drawing only, never the physics, and applies only to small pieces: full-size components
+  (wall panels, roof sections, deck sections, garage doors) are always drawn at their real size.
 - **R_max ring:** a faint ring on the ground at R_max.
 - **Layers:** arrows, funnel and tracers can each be toggled. Arrows are off by default, so the
   first view is the storm itself; they're one click away for analysis.
@@ -112,9 +119,11 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 - **REND-09**: `debrisInstance(p, enlarge)` scales a unit box to the piece's dimensions times
   `enlarge`, uses its orientation, places it at its position (grounded pieces raised by half
   their drawn thickness), and colors it by kind as specified.
-- **REND-08**: `houseVisual(b)` maps damage to visuals as specified: roof shown only while the
-  roof structure stands, wall-height fractions by DOD, slab only at DOD 10, the DOD color band
-  in damage-color mode, and the house's own colors otherwise.
+- **REND-08**: `houseInstances(b, damageColors)` shows exactly the standing components:
+  failed panels, panes, sections and bays are hidden; a section shows plywood color once its
+  covering is gone; rafters show only where the deck is gone and the bay stands; sill plates
+  show once all walls are down; bolts only on a swept slab; shifted houses are offset; DOD
+  color tints apply only in damage-color mode.
 - **REND-07**: Tracers are deterministic for a given seed and update sequence, and every live
   tracer stays above the ground, below 0.8·H, and within 4·R_max of the axis.
 
@@ -128,6 +137,7 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 
 ## Changelog
 
+- v1.5: component houses; debris field drawn with multiplicity (REND-08 rewritten).
 - v1.4: flying debris layer (REND-09); brighter default lighting and a Brightness control.
 - v1.3: houses with damage visuals and damage colors (REND-08).
 - v1.2: first visual pass pulled forward from Phase 5 at the user's request: physics-shaped

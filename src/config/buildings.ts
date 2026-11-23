@@ -1,5 +1,5 @@
 /**
- * Building constants (Specs 02, 03). Pressures in Pa, speeds in mph where noted.
+ * Building constants (Specs 02, 03 v2). Pressures in Pa, speeds in mph where noted.
  */
 
 /** EF-scale Damage Indicator 2 (one- or two-family residences). Speeds in mph (3-s gust). */
@@ -22,8 +22,10 @@ export const CP = {
   leeward: -0.5,
   side: -0.7,
   roofAverage: -0.9,
-  roofDeckEdge: -1.2,
-  roofCoverEdge: -1.8,
+  deckEdge: -1.2,
+  deckField: -0.8,
+  coverEdge: -1.8,
+  coverField: -1.0,
 } as const;
 
 /** Internal pressure. */
@@ -44,77 +46,111 @@ export const DEAD_LOAD = {
   roof: 600,
 } as const;
 
-/** Wall bracing from an attached roof structure. */
+/** Wall-panel bracing from the roof bay above it. */
 export const ROOF_BRACING_FACTOR = 1.6;
+/** Bay capacity multiplier per failed neighboring bay (progressive roof failure). */
+export const BAY_NEIGHBOR_FACTOR = 0.85;
+/**
+ * Net pressure coefficient on a free-standing wall (ASCE 7 free-standing walls, ~1.2–1.8).
+ * Once a house is open (half its walls or all its roof gone), standing panels take wind on
+ * both faces like a free-standing wall.
+ */
+export const CP_FREESTANDING = 1.3;
+/** Corner panels are braced by the perpendicular wall while its corner panel stands. */
+export const CORNER_BRACING_FACTOR = 1.4;
+/** Wall-panel capacity multiplier per failed neighboring panel on the same wall. */
+export const PANEL_NEIGHBOR_FACTOR = 0.8;
 
-/** Parts of a house, in DOD order. */
+/** Component types (Spec 03 v2). */
 export const PARTS = [
-  "trim",
+  "siding",
   "roofCover",
-  "windows",
+  "window",
   "garage",
   "roofDeck",
   "anchorage",
-  "roofStructure",
-  "exteriorWalls",
-  "mostWalls",
-  "allWalls",
-  "slab",
+  "roofBay",
+  "wallPanel",
+  "partition",
+  "coreRoom",
+  "sweep",
 ] as const;
 export type Part = (typeof PARTS)[number];
 
-/** DOD reached when each part fails. Windows count per face; any face → DOD 3. */
-export const PART_DOD: Record<Part, number> = {
-  trim: 1,
-  roofCover: 2,
-  windows: 3,
-  garage: 4,
-  roofDeck: 4,
-  anchorage: 5,
-  roofStructure: 6,
-  exteriorWalls: 7,
-  mostWalls: 8,
-  allWalls: 9,
-  slab: 10,
-};
-
 export const PART_LABEL: Record<Part, string> = {
-  trim: "Siding & trim",
+  siding: "Siding",
   roofCover: "Roof covering",
-  windows: "Windows",
+  window: "Windows",
   garage: "Garage door",
   roofDeck: "Roof deck",
   anchorage: "Foundation anchorage",
-  roofStructure: "Roof structure",
-  exteriorWalls: "Exterior walls",
-  mostWalls: "Most walls",
-  allWalls: "All walls",
-  slab: "Remaining structure",
+  roofBay: "Roof structure (rafters)",
+  wallPanel: "Exterior wall panels",
+  partition: "Interior walls",
+  coreRoom: "Interior core room (closet/bath)",
+  sweep: "Slab swept clean",
+};
+
+/** Units for "N of M ..." in the inspector. */
+export const PART_UNIT: Record<Part, string> = {
+  siding: "panels",
+  roofCover: "sections",
+  window: "panes",
+  garage: "",
+  roofDeck: "sections",
+  anchorage: "",
+  roofBay: "bays",
+  wallPanel: "panels",
+  partition: "walls",
+  coreRoom: "",
+  sweep: "",
 };
 
 /**
- * Base capacities (Pa) for a standard house. Calibrated by scripts/calibrate-houses.ts so that
- * standard houses passed through simulated tornadoes reach each DI 2 DOD at a median peak
- * wind equal to its expected speed (DMG-04).
+ * Base capacities (Pa) for a standard house's components. Calibrated by
+ * scripts/calibrate-houses.ts against simulated tornado passes (DMG-04).
  */
 export const BASE_CAPACITY: Record<Part, number> = {
-  trim: 569,
-  roofCover: 1547,
-  windows: 1591,
-  garage: 1302,
-  roofDeck: 1775,
-  anchorage: 3738,
-  roofStructure: 868,
-  exteriorWalls: 2170,
-  mostWalls: 3612,
-  allWalls: 4714,
-  slab: 7457,
+  siding: 716,
+  roofCover: 2288,
+  window: 2094,
+  /** Fixed, not calibrated: standard non-reinforced garage door, ~27 psf. */
+  garage: 1300,
+  /** Fixed, not calibrated: 8d nails at typical spacing, ~56 psf. */
+  roofDeck: 2700,
+  anchorage: 2718,
+  roofBay: 1593,
+  wallPanel: 1020,
+  partition: 2637,
+  coreRoom: 3967,
+  sweep: 6152,
+};
+
+/**
+ * Calibration target: which DOD each part's capacity is tuned to (0 = fixed at an engineering
+ * value; garage doors and roof deck would otherwise drift, since DOD 4 is usually reached
+ * through covering loss first).
+ */
+export const PART_CALIBRATION_DOD: Record<Part, number> = {
+  siding: 1,
+  roofCover: 2,
+  window: 3,
+  garage: 0,
+  roofDeck: 0,
+  anchorage: 5,
+  roofBay: 6,
+  wallPanel: 7,
+  partition: 8,
+  coreRoom: 9,
+  sweep: 10,
 };
 
 /** Fragility: lognormal dispersion (β = σ of ln). */
 export const FRAGILITY = {
   houseQuality: 0.12,
   partScatter: 0.18,
+  /** Roof covering varies more (nailing, sealing, age). */
+  coverScatter: 0.35,
 } as const;
 
 export type ConstructionClass = "weak" | "standard" | "strong";
@@ -132,28 +168,30 @@ export const CLASS_LABEL: Record<ConstructionClass, string> = {
 };
 
 export const CLASS_FACTORS: Record<ConstructionClass, Partial<Record<Part, number>>> = {
-  weak: { roofStructure: 0.7, anchorage: 0.6, exteriorWalls: 0.85, mostWalls: 0.85, allWalls: 0.85 },
+  weak: { roofBay: 0.7, anchorage: 0.6, sweep: 0.6, wallPanel: 0.85, partition: 0.85, coreRoom: 0.85 },
   standard: {},
-  strong: {
-    roofStructure: 1.6,
-    anchorage: 1.6,
-    exteriorWalls: 1.3,
-    mostWalls: 1.3,
-    allWalls: 1.3,
-    windows: 1.4,
-    garage: 1.5,
-    roofDeck: 1.3,
-  },
+  strong: { roofBay: 1.6, anchorage: 1.6, sweep: 1.6, wallPanel: 1.3, partition: 1.3, coreRoom: 1.3, window: 1.4, garage: 1.5, roofDeck: 1.3 },
 };
 
-/** Opening areas as fractions / sizes. */
-export const OPENINGS = {
-  /** Window area as a fraction of each wall face. */
-  windowFraction: 0.12,
-  /** Garage door area (m²): 16 × 7 ft. */
-  garageArea: 10.4,
-  /** Roof area opened when the deck fails, as a fraction of roof area. */
-  deckOpenFraction: 0.2,
+/** Layout geometry (m). */
+export const LAYOUT = {
+  panelTarget: 4,
+  windowShare: 0.6,
+  paneSize: 1.2,
+  paneSill: 1.0,
+  garageWidth: 4.9,
+  garageHeight: 2.2,
+  overhang: 0.4,
+  partitions: 2,
+} as const;
+
+/** Areal masses (kg/m²) for component debris (Spec 04 v1.4). */
+export const AREAL_MASS = {
+  wallPanel: 25,
+  roofPanel: 18,
+  deckSection: 10,
+  garageDoor: 12,
+  partition: 15,
 } as const;
 
 /** Damage is evaluated every N physics steps (30 Hz at dt = 1/120). */

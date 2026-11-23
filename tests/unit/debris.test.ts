@@ -5,27 +5,44 @@ import type { DebrisKind } from "../../src/config/debris";
 import { DebrisField } from "../../src/core/debris/field";
 import { liftForce, restingForces, snag, stepPiece, terminalSpeed, wakeIfForced } from "../../src/core/debris/piece";
 import type { Piece } from "../../src/core/debris/piece";
-import type { FailureRecord } from "../../src/core/damage/types";
 import { createRng } from "../../src/sim/rng";
 import { baseState } from "../helpers";
-import { exactHouse, median } from "../houseHelpers";
+import { exactHouse, median, rec as hrec } from "../houseHelpers";
+import type { Part } from "../../src/config/buildings";
+import { panelCenter } from "../../src/core/damage/layout";
 import { PRESETS } from "../../src/config/presets";
 import { createSim } from "../../src/sim/loop";
 
 function piece(kind: DebrisKind, y = 100, o: Partial<Piece> = {}): Piece {
   return {
-    id: 1, kind, pos: { x: 0, y, z: 0 }, vel: { x: 0, y: 0, z: 0 }, q: [0, 0, 0, 1], spin: 1,
+    id: 1, kind, def: DEBRIS_KINDS[kind], pos: { x: 0, y, z: 0 }, vel: { x: 0, y: 0, z: 0 }, q: [0, 0, 0, 1], spin: 1,
     resting: false, snagged: false, snagDir: null, bornAt: 0, restedAt: Infinity, represents: 1, color: 0, sourceId: 0,
-    maxWindMet: 0, liftOn: true, ...o,
+    maxWindMet: 0, liftOn: true, liftRoll: 0, gust: { x: 0, y: 0, z: 0 }, ...o,
   };
 }
-const rec = (part: FailureRecord["part"], face?: number): FailureRecord => ({ part, face, time: 1, load: 1, capacity: 0, mph: 100 });
+const rec = (part: Part, index = 0, wind = { x: 1, y: 0, z: 0 }, load = 1000) => hrec(part, index, wind, load);
 const still = { x: 0, y: 0, z: 0 };
 
 describe("Spec 04 — debris", () => {
+  test("DEB-13: debris from one house fans out downwind in steady wind", () => {
+    const s = baseState({ vMax: 0, updraftMax: 0, velocity: { x: 40, z: 0 } });
+    const f = new DebrisField(11, 5000);
+    for (let i = 0; i < 15; i++)
+      for (const part of ["roofCover", "siding", "window"] as const) for (let k = 0; k < 4; k++) f.spawnFrom(exactHouse(), rec(part, k));
+    for (let i = 0; i < 60 * 60; i++) f.step(1 / 60, s, "open", i % 2 === 0, i / 60);
+    const landed = [...f.pieces, ...f.settled].filter((p) => p.resting);
+    expect(landed.length).toBeGreaterThan(100);
+    const mx = landed.reduce((a, p) => a + p.pos.x, 0) / landed.length;
+    const mz = landed.reduce((a, p) => a + p.pos.z, 0) / landed.length;
+    const sz = Math.sqrt(landed.reduce((a, p) => a + (p.pos.z - mz) ** 2, 0) / landed.length);
+    expect(mx).toBeGreaterThan(10);
+    expect(sz / mx).toBeGreaterThan(0.08);
+    expect(sz / mx).toBeLessThan(0.4);
+  });
+
   test("DEB-11: resting pieces left behind move to the permanent debris field", () => {
     const f = new DebrisField(8);
-    f.spawnFrom(exactHouse(), rec("roofStructure"));
+    f.spawnFrom(exactHouse(), rec("partition"));
     const n = f.pieces.length;
     for (const p of f.pieces) {
       p.resting = true;
@@ -83,7 +100,7 @@ describe("Spec 04 — debris", () => {
     const fly = (liftOn: boolean) => {
       const p = piece("osb", 30, { liftOn, spin: 1 });
       let t = 0;
-      while (p.pos.y > 0 && t < 120) {
+      while (!p.grounded && t < 120) {
         stepPiece(p, { x: 40, y: 0, z: 0 }, 1 / 60);
         t += 1 / 60;
       }
@@ -124,52 +141,99 @@ describe("Spec 04 — debris", () => {
     expect(sheet.pos.y).toBeGreaterThan(0);
   });
 
-  test("DEB-05: failures spawn the specified pieces at the part's location", () => {
+  test("DEB-05: representative pieces spawn per the table at the part's location", () => {
     const b = exactHouse();
     const field = new DebrisField(1);
-    for (const part of ["roofCover", "roofStructure", "exteriorWalls", "garage"] as const) {
-      const before = field.pieces.length;
-      field.spawnFrom(b, rec(part));
-      const added = field.pieces.slice(before);
-      const expected = SPAWN_TABLE[part].reduce((a, [, n]) => a + n, 0);
-      expect(added.length).toBe(expected);
-      for (const [kind, n] of SPAWN_TABLE[part]) expect(added.filter((p) => p.kind === kind).length).toBe(n);
+    for (const part of ["siding", "roofCover", "window", "partition"] as const) {
+      const before = field.pieces.length + field.settled.length;
+      field.spawnFrom(b, rec(part, 0));
+      const added = [...field.pieces, ...field.settled].slice(before);
+      expect(added.length).toBe(SPAWN_TABLE[part].reduce((a, [, n]) => a + n, 0));
       for (const p of added) {
-        expect(Math.abs(p.pos.x - b.x)).toBeLessThanOrEqual(b.width / 2 + 0.11);
-        expect(Math.abs(p.pos.z - b.z)).toBeLessThanOrEqual(b.depth / 2 + 0.11);
-        if (part === "roofCover" || part === "roofStructure") expect(p.pos.y).toBeGreaterThanOrEqual(b.wallHeight);
-        else expect(p.pos.y).toBeLessThanOrEqual(b.wallHeight);
+        expect(Math.abs(p.pos.x - b.x)).toBeLessThanOrEqual(b.width / 2 + 0.6);
+        expect(Math.abs(p.pos.z - b.z)).toBeLessThanOrEqual(b.depth / 2 + 0.6);
+        if (part === "roofCover") expect(p.pos.y).toBeGreaterThanOrEqual(b.wallHeight);
         expect(p.represents).toBeGreaterThanOrEqual(1);
       }
     }
-    // Window shards sit on their face (face 0 = local +X, yaw 0).
-    const before = field.pieces.length;
-    field.spawnFrom(b, rec("windows", 0));
-    for (const p of field.pieces.slice(before)) expect(p.pos.x).toBeCloseTo(b.x + b.width / 2 + 0.1, 6);
-    // Deterministic.
     const a = new DebrisField(9);
     const c = new DebrisField(9);
-    a.spawnFrom(b, rec("roofStructure"));
-    c.spawnFrom(b, rec("roofStructure"));
+    a.spawnFrom(b, rec("roofBay", 1));
+    c.spawnFrom(b, rec("roofBay", 1));
     expect(a.pieces).toEqual(c.pieces);
   });
 
-  test("DEB-06: pool cap, recycling the oldest resting piece, counted skips", () => {
+  test("DEB-06: pool cap freezes the oldest resting piece (never erases) and counts skips", () => {
     const b = exactHouse();
     const field = new DebrisField(2, 20);
-    for (let i = 0; i < 5; i++) field.spawnFrom(b, rec("roofCover")); // 40 requested
+    for (let i = 0; i < 20; i++) field.spawnFrom(b, rec("siding", i % b.panels.length));
     expect(field.pieces.length).toBe(20);
-    expect(field.stats.skipped).toBe(20);
-    // Rest two pieces; the older one is recycled first.
+    field.spawnFrom(b, rec("siding", 1));
+    expect(field.stats.skipped).toBe(1);
     field.pieces[3]!.resting = true;
     field.pieces[3]!.restedAt = 10;
     field.pieces[7]!.resting = true;
     field.pieces[7]!.restedAt = 5;
     const oldId = field.pieces[7]!.id;
-    field.spawnFrom(b, rec("windows", 1)); // 4 shards: 2 recycle, 2 skip
+    field.spawnFrom(b, rec("window", 0)); // 2 shards: freeze both resting pieces
     expect(field.pieces.length).toBe(20);
     expect(field.pieces.some((p) => p.id === oldId)).toBe(false);
-    expect(field.stats.skipped).toBe(22);
+    expect(field.settled.some((p) => p.id === oldId)).toBe(true);
+    expect(field.stats.skipped).toBe(1);
+  });
+
+  test("DEB-14: each component releases a piece shaped and placed like itself", () => {
+    const b = exactHouse();
+    const f = new DebrisField(3);
+    const strong = { x: 60, y: 0, z: 0 };
+    // Wall panel: same size, at the panel.
+    const pi = 1;
+    f.spawnFrom(b, rec("wallPanel", pi, strong));
+    const wp = [...f.pieces, ...f.settled].find((p) => p.kind === "wallPanel")!;
+    const panel = b.panels[pi]!;
+    expect(wp.def.dims[0]).toBeCloseTo(panel.len, 9);
+    expect(wp.def.dims[1]).toBeCloseTo(b.wallHeight, 9);
+    const c = panelCenter(b, panel, b.wallHeight / 2);
+    if (!wp.resting) expect(Math.hypot(wp.pos.x - (b.x + c.x), wp.pos.z - (b.z + c.z))).toBeLessThan(0.5);
+    // Roof bay: one panel per slope, at roof height, sized to the column.
+    f.spawnFrom(b, rec("roofBay", 1, strong, 2000));
+    const roofs = f.pieces.filter((p) => p.kind === "roofPanel");
+    expect(roofs.length).toBe(2);
+    for (const r of roofs) expect(r.pos.y).toBeGreaterThan(b.wallHeight);
+    // Garage door: one door panel.
+    f.spawnFrom(b, rec("garage", 0, strong));
+    expect([...f.pieces, ...f.settled].filter((p) => p.kind === "garageDoor").length).toBe(1);
+  });
+
+  test("DEB-15: pieces the wind can't move become rubble beside the house", () => {
+    const b = exactHouse();
+    const f = new DebrisField(4);
+    f.spawnFrom(b, rec("wallPanel", 0, { x: 5, y: 0, z: 0 })); // gentle wind: 290 kg panel stays
+    expect(f.pieces.length).toBe(0);
+    expect(f.settled.length).toBe(1);
+    const r = f.settled[0]!;
+    expect(r.pos.y).toBeCloseTo(r.def.dims[2] / 2, 9);
+    expect(Math.hypot(r.pos.x - b.x, r.pos.z - b.z)).toBeLessThan(Math.hypot(b.width, b.depth));
+    const g = new DebrisField(4);
+    g.spawnFrom(b, rec("wallPanel", 0, { x: 90, y: 0, z: 0 })); // violent wind: it moves
+    expect(g.pieces.length).toBe(1);
+  });
+
+  test("DEB-17: roof pieces leave moving up and downwind, faster with more uplift", () => {
+    const b = exactHouse();
+    const launch = (load: number) => {
+      const f = new DebrisField(5);
+      f.spawnFrom(b, rec("roofBay", 0, { x: 50, y: 0, z: 0 }, load));
+      return f.pieces.filter((p) => p.kind === "roofPanel");
+    };
+    const weak = launch(500);
+    const hard = launch(3000);
+    expect(weak.length).toBe(2);
+    for (const p of [...weak, ...hard]) {
+      expect(p.vel.y).toBeGreaterThan(0);
+      expect(p.vel.x).toBeCloseTo(15, 9);
+    }
+    expect(hard[0]!.vel.y).toBeGreaterThan(weak[0]!.vel.y);
   });
 
   test("DEB-07: no piece outruns the fastest wind it met plus its terminal speed (+20%)", () => {
@@ -180,7 +244,7 @@ describe("Spec 04 — debris", () => {
       const b = exactHouse();
       b.x = (rng() - 0.5) * 300;
       b.z = (rng() - 0.5) * 300;
-      field.spawnFrom(b, rec(i % 2 ? "roofStructure" : "exteriorWalls"));
+      field.spawnFrom(b, rec(i % 2 ? "roofBay" : "wallPanel", i % 2 ? 1 : 2, { x: 70, y: 0, z: 0 }, 2000));
     }
     for (let i = 0; i < 60 * 40; i++) {
       field.step(1 / 60, s, "open", i % 2 === 0, i / 60, 500);
@@ -196,7 +260,7 @@ describe("Spec 04 — debris", () => {
     const run = () => {
       const s = baseState({ vMax: 60, velocity: { x: 12, z: 0 } });
       const f = new DebrisField(3);
-      f.spawnFrom(exactHouse(), rec("roofStructure"));
+      f.spawnFrom(exactHouse(), rec("roofBay", 1, { x: 60, y: 0, z: 0 }, 2000));
       for (let i = 0; i < 600; i++) f.step(1 / 60, s, "open", i % 2 === 0, i / 60, 500);
       return f.pieces.map((p) => [p.pos, p.vel, p.q, p.resting]);
     };
@@ -205,7 +269,7 @@ describe("Spec 04 — debris", () => {
 
   test("DEB-09: pieces above the cloud base are removed as lofted", () => {
     const f = new DebrisField(4);
-    f.spawnFrom(exactHouse(), rec("roofCover"));
+    for (let k = 0; k < 4; k++) f.spawnFrom(exactHouse(), rec("roofCover", k));
     const s = baseState({ vMax: 0, updraftMax: 0 });
     // Pieces just under a 320 m cloud base, rising fast: one short step carries them through.
     for (const p of f.pieces) {
@@ -214,7 +278,7 @@ describe("Spec 04 — debris", () => {
     }
     f.step(0.01, s, "open", false, 0, 320);
     expect(f.pieces.length).toBe(0);
-    expect(f.stats.lofted).toBe(8);
+    expect(f.stats.lofted).toBe(8); // 4 sections × 2 shingles
   });
 
   test("DEB-10: snagging at the mean free path, and snagged pieces hold harder", () => {
@@ -222,7 +286,7 @@ describe("Spec 04 — debris", () => {
     const s = baseState({ vMax: 0, updraftMax: 0, velocity: { x: 0, z: 0 } });
     const f = new DebrisField(6, 4000);
     const b = exactHouse({}, 0);
-    for (let i = 0; i < 400; i++) f.spawnFrom(b, rec("allWalls"));
+    for (let i = 0; i < 400; i++) f.spawnFrom(b, rec("partition", i % 3));
     const studs = f.pieces.filter((p) => p.kind === "stud");
     for (const p of f.pieces) {
       p.pos.y = 0;

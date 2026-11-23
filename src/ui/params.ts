@@ -45,7 +45,7 @@ export function createPanel(
     funnel: true,
     tracers: true,
     debris: true,
-    enlargeDebris: true,
+    enlargeDebris: false,
     damageColors: true,
     brightness: 1,
     probeHeight: 10,
@@ -158,7 +158,7 @@ export function createPanel(
   );
   tip(
     display.add(state, "enlargeDebris").name("Enlarge debris ×3").onChange(emit),
-    "Draws debris 3× its real size so it's visible from a distance. Display only: the physics always uses real sizes and masses.",
+    "Draws small debris (shingles, siding, glass, lumber) 3× its real size so it's visible from a distance. Wall panels and roof sections are always real size. Display only: the physics always uses real sizes and masses.",
   );
   tip(
     display.add(state, "damageColors").name("Damage colors").onChange(emit),

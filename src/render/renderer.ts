@@ -73,7 +73,7 @@ export function createRenderer(
   host: HTMLElement,
   getBuildings: () => readonly Building[],
   getDebris: () => readonly Piece[] = () => [],
-  getSettled: () => { pieces: readonly Piece[]; dropped: number } = () => ({ pieces: [], dropped: 0 }),
+  getSettled: () => { pieces: readonly Piece[]; dropped: number; version: number } = () => ({ pieces: [], dropped: 0, version: 0 }),
 ): SimRenderer {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -109,9 +109,9 @@ export function createRenderer(
 
   // Flying debris.
   const debris = createDebrisLayer(DEBRIS.cap);
-  const settledLayer = createSettledLayer(DEBRIS.settledCap);
+  const settledLayer = createSettledLayer(250000);
   scene.add(settledLayer.mesh);
-  let debrisScale = 3;
+  let debrisScale = 1;
   scene.add(debris.mesh);
 
   // R_max ring.
@@ -228,13 +228,13 @@ export function createRenderer(
       ring.position.set(s.center.x, 2, s.center.z);
 
       env.update(s.center, s.rMax, curr.cloudBase);
-      houses.sync(getBuildings(), curr.damageVersion, damageColors);
+      houses.sync(getBuildings(), damageColors);
       debris.mesh.visible = layers.debris;
       settledLayer.mesh.visible = layers.debris;
       if (layers.debris) {
         debris.sync(getDebris(), debrisScale);
         const st = getSettled();
-        settledLayer.sync(st.pieces, debrisScale, st.dropped);
+        settledLayer.sync(st.pieces, debrisScale, st.dropped, st.version);
       }
 
       funnel.mesh.visible = layers.funnel;

@@ -12,7 +12,7 @@ import { createSim } from "../../src/sim/loop";
 import { defaultParams } from "../../src/sim/types";
 import { buildControlDefs } from "../../src/ui/controls";
 import { computeReadout, computeTally } from "../../src/ui/readout";
-import { buildingReport, efFromDamage } from "../../src/core/damage/building";
+import { allFailures, buildingReport, efFromDamage, partTotal } from "../../src/core/damage/building";
 import { DI2_DODS } from "../../src/config/buildings";
 import { samplePassCase, tornadoPass } from "../../src/core/damage/steadyRamp";
 import { randomHouses } from "../houseHelpers";
@@ -132,12 +132,32 @@ describe("Spec 07 — instruments", () => {
       expect(r.estimate).toEqual(efFromDamage(b.dod, b.cls));
       expect(r.description).toBe(b.dod ? DI2_DODS[b.dod - 1]!.text : "No damage");
       expect(r.peakMph).toBe(b.peakMph);
-      const n = Object.keys(b.failed).length + b.windowFailed.filter(Boolean).length;
-      expect(r.failures.length).toBe(n);
+      const all = allFailures(b);
+      expect(r.failures.reduce((a, g) => a + g.count, 0)).toBe(all.length);
+      for (const g of r.failures) {
+        const mine = all.filter((x) => x.part === g.part);
+        expect(g.count).toBe(mine.length);
+        expect(g.total).toBe(partTotal(b, g.part));
+        expect(g.time).toBe(Math.min(...mine.map((x) => x.time)));
+        expect(g.load).toBeGreaterThan(g.capacity);
+      }
       for (let i = 1; i < r.failures.length; i++) expect(r.failures[i]!.time).toBeGreaterThanOrEqual(r.failures[i - 1]!.time);
-      for (const f of r.failures) expect(f.load).toBeGreaterThan(f.capacity);
     }
   }, 30000);
+
+  test("INST-11: winds above the measured record are flagged as hypothetical", () => {
+    const run = (vPeak: number) => {
+      const sim = createSim({ buildings: false }, 1, { vPeak, rMax: 300, translationSpeed: 15 });
+      while (sim.snapshot.phase !== "mature") sim.advance(0.25);
+      return computeReadout(sim.snapshot);
+    };
+    const real = run(80);
+    expect(real.ms).toBeLessThanOrEqual(135);
+    expect(real.hypothetical).toBe(false);
+    const whatIf = run(120);
+    expect(whatIf.ms).toBeGreaterThan(135);
+    expect(whatIf.hypothetical).toBe(true);
+  });
 
   test("INST-10: debris stats match the pool", () => {
     const ef4 = PRESETS.find((p) => p.id === "ef4-wedge")!;

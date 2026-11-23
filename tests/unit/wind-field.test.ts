@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { efRating, mphToMs } from "../../src/core/wind/efScale";
+import { efRating, mphToMs, msToMph } from "../../src/core/wind/efScale";
 import { lifecycle } from "../../src/core/wind/lifecycle";
 import { AIR_DENSITY } from "../../src/config/atmosphere";
-import { CELL_STRUCTURE } from "../../src/config/wind";
+import { CELL_STRUCTURE, WIND_PARAMS } from "../../src/config/wind";
+import { peakGroundSpeed } from "../../src/core/wind/peak";
 import { pressureDeficit } from "../../src/core/wind/pressure";
 import { envFactor, heightFactor, swirlRatio, twoCellBlend, windAt, windComponents } from "../../src/core/wind/windField";
 import { baseState, hspeed } from "../helpers";
@@ -226,6 +227,14 @@ describe("Spec 01 — wind field", () => {
       const expected = -(AIR_DENSITY * vt * vt) / r;
       expect(Math.abs(dpdr - expected) / Math.abs(expected)).toBeLessThan(0.005);
     }
+  });
+
+  test("WIND-21: the strongest setting stays within measured tornado winds", () => {
+    const at = (v: number) => peakGroundSpeed(baseState({ vMax: v, rMax: 300, velocity: { x: 15, z: 0 } }), "open", 10);
+    expect(at(94)).toBeLessThanOrEqual(135);
+    const maxMph = msToMph(at(WIND_PARAMS.vPeak.max));
+    expect(maxMph).toBeGreaterThanOrEqual(380);
+    expect(maxMph).toBeLessThanOrEqual(400);
   });
 
   test("WIND-20: environmental wind follows the surface layer below 10 m", () => {

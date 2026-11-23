@@ -21,13 +21,13 @@ export interface DebrisKindDef {
   spinRate: number;
 }
 
-const sheet = (label: string, L: number, W: number, T: number, mass: number): DebrisKindDef => ({
+export const sheet = (label: string, L: number, W: number, T: number, mass: number): DebrisKindDef => ({
   label, family: "sheet", dims: [L, W, T], mass, cda: 0.7 * L * W, cla: 0.2 * L * W, spinRate: 0.6,
 });
-const rod = (label: string, L: number, W: number, T: number, mass: number): DebrisKindDef => ({
+export const rod = (label: string, L: number, W: number, T: number, mass: number): DebrisKindDef => ({
   label, family: "rod", dims: [L, W, T], mass, cda: 0.7 * L * W, cla: 0, spinRate: 0.4,
 });
-const compact = (label: string, L: number, W: number, T: number, mass: number): DebrisKindDef => ({
+export const compact = (label: string, L: number, W: number, T: number, mass: number): DebrisKindDef => ({
   label, family: "compact", dims: [L, W, T], mass, cda: 0.8 * L * W, cla: 0, spinRate: 0.3,
 });
 
@@ -40,23 +40,34 @@ export const DEBRIS_KINDS = {
   stud: rod("Stud (2×4)", 2.4, 0.09, 0.04, 4.5),
   glass: compact("Glass shard", 0.15, 0.15, 0.005, 0.25),
   chunk: compact("Wall chunk", 0.5, 0.5, 0.15, 18),
+  // Component-shaped pieces (Phase 4): size and mass come from the failed component.
+  wallPanel: sheet("Wall panel", 4, 2.9, 0.15, 290),
+  roofPanel: sheet("Roof section", 4, 3.5, 0.25, 250),
+  deckSheet: sheet("Roof deck section", 4, 1.8, 0.05, 70),
+  garageDoor: sheet("Garage door", 4.9, 2.2, 0.05, 130),
 } as const satisfies Record<string, DebrisKindDef>;
 
 export type DebrisKind = keyof typeof DEBRIS_KINDS;
 
-/** Pieces spawned per failed part (Spec 04 table). */
+/** Full-size component pieces: never drawn enlarged (they're already big and visible). */
+export const COMPONENT_KINDS: ReadonlySet<DebrisKind> = new Set(["wallPanel", "roofPanel", "deckSheet", "garageDoor"]);
+
+/**
+ * Representative pieces released per failure (Spec 04 v1.4). Component-shaped pieces (wall
+ * panels, roof sections, deck sections, garage doors) are added by the debris field itself.
+ */
 export const SPAWN_TABLE: Record<Part, [DebrisKind, number][]> = {
-  trim: [["siding", 3]],
-  roofCover: [["shingle", 8]],
-  windows: [["glass", 4]],
-  garage: [["garagePanel", 4]],
-  roofDeck: [["osb", 4]],
+  siding: [["siding", 1]],
+  roofCover: [["shingle", 2]],
+  window: [["glass", 2]],
+  garage: [],
+  roofDeck: [],
   anchorage: [],
-  roofStructure: [["rafter", 6], ["osb", 6], ["shingle", 6]],
-  exteriorWalls: [["stud", 6], ["siding", 4], ["osb", 3]],
-  mostWalls: [["stud", 6], ["chunk", 4]],
-  allWalls: [["stud", 6], ["chunk", 4]],
-  slab: [["stud", 4], ["chunk", 6]],
+  roofBay: [],
+  wallPanel: [],
+  partition: [["stud", 2], ["chunk", 2]],
+  coreRoom: [["stud", 2], ["chunk", 3]],
+  sweep: [["stud", 4], ["chunk", 6]],
 };
 
 export const DEBRIS = {
@@ -66,7 +77,7 @@ export const DEBRIS = {
    * Maximum pieces kept in the permanent debris field. Resting pieces away from the tornado
    * move here: drawn, never simulated again, never recycled (unless this fills).
    */
-  settledCap: 60000,
+  settledCap: 150000,
   /** Sliding (kinetic) friction coefficient. */
   friction: 0.5,
   /**
@@ -98,6 +109,30 @@ export const DEBRIS = {
   /** Height at which resting pieces sample the wind (m). */
   restSampleHeight: 0.2,
 } as const;
+
+/**
+ * Turbulent dispersion (Spec 04 v1.3). The wind field is a smooth mean flow; real near-ground
+ * wind gusts by 15–40% depending on terrain. Each flying piece feels its own gust, a
+ * first-order (Ornstein–Uhlenbeck) random process, so debris from one house fans out instead
+ * of following one streamline.
+ */
+export const TURBULENCE = {
+  /** Turbulence intensity σ_u / U by terrain (typical near-ground values). */
+  intensity: { open: 0.2, suburban: 0.3, urban: 0.4 },
+  /** Vertical gust σ as a fraction of the horizontal σ. */
+  verticalRatio: 0.5,
+  /** Gust correlation time (s). */
+  timeScale: 2,
+  /** Tumbling sheets' lift is rolled up to ± this angle (rad) about the relative wind. */
+  maxLiftRoll: Math.PI / 2,
+} as const;
+
+/**
+ * Settled flying debris could be drawn as several jittered copies (by `represents`). Set to 1:
+ * copies made one landing piece look like several, and component rubble now supplies the
+ * real density (Spec 04 v1.4).
+ */
+export const SETTLED_COPIES_MAX = 1;
 
 export const DEBRIS_COLORS: Partial<Record<DebrisKind, number>> = {
   osb: 0xb8935a,

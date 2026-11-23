@@ -1,6 +1,6 @@
 # Spec 01 — Wind Field
 
-Status: Approved (v1.5)
+Status: Approved (v1.7)
 
 ## Purpose
 
@@ -166,7 +166,7 @@ what's in `TornadoState`.
 
 | Name | Unit | Default | Range | Source / note |
 |---|---|---|---|---|
-| V_peak | m/s | 60 | 15–135 | aloft speed; with the near-ground overshoot and translation this spans sub-EF0 to upper EF5 (EF0 needs only ~18–22 m/s aloft) |
+| V_peak | m/s | 60 | 15–128 | aloft speed; with the near-ground overshoot and translation this spans sub-EF0 to upper EF5 (EF0 needs only ~18–22 m/s aloft) |
 | R_max | m | 150 | 20–800 | rope to wedge; typical radar values 50–500 m |
 | α | – | 0.6 | 0.5–1.0 | 1.0 = classic Rankine; radar-observed tornadoes typically 0.5–0.8 |
 | k_r | – | 0.5 | 0.0–1.0 | inflow / tangential ratio near the surface |
@@ -217,6 +217,9 @@ All values live in `src/config/wind.ts`.
 - **WIND-20**: The environmental (translation) wind is unchanged at and above 10 m and
   reduced below it by the terrain power law; far from the core at 1 m it's slower than at 10 m,
   and slower over urban than open terrain.
+- **WIND-21**: With a typical 15 m/s forward speed, V_peak = 94 m/s gives a 10 m peak at or
+  below 135 m/s (the strongest measured tornado winds), and the maximum setting (128 m/s) gives
+  380–400 mph, the hypothetical ceiling the user chose.
 - **WIND-17**: The axis vertical velocity decreases monotonically as S rises from S₁ to S₂,
   with no jumps (one-cell and two-cell blend smoothly).
 
@@ -251,6 +254,12 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
 
 ## Changelog
 
+- v1.7: at the user's request, V_peak may go to 128 m/s (~400 mph at 10 m) to explore
+  tornadoes beyond anything observed; the UI flags winds above the record as hypothetical
+  (Spec 07, INST-11).
+- v1.6: V_peak maximum lowered from 135 to 94 m/s (WIND-21). V_peak is the aloft speed; with
+  the near-ground overshoot and translation, 135 m/s produced ~190 m/s at rooftop level, far
+  beyond any measured tornado, and damage extended unrealistically far. Found by the user.
 - v1.5: ε lowered from 0.05 to 0.005. The old floor held the profile constant below 1 m, so
   wind at ground level stayed near 94% of the peak and dragged resting debris along with the
   tornado. Heights of 1 m and above (houses, EF readout) are unaffected.

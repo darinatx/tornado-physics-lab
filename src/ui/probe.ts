@@ -1,5 +1,6 @@
 /** Inspect probe: hover tooltip and pinned probes with history (Spec 07 v1.3). */
 import { PA_PER_PSF } from "../config/atmosphere";
+import { RECORD_WIND_MS } from "../config/wind";
 import { buildingReport } from "../core/damage/building";
 import type { BuildingReport } from "../core/damage/building";
 import type { Building } from "../core/damage/types";
@@ -31,6 +32,7 @@ function fmt(r: ProbeReading): string {
   const qStr = q >= 1000 ? `${(q / 1000).toFixed(2)} kPa` : `${Math.round(q)} Pa`;
   return `
     <div class="p-ef" style="color:${efColor(r)}">${ef} <span>${Math.round(r.mph)} mph · ${r.speed.toFixed(1)} m/s</span></div>
+    ${r.speed > RECORD_WIND_MS ? `<div class="p-row" style="color:#ffb84f">Hypothetical: beyond any measured tornado wind</div>` : ""}
     <div class="p-row"><b>From</b> ${dir} (${Math.round(r.fromDeg)}°)</div>
     <div class="p-row"><b>Around</b> ${Math.abs(r.tangential).toFixed(0)} m/s · <b>${inOut}</b> ${Math.abs(r.radial).toFixed(0)} m/s · <b>${upDown}</b> ${Math.abs(r.vertical).toFixed(0)} m/s</div>
     <div class="p-row"><b>Pressure drop</b> ${(r.pressureDeficit / 100).toFixed(1)} hPa</div>
@@ -47,7 +49,10 @@ function fmtBuilding(r: BuildingReport, hereMph: number): string {
     ? "No damage"
     : `${efText(r.estimate.ef)} · ${r.estimate.mph} mph <span class="p-dim">(DOD range ${efText(r.estimate.low)}–${efText(r.estimate.high)}; ${r.estimate.basis})</span>`;
   const fails = r.failures
-    .map((f) => `<li>${f.label} <span class="p-dim">at ${Math.round(f.mph)} mph · ${kpa(f.load)} &gt; ${kpa(f.capacity)}</span></li>`)
+    .map((f) => {
+      const n = f.total > 1 ? `: ${f.count} of ${f.total} ${f.unit}` : "";
+      return `<li>${f.label}${n} <span class="p-dim">first at ${Math.round(f.mph)} mph · ${kpa(f.load)} &gt; ${kpa(f.capacity)}</span></li>`;
+    })
     .join("");
   return `
     <div class="p-ef" style="color:${col}">${r.dod > 0 ? `DOD ${r.dod}` : "Intact"} <span>${r.description}</span></div>

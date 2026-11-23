@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.5) — Phases 1–3
+Status: Approved (v1.7) — Phases 1–4
 
 ## Purpose
 
@@ -32,9 +32,9 @@ Phase 1 scope:
 
   Hovering over a house switches the tooltip to a **building inspector**: construction class,
   current DOD with its description, estimated EF with the assigned speed, the DOD's range and
-  the reason for the rating (construction quality), peak wind it experienced, and
-  each failed part with the time, the load and the capacity it exceeded, so every failure is
-  explainable.
+  the reason for the rating (construction quality), peak wind it experienced, and each part
+  type that failed: how many of how many (e.g. "Roof covering: 6 of 16 sections"), with the
+  first failure's wind speed, load and capacity, so every failure is explainable.
 
   Clicking pins a probe (up to 4). Pinned probes stay fixed on the ground and show live
   readings plus a 60-second speed history, so you can watch a tornado pass over a spot.
@@ -89,10 +89,13 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
   range and default, and changing it changes the next `windAt` result.
 - **INST-02**: The EF readout matches `efRating(peak speed)` for the current state, and
   shows speed in both mph and m/s.
+- **INST-11**: The readout and probe flag any wind above 135 m/s (≈302 mph, the strongest ever
+  measured) as hypothetical, and only then.
 - **INST-10**: Debris stats match the debris pool: airborne and resting counts, maximum
   speed and maximum height over live pieces.
 - **INST-08**: The building report matches the building: DOD and description, EF estimate and
-  range from Spec 03, peak wind, and failures listed in time order with load > capacity.
+  range from Spec 03, peak wind, and failure groups in order of first failure, with correct
+  counts and the first failure's load > capacity.
 - **INST-09**: The neighborhood tally equals the count of houses at DOD ≥ 1 and DOD ≥ 7.
 - **INST-03**: The readout's vortex structure label matches the Spec 01 blend: one-cell when
   b < 0.1, two-cell when b > 0.9, transitioning otherwise, and it shows the swirl ratio.
@@ -114,6 +117,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.7: inspector groups component failures by part type (INST-08 updated).
+- v1.6: hypothetical-wind flag and a ~400 mph what-if preset (INST-11).
 - v1.5: debris stats in the readout (INST-10).
 - v1.4: building inspector and neighborhood tally (INST-08, INST-09).
 - v1.3: presets, plain-language panel with tooltips, inspect probe with pinning and history

@@ -4,7 +4,8 @@ import { condensationDeficit, funnelBottom, funnelRadius } from "../../src/core/
 import { EF_LOWER_MPH, efRating, mphToMs } from "../../src/core/wind/efScale";
 import { pressureDeficit } from "../../src/core/wind/pressure";
 import { HIDDEN_Y, TracerField } from "../../src/render/tracers";
-import { DOD_COLORS, houseVisual } from "../../src/render/houses";
+import { DOD_COLORS, HOUSE_COLORS, houseInstances, houseSlots } from "../../src/render/houses";
+import { rec as hrec } from "../houseHelpers";
 import { debrisInstance } from "../../src/render/debris";
 import { DEBRIS_KINDS } from "../../src/config/debris";
 import { DebrisField } from "../../src/core/debris/field";
@@ -102,51 +103,78 @@ describe("Spec 06 — rendering", () => {
   test("REND-09: debris instances use the piece's size, orientation, position and color", () => {
     const f = new DebrisField(1);
     const b = exactHouse();
-    f.spawnFrom(b, { part: "roofStructure", time: 0, load: 1, capacity: 0, mph: 0 });
-    f.spawnFrom(b, { part: "exteriorWalls", time: 0, load: 1, capacity: 0, mph: 0 });
+    f.spawnFrom(b, hrec("roofBay", 1, { x: 60, y: 0, z: 0 }, 2000));
+    f.spawnFrom(b, hrec("siding", 2));
+    f.spawnFrom(b, hrec("window", 0));
     for (const p of f.pieces) {
       const d = debrisInstance(p);
-      const [L, W, T] = DEBRIS_KINDS[p.kind].dims;
+      const [L, W, T] = p.def.dims;
       expect(d.scale).toEqual([L, T, W]);
       expect(d.quaternion).toEqual(p.q);
       expect(d.position).toEqual([p.pos.x, p.pos.y, p.pos.z]);
       const expected = p.kind === "shingle" ? b.roofColor : p.kind === "siding" ? b.wallColor : p.color;
       expect(d.color).toBe(expected);
     }
-    const resting = { ...f.pieces[0]!, pos: { x: 1, y: 0, z: 2 }, resting: true };
-    const [L, W, T] = DEBRIS_KINDS[resting.kind].dims;
+    const small = f.pieces.find((p) => p.kind === "siding" || p.kind === "glass")!;
+    const [L, W, T] = small.def.dims;
+    const resting = { ...small, pos: { x: 1, y: T / 2, z: 2 }, resting: true };
     expect(debrisInstance(resting).position).toEqual([1, T / 2, 2]);
     const big = debrisInstance(resting, 3);
     expect(big.scale).toEqual([3 * L, 3 * T, 3 * W]);
-    expect(big.position).toEqual([1, (3 * T) / 2, 2]);
+    expect(big.position[1]).toBeCloseTo((3 * T) / 2, 12);
+    // Full-size components are never enlarged.
+    const roof = f.pieces.find((p) => p.kind === "roofPanel")!;
+    expect(debrisInstance(roof, 3).scale).toEqual([roof.def.dims[0], roof.def.dims[2], roof.def.dims[1]]);
   });
 
-  test("REND-08: house visuals follow the damage state", () => {
-    const rec = (part: string) => ({ part: part as never, time: 0, load: 0, capacity: 0, mph: 0 });
+  test("REND-08: houses show exactly their standing components", () => {
     const intact = exactHouse();
-    expect(houseVisual(intact, true)).toMatchObject({ showRoof: true, wallFrac: 1, wallColor: intact.wallColor, roofColor: intact.roofColor });
+    const d0 = houseInstances(intact, true);
+    const slots = houseSlots(intact);
+    expect(d0.panels.length).toBe(intact.panels.length);
+    expect(d0.roof.length).toBe(intact.sections.length);
+    expect(d0.panes.length).toBe(intact.panes.length);
+    expect(d0.rafters.length).toBe(0);
+    expect(d0.sills.length).toBe(0);
+    expect(d0.bolts.length).toBe(0);
+    for (const k of Object.keys(d0) as (keyof typeof d0)[]) expect(d0[k].length).toBeLessThanOrEqual(slots[k]);
+    expect(d0.panels[0]!.color).toBe(intact.wallColor); // DOD 0: no tint
 
-    const stages: [string[], number, number, boolean][] = [
-      [["trim"], 1, 1, true],
-      [["trim", "roofStructure"], 6, 1, false],
-      [["roofStructure", "exteriorWalls"], 7, 0.55, false],
-      [["roofStructure", "exteriorWalls", "mostWalls"], 8, 0.3, false],
-      [["roofStructure", "exteriorWalls", "mostWalls", "allWalls"], 9, 0.1, false],
-      [["roofStructure", "exteriorWalls", "mostWalls", "allWalls", "slab"], 10, 0, false],
-    ];
-    for (const [parts, dod, frac, roof] of stages) {
-      const b = exactHouse();
-      for (const p of parts) (b.failed as Record<string, unknown>)[p] = rec(p);
-      b.dod = dod;
-      const v = houseVisual(b, true);
-      expect(v.wallFrac).toBe(frac);
-      expect(v.showRoof).toBe(roof);
-      expect(v.wallColor).toBe(DOD_COLORS[dod]);
-      expect(houseVisual(b, false).wallColor).toBe(b.wallColor);
-    }
-    const shifted = exactHouse();
-    shifted.shift = { x: 2, z: 0 };
-    expect(houseVisual(shifted, false)).toMatchObject({ offsetX: 2, offsetZ: 0 });
+    const b = exactHouse();
+    b.siding[0]!.failed = hrec("siding", 0);
+    b.sections[0]!.cover = hrec("roofCover", 0);
+    b.sections[1]!.deck = hrec("roofDeck", 1);
+    b.panels[2]!.failed = hrec("wallPanel", 2);
+    b.bays[b.nx - 1]!.failed = hrec("roofBay", b.nx - 1);
+    if (b.panes[0]) b.panes[0].failed = hrec("window", 0);
+    b.dod = 7;
+    const d = houseInstances(b, true);
+    expect(d.panels.length).toBe(b.panels.length - 1);
+    expect(d.sills.length).toBe(1);
+    // Stripped siding and bare plywood show through the damage tint; intact surfaces are tinted.
+    expect(d.panels.some((p) => p.color === HOUSE_COLORS.sheathing)).toBe(true);
+    expect(d.panels.some((p) => p.color === DOD_COLORS[7])).toBe(true);
+    expect(d.roof.some((r) => r.color === HOUSE_COLORS.plywood)).toBe(true);
+    const goneSections = b.sections.filter((s) => s.deck || b.bays[s.col]!.failed).length;
+    expect(d.roof.length).toBe(b.sections.length - goneSections);
+    expect(d.rafters.length).toBe(2); // deck gone on one slope of a standing bay
+    if (b.panes[0] && !b.panels[b.panes[0].panel]!.failed) expect(d.panes.some((p) => p.color === HOUSE_COLORS.brokenGlass)).toBe(true);
+    expect(houseInstances(b, false).panels.some((p) => p.color === b.wallColor)).toBe(true);
+
+    // Swept: bolts on the slab, no sills; shifted houses are offset but the slab is not.
+    const s = exactHouse();
+    s.panels.forEach((p, i) => (p.failed = hrec("wallPanel", i)));
+    s.partitions.forEach((p, i) => (p.failed = hrec("partition", i)));
+    s.coreRoom.failed = hrec("coreRoom");
+    s.sweep.failed = hrec("sweep");
+    const ds = houseInstances(s, true);
+    expect(ds.bolts.length).toBe(8);
+    expect(ds.sills.length).toBe(0);
+    const sh = exactHouse();
+    sh.shift = { x: 2, z: 0 };
+    const dsh = houseInstances(sh, false);
+    expect(dsh.slab[0]!.p[0]).toBeCloseTo(sh.x, 9);
+    expect(dsh.panels[0]!.p[0] - houseInstances(exactHouse(), false).panels[0]!.p[0]).toBeCloseTo(2, 9);
   });
 
   test("REND-04: rendering computations never mutate sim state", () => {

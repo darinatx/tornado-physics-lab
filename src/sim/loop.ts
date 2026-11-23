@@ -30,7 +30,10 @@ export interface Sim {
   /** The neighborhood and its damage state (read-only for callers). */
   readonly world: Pick<World, "buildings" | "buildingAt">;
   /** Debris pool (read-only for callers). */
-  readonly debris: Pick<DebrisField, "pieces" | "stats" | "cap" | "settled" | "settledDropped">;
+  readonly debris: Pick<
+    DebrisField,
+    "pieces" | "stats" | "cap" | "settled" | "settledDropped" | "settledVersion" | "massSpawned" | "massLofted" | "massSkipped" | "massSwept" | "massLeftMap" | "massBySource"
+  >;
 }
 
 const DEG = Math.PI / 180;

@@ -1,15 +1,17 @@
 /**
- * Debris pool (Spec 04): spawning from failures, stepping, recycling, stats.
+ * Debris pool (Spec 04 v1.4): component-shaped spawning, rubble, stepping, freezing on
+ * overflow, permanent debris field, mass bookkeeping.
  */
-import { DEBRIS, DEBRIS_COLORS, SPAWN_TABLE } from "../../config/debris";
-import type { DebrisKind } from "../../config/debris";
-import type { Part } from "../../config/buildings";
+import { AREAL_MASS, LAYOUT } from "../../config/buildings";
+import { DEBRIS, DEBRIS_COLORS, DEBRIS_KINDS, SPAWN_TABLE, TURBULENCE, sheet } from "../../config/debris";
+import type { DebrisKind, DebrisKindDef } from "../../config/debris";
 import { createRng } from "../math/rng";
-import { faceNormal } from "../damage/loads";
+import type { Vec3 } from "../math/vec";
+import { faceTangent, LOCAL_NORMALS, panelCenter, sectionGeometry, toWorld } from "../damage/layout";
 import type { Building, FailureRecord } from "../damage/types";
 import type { TerrainClass, TornadoState } from "../wind/types";
 import { windAt } from "../wind/windField";
-import { isSliding, snag, stepPiece, wakeIfForced } from "./piece";
+import { isSliding, restingForces, snag, stepPiece, wakeIfForced } from "./piece";
 import type { Piece } from "./piece";
 
 export interface DebrisStats {
@@ -26,29 +28,50 @@ export interface DebrisStats {
   maxHeight: number;
 }
 
-/** Approximate count of real objects a failed part releases, per kind. */
-function realCount(b: Building, part: Part, kind: DebrisKind): number {
-  const roofArea = b.width * b.depth * 1.15;
-  const perim = 2 * (b.width + b.depth);
-  const wallArea = perim * b.wallHeight;
-  switch (part) {
-    case "trim": return 20;
-    case "roofCover": return (0.2 * roofArea) / 0.33;
-    case "windows": return 30;
-    case "garage": return 4;
-    case "roofDeck": return (0.2 * roofArea) / 2.88;
-    case "roofStructure":
-      return kind === "rafter" ? (2 * b.width) / 0.6 : kind === "osb" ? (0.8 * roofArea) / 2.88 : (0.8 * roofArea) / 0.33;
-    case "exteriorWalls":
-      return kind === "stud" ? perim / 0.4 : kind === "siding" ? (0.5 * wallArea) / 0.95 : (0.5 * wallArea) / 2.88;
-    case "mostWalls":
-    case "allWalls": return kind === "stud" ? 15 : 40;
-    case "slab": return kind === "stud" ? 10 : 60;
+type Q = [number, number, number, number];
+
+/** Quaternion from an orthonormal basis: the box's local X, Y, Z axes in world space. */
+export function quatFromBasis(x: Vec3, y: Vec3, z: Vec3): Q {
+  const m00 = x.x, m10 = x.y, m20 = x.z;
+  const m01 = y.x, m11 = y.y, m21 = y.z;
+  const m02 = z.x, m12 = z.y, m22 = z.z;
+  const tr = m00 + m11 + m22;
+  if (tr > 0) {
+    const S = Math.sqrt(tr + 1) * 2;
+    return [(m21 - m12) / S, (m02 - m20) / S, (m10 - m01) / S, 0.25 * S];
+  }
+  if (m00 > m11 && m00 > m22) {
+    const S = Math.sqrt(1 + m00 - m11 - m22) * 2;
+    return [0.25 * S, (m01 + m10) / S, (m02 + m20) / S, (m21 - m12) / S];
+  }
+  if (m11 > m22) {
+    const S = Math.sqrt(1 + m11 - m00 - m22) * 2;
+    return [(m01 + m10) / S, 0.25 * S, (m12 + m21) / S, (m02 - m20) / S];
+  }
+  const S = Math.sqrt(1 + m22 - m00 - m11) * 2;
+  return [(m02 + m20) / S, (m12 + m21) / S, 0.25 * S, (m10 - m01) / S];
+}
+
+/** House-local horizontal direction → world. */
+function dirWorld(b: Building, lx: number, ly: number, lz: number): Vec3 {
+  const c = Math.cos(b.yaw);
+  const s = Math.sin(b.yaw);
+  return { x: lx * c + lz * s, y: ly, z: -lx * s + lz * c };
+}
+
+const cross = (a: Vec3, b: Vec3): Vec3 => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+
+/** Approximate count of real objects a failure releases per representative piece kind. */
+function realCount(b: Building, rec: FailureRecord, kind: DebrisKind): number {
+  switch (rec.part) {
+    case "siding": return (b.panels[rec.index]!.len * b.wallHeight) / 0.95;
+    case "roofCover": return sectionGeometry(b, b.nx, b.sections[rec.index]!).area / 0.33;
+    case "window": return 30;
+    case "partition": return kind === "stud" ? 10 : 25;
+    case "sweep": return kind === "stud" ? 10 : 60;
     default: return 1;
   }
 }
-
-const ROOF_PARTS = new Set<Part>(["roofCover", "roofDeck", "roofStructure"]);
 
 export class DebrisField {
   readonly pieces: Piece[] = [];
@@ -57,8 +80,18 @@ export class DebrisField {
   readonly settled: Piece[] = [];
   /** Pieces dropped from the front of `settled` when it overflows. */
   settledDropped = 0;
+  /** Bumped when settled pieces are hidden (swept rubble), so renderers rewrite. */
+  settledVersion = 0;
+  /** Mass bookkeeping (kg, counting `represents`). DEB-16. */
+  massSpawned = 0;
+  massLofted = 0;
+  massSkipped = 0;
+  massSwept = 0;
+  massLeftMap = 0;
+  readonly massBySource = new Map<number, number>();
   private nextId = 0;
   private readonly rng: () => number;
+  private readonly rubbleOf = new Map<number, Piece[]>();
 
   constructor(
     seed: number,
@@ -68,64 +101,210 @@ export class DebrisField {
     this.rng = createRng(seed ^ 0x5bd1e995);
   }
 
-  /** Release the pieces for one failure record (Spec 04 spawn table). */
+  private makePiece(b: Building, kind: DebrisKind, def: DebrisKindDef, pos: Vec3, q: Q | null, color: number, represents: number, time: number): Piece {
+    const rng = this.rng;
+    let quat = q;
+    if (!quat) {
+      const u1 = rng();
+      const u2 = rng();
+      const u3 = rng();
+      const a = Math.sqrt(1 - u1);
+      const c = Math.sqrt(u1);
+      quat = [a * Math.sin(2 * Math.PI * u2), a * Math.cos(2 * Math.PI * u2), c * Math.sin(2 * Math.PI * u3), c * Math.cos(2 * Math.PI * u3)];
+    }
+    return {
+      id: this.nextId++,
+      kind,
+      def,
+      pos,
+      vel: { x: 0, y: 0, z: 0 },
+      q: quat,
+      spin: rng() < 0.5 ? 1 : -1,
+      resting: false,
+      snagged: false,
+      snagDir: null,
+      bornAt: time,
+      restedAt: Infinity,
+      represents,
+      color,
+      sourceId: b.id,
+      maxWindMet: 0,
+      liftOn: true,
+      liftRoll: (rng() * 2 - 1) * TURBULENCE.maxLiftRoll,
+      gust: { x: 0, y: 0, z: 0 },
+    };
+  }
+
+  /** Release the pieces for one component failure (Spec 04 v1.4). */
   spawnFrom(b: Building, rec: FailureRecord, time = rec.time): void {
     const rng = this.rng;
-    const ox = b.x + (b.shift?.x ?? 0);
-    const oz = b.z + (b.shift?.z ?? 0);
-    const c = Math.cos(b.yaw);
-    const s = Math.sin(b.yaw);
-    const toWorld = (lx: number, lz: number) => ({ x: ox + lx * c + lz * s, z: oz - lx * s + lz * c });
+    const out: { p: Piece; rubble?: () => void; launched?: boolean }[] = [];
+    const H = b.wallHeight;
+    const up: Vec3 = { x: 0, y: 1, z: 0 };
 
+    // Representative pieces (shingles, siding, glass, studs, chunks).
     for (const [kind, count] of SPAWN_TABLE[rec.part]) {
-      const represents = Math.max(realCount(b, rec.part, kind) / count, 1);
+      const represents = Math.max(realCount(b, rec, kind) / count, 1);
       for (let i = 0; i < count; i++) {
-        let lx: number;
-        let lz: number;
-        let y: number;
-        if (rec.part === "windows" || rec.part === "garage" || rec.part === "trim") {
-          // On a wall face: the window's face, the garage's front face, or any face for siding.
-          const face = rec.part === "windows" ? rec.face ?? 0 : rec.part === "garage" ? b.frontFace : Math.floor(rng() * 4);
-          const n = faceNormal(0, face); // local normal
-          const along = rng() - 0.5;
-          lx = n.x !== 0 ? (n.x * b.width) / 2 + n.x * 0.1 : along * b.width;
-          lz = n.z !== 0 ? (n.z * b.depth) / 2 + n.z * 0.1 : along * b.depth;
-          y = rec.part === "windows" ? 1.0 + rng() * 1.2 : 0.3 + rng() * (b.wallHeight - 0.3);
+        let l: Vec3;
+        if (rec.part === "siding") {
+          // Strips tear off the face of the panel that lost its siding.
+          const panel = b.panels[rec.index]!;
+          const n = LOCAL_NORMALS[panel.face]!;
+          const c = panelCenter(b, { ...panel, u: panel.u + (rng() - 0.5) * panel.len * 0.8 }, 0.3 + rng() * (H - 0.6));
+          l = { x: c.x + n.x * 0.12, y: c.y, z: c.z + n.z * 0.12 };
+        } else if (rec.part === "roofCover") {
+          const g = sectionGeometry(b, b.nx, b.sections[rec.index]!);
+          l = { x: g.center.x + (rng() - 0.5) * g.width * 0.8, y: g.center.y, z: g.center.z };
+        } else if (rec.part === "window") {
+          const panel = b.panels[b.panes[rec.index]!.panel]!;
+          const n = LOCAL_NORMALS[panel.face]!;
+          const c = panelCenter(b, panel, LAYOUT.paneSill + LAYOUT.paneSize / 2);
+          l = { x: c.x + n.x * 0.1, y: c.y + (rng() - 0.5), z: c.z + n.z * 0.1 };
         } else {
-          lx = (rng() - 0.5) * b.width;
-          lz = (rng() - 0.5) * b.depth;
-          y = ROOF_PARTS.has(rec.part)
-            ? b.wallHeight + 0.3 + rng() * b.roofRise * 0.8
-            : 0.3 + rng() * (b.wallHeight - 0.3);
+          l = { x: (rng() - 0.5) * b.width, y: 0.3 + rng() * (H - 0.3) * (rec.part === "sweep" ? 0.2 : 1), z: (rng() - 0.5) * b.depth };
         }
-        const p = toWorld(lx, lz);
-        // Random initial orientation.
-        const u1 = rng();
-        const u2 = rng();
-        const u3 = rng();
-        const sq1 = Math.sqrt(1 - u1);
-        const sq2 = Math.sqrt(u1);
-        const piece: Piece = {
-          id: this.nextId++,
-          kind,
-          pos: { x: p.x, y, z: p.z },
-          vel: { x: 0, y: 0, z: 0 },
-          q: [sq1 * Math.sin(2 * Math.PI * u2), sq1 * Math.cos(2 * Math.PI * u2), sq2 * Math.sin(2 * Math.PI * u3), sq2 * Math.cos(2 * Math.PI * u3)],
-          spin: rng() < 0.5 ? 1 : -1,
-          resting: false,
-          snagged: false,
-          snagDir: null,
-          bornAt: time,
-          restedAt: Infinity,
-          represents,
-          color: kind === "shingle" ? b.roofColor : kind === "siding" ? b.wallColor : DEBRIS_COLORS[kind] ?? 0x999999,
-          sourceId: b.id,
-          maxWindMet: 0,
-          liftOn: true,
-        };
-        this.add(piece);
+        const pos = toWorld(b, l.x, l.y, l.z);
+        const color = kind === "shingle" ? b.roofColor : kind === "siding" ? b.wallColor : DEBRIS_COLORS[kind] ?? 0x999999;
+        out.push({ p: this.makePiece(b, kind, DEBRIS_KINDS[kind], pos, null, color, represents, time) });
       }
     }
+
+    // Component-shaped pieces.
+    if (rec.part === "wallPanel") {
+      const panel = b.panels[rec.index]!;
+      const n = LOCAL_NORMALS[panel.face]!;
+      const t = faceTangent(panel.face);
+      const c = panelCenter(b, panel, H / 2);
+      const xw = dirWorld(b, t.x, 0, t.z);
+      const nw = dirWorld(b, n.x, 0, n.z);
+      const mass = AREAL_MASS.wallPanel * panel.len * H;
+      const def = sheet("Wall panel", panel.len, H, 0.15, mass);
+      const p = this.makePiece(b, "wallPanel", def, toWorld(b, c.x, c.y, c.z), quatFromBasis(xw, nw, up), b.wallColor, 1, time);
+      // Pushed in → topples inward; pulled out → outward.
+      const fall = rec.sign >= 0 ? -1 : 1;
+      p.vel = { x: fall * 1.5 * nw.x, y: 0, z: fall * 1.5 * nw.z };
+      out.push({
+        p,
+        rubble: () => {
+          // Lies flat beside its base, in the direction it fell.
+          p.pos = toWorld(b, c.x + fall * n.x * (H / 2), 0, c.z + fall * n.z * (H / 2));
+          p.q = quatFromBasis(xw, up, cross(xw, up));
+        },
+      });
+    } else if (rec.part === "roofDeck" || rec.part === "roofBay") {
+      const secs =
+        rec.part === "roofDeck"
+          ? [b.sections[rec.index]!]
+          : b.sections.filter((s) => s.col === rec.index && !s.deck);
+      // A bay releases one panel per slope (both rows together); a deck failure one section.
+      const groups = rec.part === "roofDeck" ? [secs] : [-1, 1].map((sl) => secs.filter((s) => s.slope === sl)).filter((g) => g.length);
+      for (const g of groups) {
+        const geos = g.map((s) => sectionGeometry(b, b.nx, s));
+        const len = geos.reduce((a, x) => a + x.length, 0);
+        const cx = geos.reduce((a, x) => a + x.center.x, 0) / geos.length;
+        const cy = geos.reduce((a, x) => a + x.center.y, 0) / geos.length;
+        const cz = geos.reduce((a, x) => a + x.center.z, 0) / geos.length;
+        const width = geos[0]!.width;
+        const pitch = geos[0]!.pitch;
+        const covered = g.some((s) => !s.cover);
+        const areal = rec.part === "roofBay" ? AREAL_MASS.roofPanel : AREAL_MASS.deckSection;
+        const def = sheet(rec.part === "roofBay" ? "Roof section" : "Roof deck section", width, len, rec.part === "roofBay" ? 0.25 : 0.05, areal * width * len);
+        const xw = dirWorld(b, 1, 0, 0);
+        // Down-slope direction along the slope: local (0, −sin, ±cos) rotated by yaw.
+        const slopeDir = dirWorld(b, 0, -Math.sin(Math.abs(pitch)), Math.sign(pitch) * Math.cos(pitch));
+        const normal = cross(slopeDir, xw);
+        const yAxis = normal.y >= 0 ? normal : { x: -normal.x, y: -normal.y, z: -normal.z };
+        const zAxis = cross(xw, yAxis);
+        const p = this.makePiece(
+          b,
+          rec.part === "roofBay" ? "roofPanel" : "deckSheet",
+          def,
+          toWorld(b, cx, cy, cz),
+          quatFromBasis(xw, yAxis, zAxis),
+          covered ? b.roofColor : DEBRIS_COLORS.osb!,
+          1,
+          time,
+        );
+        // Lifted off (sign ≥ 0): uplift beat its connections and weight, so it leaves the house
+        // moving. Net uplift force over its area accelerates it through ~0.5 m of lift; it also
+        // picks up about a third of the wind's horizontal speed as it tears free.
+        // Collapsed (sign < 0): a bearing wall fell, so it drops onto the slab.
+        const lifted = rec.part === "roofDeck" || rec.sign >= 0;
+        if (lifted) {
+          const accel = (Math.max(rec.load, 0) * width * len) / def.mass;
+          p.vel = { x: 0.3 * rec.wind.x, y: Math.sqrt(2 * accel * 0.5), z: 0.3 * rec.wind.z };
+        }
+        out.push({
+          p,
+          launched: lifted,
+          rubble: () => {
+            p.pos = toWorld(b, cx, 0.3, cz * 0.6);
+            p.q = quatFromBasis(xw, up, cross(xw, up));
+          },
+        });
+      }
+      if (rec.part === "roofBay" && secs.length === 0) {
+        // Deck already gone: bare rafters.
+        for (const sl of [-1, 1])
+          for (let i = 0; i < 2; i++) {
+            const lx = -b.width / 2 + (rec.index + 0.3 + 0.4 * i) * (b.width / b.nx);
+            const pos = toWorld(b, lx, b.wallHeight + b.roofRise / 2, (sl * b.depth) / 4);
+            out.push({ p: this.makePiece(b, "rafter", DEBRIS_KINDS.rafter, pos, null, DEBRIS_COLORS.rafter!, 1, time) });
+          }
+      }
+    } else if (rec.part === "garage" && b.garage) {
+      const panel = b.panels[b.garage.panel]!;
+      const n = LOCAL_NORMALS[panel.face]!;
+      const t = faceTangent(panel.face);
+      const c = panelCenter(b, panel, LAYOUT.garageHeight / 2);
+      const xw = dirWorld(b, t.x, 0, t.z);
+      const nw = dirWorld(b, n.x, 0, n.z);
+      const def = sheet("Garage door", LAYOUT.garageWidth, LAYOUT.garageHeight, 0.05, AREAL_MASS.garageDoor * LAYOUT.garageWidth * LAYOUT.garageHeight);
+      const p = this.makePiece(b, "garageDoor", def, toWorld(b, c.x + n.x * 0.1, c.y, c.z + n.z * 0.1), quatFromBasis(xw, nw, up), DEBRIS_COLORS.garagePanel!, 1, time);
+      out.push({ p, rubble: () => {
+        p.pos = toWorld(b, c.x - n.x * 1.5, 0, c.z - n.z * 1.5);
+        p.q = quatFromBasis(xw, up, cross(xw, up));
+      } });
+    } else if (rec.part === "sweep") {
+      // The slab is swept: rubble lying on it goes with it.
+      for (const r of this.rubbleOf.get(b.id) ?? []) {
+        if (r.hidden) continue;
+        r.hidden = true;
+        this.massSwept += r.def.mass * r.represents;
+      }
+      this.settledVersion++;
+    }
+
+    // Rubble or flight: can the wind at failure move it at all? (DEB-15)
+    for (const { p, rubble, launched } of out) {
+      const m = p.def.mass * p.represents;
+      this.massSpawned += m;
+      this.massBySource.set(b.id, (this.massBySource.get(b.id) ?? 0) + m);
+      // Roof pieces that failed in uplift always leave; others drop as rubble if the wind
+      // can't move them, or if the active pool is completely full of flying pieces.
+      const poolFull = this.pieces.length >= this.cap && !this.pieces.some((q) => q.resting);
+      if (rubble && ((!launched && !this.canMove(p, rec.wind)) || poolFull)) {
+        rubble();
+        p.pos.y = p.def.dims[2] / 2; // lying flat on the ground
+        p.grounded = true;
+        p.vel = { x: 0, y: 0, z: 0 };
+        p.resting = true;
+        p.restedAt = time;
+        this.settle(p);
+        const list = this.rubbleOf.get(b.id);
+        if (list) list.push(p);
+        else this.rubbleOf.set(b.id, [p]);
+        continue;
+      }
+      this.add(p);
+    }
+  }
+
+  /** Whether wind w can lift a piece or push it past its holding friction. */
+  canMove(p: Piece, w: Vec3): boolean {
+    const f = restingForces(p, w);
+    return f.up > f.weight || f.drag > DEBRIS.holdFriction * Math.max(f.weight - f.up, 0);
   }
 
   private add(p: Piece): void {
@@ -133,7 +312,7 @@ export class DebrisField {
       this.pieces.push(p);
       return;
     }
-    // Recycle the oldest resting piece; if everything is airborne, skip.
+    // Freeze the oldest resting piece into the debris field (never erase it).
     let oldest = -1;
     let t = Infinity;
     this.pieces.forEach((q, i) => {
@@ -144,8 +323,10 @@ export class DebrisField {
     });
     if (oldest < 0) {
       this.stats.skipped++;
+      this.massSkipped += p.def.mass * p.represents;
       return;
     }
+    this.settle(this.pieces[oldest]!);
     this.pieces[oldest] = p;
   }
 
@@ -180,7 +361,12 @@ export class DebrisField {
           continue;
         }
       }
-      stepPiece(p, windAt(p.pos, s, terrain), dt);
+      const w = windAt(p.pos, s, terrain);
+      this.updateGust(p, w, dt, terrain);
+      w.x += p.gust.x;
+      w.y += p.gust.y;
+      w.z += p.gust.z;
+      stepPiece(p, w, dt);
       if (isSliding(p)) {
         // Chance to catch on an obstacle grows with distance slid (mean free path by terrain).
         const d = Math.hypot(p.vel.x, p.vel.z) * dt;
@@ -188,7 +374,12 @@ export class DebrisField {
       }
       const lofted = p.pos.y > cloudBase;
       if (lofted || Math.abs(p.pos.x) > DEBRIS.mapHalf || Math.abs(p.pos.z) > DEBRIS.mapHalf) {
-        if (lofted) this.stats.lofted++;
+        if (lofted) {
+          this.stats.lofted++;
+          this.massLofted += p.def.mass * p.represents;
+        } else {
+          this.massLeftMap += p.def.mass * p.represents;
+        }
         this.pieces[i] = null as unknown as Piece;
         removed = true;
         continue;
@@ -210,7 +401,33 @@ export class DebrisField {
     Object.assign(this.stats, { airborne, resting, maxSpeed, maxHeight, settled: this.settled.length });
   }
 
+  /** Exact discrete Ornstein–Uhlenbeck update of a piece's gust, scaled to the local wind. */
+  private updateGust(p: Piece, w: { x: number; y: number; z: number }, dt: number, terrain: TerrainClass): void {
+    const sigma = TURBULENCE.intensity[terrain] * Math.hypot(w.x, w.z);
+    const a = Math.exp(-dt / TURBULENCE.timeScale);
+    const b = Math.sqrt(1 - a * a) * sigma;
+    p.gust.x = a * p.gust.x + b * this.normal();
+    p.gust.y = a * p.gust.y + b * TURBULENCE.verticalRatio * this.normal();
+    p.gust.z = a * p.gust.z + b * this.normal();
+  }
+
+  private spare: number | null = null;
+  private normal(): number {
+    if (this.spare !== null) {
+      const v = this.spare;
+      this.spare = null;
+      return v;
+    }
+    const u1 = Math.max(this.rng(), 1e-12);
+    const u2 = this.rng();
+    const r = Math.sqrt(-2 * Math.log(u1));
+    this.spare = r * Math.sin(2 * Math.PI * u2);
+    return r * Math.cos(2 * Math.PI * u2);
+  }
+
   private settle(p: Piece): void {
+    p.resting = true;
+    p.vel.x = p.vel.y = p.vel.z = 0;
     this.settled.push(p);
     if (this.settled.length > this.settledCap) {
       this.settled.shift();

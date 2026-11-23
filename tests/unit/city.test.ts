@@ -6,8 +6,8 @@ const hood = generateNeighborhood(1);
 describe("Spec 05 — neighborhood", () => {
   test("CITY-01: deterministic per seed", () => {
     const again = generateNeighborhood(1);
-    expect(again.buildings.map((b) => [b.x, b.z, b.yaw, b.cls, b.capacity])).toEqual(
-      hood.buildings.map((b) => [b.x, b.z, b.yaw, b.cls, b.capacity]),
+    expect(again.buildings.map((b) => [b.x, b.z, b.yaw, b.cls, b.panels.map((p) => p.cap)])).toEqual(
+      hood.buildings.map((b) => [b.x, b.z, b.yaw, b.cls, b.panels.map((p) => p.cap)]),
     );
     const other = generateNeighborhood(2);
     expect(other.buildings.map((b) => b.cls)).not.toEqual(hood.buildings.map((b) => b.cls));

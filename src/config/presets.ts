@@ -58,4 +58,14 @@ export const PRESETS: Preset[] = [
   },
 ];
 
+/** Beyond anything observed: for exploring "what if" (flagged as hypothetical in the UI). */
+PRESETS.push({
+  id: "hypothetical-400",
+  name: "Hypothetical · ~400 mph",
+  ef: 5,
+  description:
+    "Beyond any tornado ever measured (record ≈ 302 mph). A what-if scenario: near-ground winds approach 400 mph.",
+  params: { vPeak: 128, rMax: 400, translationSpeed: 15, updraftMax: 45, cloudBase: 400, tUp: 60, tMature: 240, tRope: 90 },
+});
+
 export const DEFAULT_PRESET_ID = "ef4-wedge";

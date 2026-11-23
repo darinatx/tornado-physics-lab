@@ -1,148 +1,204 @@
 # Spec 03 — Damage Model
 
-Status: Approved (v1.2) — Phase 2 scope: one- and two-family houses (EF Damage Indicator 2)
+Status: Approved (v2.0) — component houses (EF Damage Indicator 2)
 
 ## Purpose
 
-Decide which parts of a building fail, in what order, and what damage rating (Degree of
-Damage, DOD) and EF estimate that adds up to, the way a National Weather Service survey would.
+Decide which individual parts of a house fail, in what order, and what that adds up to as a
+survey-style Degree of Damage (DOD) and EF estimate.
 
 ## Model
 
 ### Damage indicator and degrees of damage
 
-Houses use EF-scale Damage Indicator 2 (one- or two-family residences). Each DOD has an
-expected wind speed and a lower–upper bound (mph, 3-second gust):
+Houses use EF-scale Damage Indicator 2 (one- or two-family residences). Speeds in mph,
+3-second gust:
 
-| DOD | Damage | Lower | Expected | Upper | Part that fails |
-|---|---|---|---|---|---|
-| 1 | Threshold of visible damage | 53 | 65 | 80 | siding and trim |
-| 2 | Loss of roof covering (< 20%), gutters, siding | 63 | 79 | 97 | roof covering |
-| 3 | Broken glass in doors and windows | 79 | 96 | 114 | windows |
-| 4 | Uplift of roof deck, > 20% covering lost; garage door collapse | 81 | 97 | 116 | roof deck or garage door |
-| 5 | Entire house shifts off foundation | 103 | 121 | 141 | foundation anchorage |
-| 6 | Large sections of roof structure removed | 104 | 122 | 142 | roof structure |
-| 7 | Top-floor exterior walls collapsed | 113 | 132 | 153 | exterior walls |
-| 8 | Most walls collapsed except small interior rooms | 127 | 152 | 178 | most walls |
-| 9 | All walls collapsed | 142 | 170 | 198 | all walls |
-| 10 | Slab swept clean | 165 | 200 | 220 | remaining structure |
+| DOD | Damage | Lower | Expected | Upper |
+|---|---|---|---|---|
+| 1 | Threshold of visible damage | 53 | 65 | 80 |
+| 2 | Loss of roof covering (< 20%), gutters, siding | 63 | 79 | 97 |
+| 3 | Broken glass in doors and windows | 79 | 96 | 114 |
+| 4 | Uplift of roof deck, > 20% covering lost; garage door collapse | 81 | 97 | 116 |
+| 5 | Entire house shifts off foundation | 103 | 121 | 141 |
+| 6 | Large sections of roof structure removed | 104 | 122 | 142 |
+| 7 | Top-floor exterior walls collapsed | 113 | 132 | 153 |
+| 8 | Most walls collapsed except small interior rooms | 127 | 152 | 178 |
+| 9 | All walls collapsed | 142 | 170 | 198 |
+| 10 | Slab swept clean | 165 | 200 | 220 |
 
 *Values transcribed from the EF scale's DI 2 table (WSEC 2006); to be checked against the
 source document.*
 
-### Parts, capacities and fragility
+### House layout (components)
 
-Each house has the parts in the table. Each part has a **capacity** (Pa of net load from
-Spec 02) and fails, permanently, the first time its load exceeds its capacity. Capacities are
-random per house so identical houses don't all fail at once (fragility):
+A one-story gable house, ridge along its width. With n_x = max(2, round(W/4)) columns along
+the width and n_e = max(2, round(D/4)) along the depth:
+
+| Component | Count | Notes |
+|---|---|---|
+| Wall panels | 2·n_x + 2·n_e | about 4 m wide each, full wall height |
+| Window panes | one in ~60% of non-garage panels | 1.2 × 1.2 m |
+| Garage door | 0 or 1 | front wall, end panel |
+| Siding | 1 per wall panel | a layer on the panel; stripped panels show bare sheathing |
+| Roof sections | 4·n_x | per column: front and back slope × eave and ridge row; each has a covering layer and a deck layer |
+| Roof bays (rafters) | n_x | each carries the 4 sections of its column |
+| Interior partitions | 2 | |
+| Interior core room | 1 | a closet or bathroom: short spans, many intersecting walls; the last thing standing |
+| Anchorage, slab | 1 each | |
+
+Roof sections in the end columns *and* the eave row are **corner** sections (highest
+suction); the rest are **field** sections.
+
+### Capacities and fragility
+
+Each component has a capacity (Pa of net load from Spec 02) and fails permanently the first
+time its load exceeds it:
 
 ```
-capacity = base × class factor × house quality × part scatter
-house quality ~ lognormal(median 1, β = 0.12)    shared by all parts of a house
-part scatter ~ lognormal(median 1, β = 0.18)     independent per part
+capacity = base(part) × class factor × house quality × component scatter
+house quality ~ lognormal(1, β = 0.12), shared by the house
+component scatter ~ lognormal(1, β = 0.18), independent per component
+                   (β = 0.35 for roof covering: nailing, sealing and age vary a lot)
 ```
 
-The base capacities are **calibrated against simulated tornado passes**, because that's what
-the EF scale's expected speeds describe: the wind that caused the damage. Standard houses are
-passed near the core of strong translating tornadoes (V_max 55–80 m/s, R_max 150–300 m,
-10–18 m/s forward speed, random headings and offsets within ±0.8·R_max). For each DOD, the
-median peak wind a house had felt when it first reached that DOD must match the table's
-expected value. Swinging wind direction, internal pressure and venting all act during
-calibration, so they shape the *spread* and *order* of damage without being double-counted.
-`scripts/calibrate-houses.ts` reproduces the values.
+### Dependencies and cascades
 
-A first calibration in steady wind turned out biased: in steady wind, side-wall windows break
-first and *lower* the internal pressure, which shields the roof. In a real tornado the wind
-direction swings and the pressure drops quickly, so that shield is unreliable, and roofs
-failed about 15 mph too early. Calibrating in tornado passes removed the bias.
+- A roof section's covering and deck only carry load while its bay stands; a bay failure
+  takes its four sections with it.
+- **Bearing walls:** each roof bay's rafters bear on the top plate of the front and back walls,
+  and the two end bays also on their gable end walls. The top plate can bridge one missing
+  panel but not two in a row. So a bay collapses when the panel under it and an adjacent panel
+  on the same wall are both down, or (end bays) when half its gable end wall is down. A
+  collapsed bay drops onto the slab rather than being lifted away.
+- **Progressive roof failure:** a bay's capacity drops 15% for each failed neighboring bay,
+  since the load it shared now concentrates on it.
+- **Bracing:** a wall panel is 1.6× stronger while the roof bay above it stands (eave walls
+  use their own column's bay; end walls use the end bay).
+- **Progressive wall failure:** a panel's capacity drops 20% for each fallen neighbor on the
+  same wall, since walls lean on each other.
+- **Corner bracing:** where two walls meet, each braces the other: a corner panel is 1.4×
+  stronger while the perpendicular wall's corner panel stands. Corners are typically the last
+  walls standing in real EF3–EF4 damage.
+- **Open house:** once half the wall panels or the whole roof are gone, the remaining panels
+  carry wind on both faces like a free-standing wall (net C_p 1.3, Spec 02).
+- Interior partitions load up only once at least half the exterior panels are down; the
+  interior core room only once three quarters are down.
+- The anchorage can fail (the house shifts) while at least half the wall panels stand.
+- The slab is swept once every wall panel, partition and the core room are down and the lateral load exceeds
+  the sweep capacity.
+- Every failed opening (window, garage door, deck section, wall panel, bay) changes the
+  internal pressure (Spec 02) immediately, within the same evaluation.
+- **Structural support takes time:** bracing, neighbor support and the open-house condition
+  are judged from the state at the start of each 30 Hz evaluation, so a collapse spreads over
+  successive moments instead of all at once.
 
-### Order and dependencies
+### Degree of damage from what's missing
 
-- Exterior walls are 1.6× stronger while the roof structure is attached (the roof braces them).
-- Most walls can fail only after the exterior walls; all walls only after most walls; the slab
-  is swept clean only after all walls.
-- The roof covering, deck and structure stop carrying load once the roof structure is gone.
+A house's DOD is the highest of these that holds, judged the way a surveyor would:
+
+| DOD | Condition |
+|---|---|
+| 1 | any panel's siding lost |
+| 2 | any roof covering section lost |
+| 3 | any window pane broken |
+| 4 | ≥ 20% of covering sections lost, any deck section lost, or the garage door failed |
+| 5 | the house has shifted off its foundation |
+| 6 | ≥ 1/3 of roof bays removed |
+| 7 | ≥ 50% of exterior wall panels down |
+| 8 | ≥ 75% of exterior panels and both partitions down (the core room may stand) |
+| 9 | all exterior panels, both partitions and the core room down |
+| 10 | slab swept clean |
+
+### Calibration
+
+Base capacities are **calibrated against simulated tornado passes** (standard houses passed
+near the core of strong translating tornadoes: V_max 55–80 m/s, R_max 150–300 m, 10–18 m/s
+forward speed, random headings, offsets within ±0.8·R_max). For each DOD, the median peak wind
+a house had felt when it first reached that DOD must match the table's expected value. Houses
+whose peak wind never brought them to a DOD are *censored* at that peak (they say nothing about
+their strength above it), so the median is a Kaplan–Meier estimate.
+`scripts/calibrate-houses.ts` reproduces the values. Garage doors (1.3 kPa) and roof deck
+(2.7 kPa) are fixed at typical engineering values instead: DOD 4 is usually reached through
+covering loss first, so calibrating them against it let them drift to unrealistic strengths. (A steady-wind calibration was tried in
+v1.0 and found biased; see the changelog.)
 
 ### Construction classes
 
 | Class | Share | Factors |
 |---|---|---|
-| Weak (older, toe-nailed roof, few anchors) | 25% | roof structure ×0.7, anchorage ×0.6, walls ×0.85 |
+| Weak (older, toe-nailed roof, few anchors) | 25% | roof bays ×0.7, anchorage and slab sweep ×0.6, walls, partitions and core room ×0.85 |
 | Standard | 55% | ×1 |
-| Strong (hurricane straps, anchor bolts, impact windows) | 20% | roof structure ×1.6, anchorage ×1.6, walls ×1.3, windows ×1.4, garage ×1.5, deck ×1.3 |
+| Strong (hurricane straps, anchor bolts, impact windows) | 20% | roof bays ×1.6, anchorage and slab sweep ×1.6, walls, partitions and core room ×1.3, windows ×1.4, garage ×1.5, deck ×1.3 |
 
-### Damage rating and EF estimate
+### Survey rating
 
-A house's DOD is the highest DOD whose part has failed. As in EF-scale survey practice, the
-assigned wind speed is adjusted within that DOD's lower–upper bounds by construction quality:
-
-| Class | Assigned speed |
-|---|---|
-| Weak | lower bound (it failed at less wind than a typical house) |
-| Standard | expected value |
-| Strong | upper bound (it took more wind than a typical house) |
-
-The EF estimate is the EF of the assigned speed, reported with the DOD's full range. This is how
-real EF5 ratings arise: a well-built house swept off its slab is rated at 220 mph (EF5), while
-a typical one swept clean is rated 200 mph (EF4) and a weak one 165 mph (EF3).
+As in EF-scale practice, the assigned speed is adjusted within the DOD's bounds by
+construction quality: weak → lower bound, standard → expected, strong → upper bound. The EF
+estimate is the EF of that speed, reported with the DOD's range.
 
 ### Update rate
 
-Damage is evaluated at 30 Hz (every 4th physics step) for houses within 6·R_max of the
-tornado; farther houses see only the translation wind, which is below every threshold.
+Damage is evaluated at 30 Hz for houses within 6·R_max of the tornado.
 
 ## Interface
 
 ```ts
+// src/core/damage/layout.ts
+function layoutHouse(spec: HouseSpec, rng: () => number): HouseComponents;
 // src/core/damage/building.ts
 function createHouse(spec: HouseSpec, rng: () => number): Building;
-function updateBuilding(b: Building, wind: Vec3, deficitOut: number, dt: number, time: number): boolean; // true if damage changed
-function degreeOfDamage(b: Building): number;            // 0–10
-function efFromDamage(dod: number): { ef: EFRating | null; low: EFRating | null; high: EFRating | null };
-function buildingReport(b: Building): BuildingReport;     // for the inspector
+function updateBuilding(b, wind, deficitOut, dt, time, onFail?: (ev: FailureEvent) => void): boolean;
+function degreeOfDamage(b: Building): number;
+function efFromDamage(dod: number, cls?: ConstructionClass): EFEstimate;
+function buildingReport(b: Building): BuildingReport;   // failures grouped by part type
 ```
-
-## Parameters
-
-Base capacities, class factors and fragility β live in `src/config/buildings.ts`.
 
 ## Acceptance criteria
 
 - **DMG-01**: Failures are permanent and the DOD never decreases.
-- **DMG-02**: Dependencies hold: no house has a later wall stage failed without the earlier
-  ones, and exterior walls get the 1.6× bracing bonus only while the roof structure stands.
+- **DMG-02**: Dependencies hold: no covering or deck section fails after its bay; partitions
+  fail only after half the exterior panels; the slab is swept only after every panel and
+  partition; a panel's capacity includes the 1.6× bracing exactly when its bay stands.
 - **DMG-03**: Cascade: for otherwise identical houses in the same wind, a windward garage
-  breach makes the roof structure fail at a lower wind speed than with no breach.
-- **DMG-04** *(validation)*: In simulated tornado passes (as described above, independent
-  sample), standard houses reach each DOD at a median peak wind within ±5% of the DI 2
-  expected value.
-- **DMG-09** *(validation)*: In steady wind ramps from all directions, standard houses reach
-  each DOD at a median speed inside the DI 2 lower–upper bounds.
+  breach makes the first roof bay fail at a lower wind speed than with no breach.
+- **DMG-04** *(validation)*: In simulated tornado passes (independent sample), standard
+  houses reach each DOD at a Kaplan–Meier median peak wind within ±5% of the DI 2 expected
+  value.
 - **DMG-05**: Weak houses reach DOD 6 at a lower median speed than standard ones, and strong
   houses at a higher one.
 - **DMG-06**: Below 50 mph steady wind, fewer than 1% of standard houses show any damage.
-- **DMG-07**: Same seed → identical capacities and identical damage histories.
-- **DMG-08**: The EF estimate for each DOD uses the lower bound for weak houses, the expected
-  value for standard ones and the upper bound for strong ones, and the range comes from the
-  lower and upper bounds.
-- **DMG-10** *(validation)*: Strong houses passing through the core of an EF5-strength tornado
-  can be surveyed EF5; no house passing through an EF4-strength tornado (peak wind < 200 mph)
-  is surveyed EF5.
+- **DMG-07**: Same seed → identical layouts, capacities and damage histories.
+- **DMG-08**: The EF estimate uses the lower bound for weak houses, the expected value for
+  standard ones and the upper bound for strong ones, with the DOD's range.
+- **DMG-09** *(validation)*: In steady wind ramps from all directions, standard houses reach
+  each DOD at a median speed inside the DI 2 lower–upper bounds.
+- **DMG-10** *(validation)*: Strong houses passing through an EF5-strength core can be
+  surveyed EF5; none passing through an EF4-strength tornado (peak < 200 mph) are.
+- **DMG-11**: The DOD equals the component-fraction rules in the table above.
+- **DMG-13**: No roof bay stands over two adjacent missing panels of a bearing wall, or over
+  half a missing gable end wall; a collapsed bay's failure record marks it as a collapse, and
+  its debris drops instead of launching.
+- **DMG-12**: Damage is progressive: in a tornado pass that reaches DOD 7, the house's failures
+  happen over more than three separate evaluations and its wall panels over at least two. (A
+  whole roof may lift off in one evaluation, as real roofs often do.)
 
 ## Simplifications / out of scope
 
-- Only DI 2 houses in Phase 2. Other indicators (mobile homes, apartments, commercial,
-  trees, poles) arrive with the city in Phase 4.
-- Windows fail from pressure only. Debris impacts, the main cause of broken windows in real
-  tornadoes, arrive in Phase 4, and calibration will be revisited then.
-- Quasi-static: no dynamic amplification or fatigue from gusting.
-- One story: "top-floor exterior walls" means the exterior walls.
+- One-story gable houses only (hip roofs and two stories later).
+- Windows fail from pressure only until Phase 5 adds debris impacts.
+- Quasi-static: no dynamic shaking or fatigue.
+- Components are rigid; a failing panel detaches whole.
 
 ## Changelog
 
-- v1.2: survey estimate adjusted within the DOD bounds by construction quality (DMG-08 updated,
-  DMG-10 added). Before this, DOD 10 always rated EF4 (200 mph expected), so even an EF5
-  tornado could never produce an EF5 survey rating.
+- v2.0: component houses (Phase 4). Bearing-wall collapse (DMG-13) added after the user saw
+  roofs standing on missing walls. Parts became individual components (panels, panes,
+  roof sections with covering and deck, bays, partitions); DOD judged from what's missing;
+  progressive roof and wall failure, per-panel bracing, free-standing loads on open houses;
+  corner-only roof edge zones and wider covering scatter; Kaplan–Meier medians for censored
+  passes; DMG-11 and DMG-12 added; recalibrated (all ten DODs within ~1% in tornado passes).
+- v1.2: survey estimate adjusted within the DOD bounds by construction quality.
 - v1.1: calibration moved from steady wind to tornado passes (steady wind biased roof failures
-  early); DMG-04 updated and DMG-09 added for the steady-wind check.
+  early by about 15 mph, because side-window breaches shielded the roof).
 - v1.0: written and approved for Phase 2.
