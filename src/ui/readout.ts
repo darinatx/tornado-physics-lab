@@ -8,6 +8,25 @@ import { swirlRatio, twoCellBlend } from "../core/wind/windField";
 import { BELOW_EF0_COLOR, EF_COLORS } from "../render/arrowStyle";
 import type { SimSnapshot } from "../sim/types";
 
+export interface Tally {
+  total: number;
+  damaged: number;
+  destroyed: number;
+}
+
+/** Houses damaged (DOD ≥ 1) and destroyed (DOD ≥ 7) from the DOD histogram (INST-09). */
+export function computeTally(hist: readonly number[]): Tally {
+  let total = 0;
+  let damaged = 0;
+  let destroyed = 0;
+  hist.forEach((n, dod) => {
+    total += n;
+    if (dod >= 1) damaged += n;
+    if (dod >= 7) destroyed += n;
+  });
+  return { total, damaged, destroyed };
+}
+
 export type CellStructure = "one-cell" | "transitioning" | "two-cell";
 
 export interface Readout {
@@ -20,6 +39,7 @@ export interface Readout {
   phase: Phase;
   time: number;
   lifetime: number;
+  tally: Tally;
 }
 
 /** Pure: the readout for a snapshot. */
@@ -35,6 +55,7 @@ export function computeReadout(snap: SimSnapshot): Readout {
     phase: snap.phase,
     time: snap.time,
     lifetime: snap.lifetime,
+    tally: computeTally(snap.damageHistogram),
   };
 }
 
@@ -61,6 +82,7 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
     <div class="speed"></div>
     <div class="phase"></div>
     <div class="cells"></div>
+    <div class="tally"></div>
     <div class="legend">${["<EF0", "EF0", "EF1", "EF2", "EF3", "EF4", "EF5"]
       .map((l, i) => `<span><i style="background:${hex(i === 0 ? BELOW_EF0_COLOR : EF_COLORS[i - 1]!)}"></i>${l}</span>`)
       .join("")}</div>
@@ -70,6 +92,7 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
   const speed = el.querySelector<HTMLElement>(".speed")!;
   const phase = el.querySelector<HTMLElement>(".phase")!;
   const cells = el.querySelector<HTMLElement>(".cells")!;
+  const tally = el.querySelector<HTMLElement>(".tally")!;
 
   return {
     update(r) {
@@ -78,6 +101,10 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
       speed.textContent = `${Math.round(r.mph)} mph · ${r.ms.toFixed(1)} m/s`;
       const swirl = Number.isFinite(r.swirl) ? r.swirl.toFixed(1) : "∞";
       cells.textContent = r.phase === "dissipated" ? "" : `${CELL_LABEL[r.cells]} · swirl ${swirl}`;
+      const t = r.tally;
+      tally.innerHTML = t.total
+        ? `<b>${t.damaged.toLocaleString()}</b> homes damaged · <b>${t.destroyed.toLocaleString()}</b> destroyed <span>of ${t.total.toLocaleString()}</span>`
+        : "";
       phase.textContent = `${PHASE_LABEL[r.phase]} · ${Math.floor(r.time)} s / ${Math.round(r.lifetime)} s`;
     },
   };

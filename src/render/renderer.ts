@@ -4,12 +4,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RENDER } from "../config/render";
+import type { Building } from "../core/damage/types";
 import type { Vec3 } from "../core/math/vec";
 import type { SimSnapshot } from "../sim/types";
 import { computeArrowField, createArrowField } from "./arrowField";
 import { arrowColor, arrowLength } from "./arrowStyle";
 import { createEnvironment } from "./environment";
 import { createFunnel } from "./funnel";
+import { createHouseLayer } from "./houses";
 import { interpolateTornado } from "./interpolate";
 import { TracerField } from "./tracers";
 
@@ -26,6 +28,7 @@ export interface SimRenderer {
   setLayers(l: Layers): void;
   pick(ndcX: number, ndcY: number): Vec3 | null;
   setProbes(hover: Vec3 | null, pins: { point: Vec3; color: number }[]): void;
+  setDamageColors(on: boolean): void;
   dispose(): void;
 }
 
@@ -59,7 +62,7 @@ function dustSprite(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(c);
 }
 
-export function createRenderer(host: HTMLElement): SimRenderer {
+export function createRenderer(host: HTMLElement, getBuildings: () => readonly Building[]): SimRenderer {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(host.clientWidth, host.clientHeight);
@@ -82,6 +85,11 @@ export function createRenderer(host: HTMLElement): SimRenderer {
   const color = new THREE.Color();
   for (let k = 0; k < field.count; k++) arrows.setColorAt(k, color.setHex(0xffffff));
   scene.add(arrows);
+
+  // Houses.
+  const houses = createHouseLayer();
+  scene.add(houses.group);
+  let damageColors = true;
 
   // R_max ring.
   const ring = new THREE.Mesh(
@@ -197,6 +205,7 @@ export function createRenderer(host: HTMLElement): SimRenderer {
       ring.position.set(s.center.x, 2, s.center.z);
 
       env.update(s.center, s.rMax, curr.cloudBase);
+      houses.sync(getBuildings(), curr.damageVersion, damageColors);
 
       funnel.mesh.visible = layers.funnel;
       if (layers.funnel) funnel.update(s, curr.cloudBase, t);
@@ -238,6 +247,9 @@ export function createRenderer(host: HTMLElement): SimRenderer {
     },
     setLayers(l) {
       layers = { ...l };
+    },
+    setDamageColors(on) {
+      damageColors = on;
     },
     pick(ndcX, ndcY) {
       raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);

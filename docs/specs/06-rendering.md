@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.2) — Phase 1 scope, plus the first visual pass pulled forward from Phase 5
+Status: Approved (v1.3) — Phases 1–2
 
 ## Purpose
 
@@ -39,6 +39,12 @@ Phase 1 scope:
   inertia is Spec 04.
 - **Storm environment:** a dark cloud deck at the cloud base, visible from below; a lowered
   wall cloud around the tornado; dim storm lighting and fog; procedurally textured farmland.
+- **Houses (Phase 2):** instanced wall boxes, gable roofs and slabs. The visual follows the
+  damage state: the roof disappears when the roof structure fails, a shifted house is offset
+  2 m downwind, and walls shrink to 55% / 30% / 10% of their height at DOD 7 / 8 / 9, leaving
+  only the slab at DOD 10. With "Damage colors" on (the default), houses are tinted by DOD:
+  yellow (1–2), orange (3–4), red-orange (5–6), red (7–8), purple (9–10). Instances refresh only
+  when the sim's damage version changes.
 - **R_max ring:** a faint ring on the ground at R_max.
 - **Layers:** arrows, funnel and tracers can each be toggled. Arrows are off by default, so the
   first view is the storm itself; they're one click away for analysis.
@@ -94,6 +100,9 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
   unless capped; the radius never decreases with height.
 - **REND-06**: The funnel bottom is where the center deficit equals ρ·g·(H − z); the funnel
   reaches the ground exactly when the center deficit ≥ ρ·g·H.
+- **REND-08**: `houseVisual(b)` maps damage to visuals as specified: roof shown only while the
+  roof structure stands, wall-height fractions by DOD, slab only at DOD 10, the DOD color band
+  in damage-color mode, and the house's own colors otherwise.
 - **REND-07**: Tracers are deterministic for a given seed and update sequence, and every live
   tracer stays above the ground, below 0.8·H, and within 4·R_max of the axis.
 
@@ -107,6 +116,7 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 
 ## Changelog
 
+- v1.3: houses with damage visuals and damage colors (REND-08).
 - v1.2: first visual pass pulled forward from Phase 5 at the user's request: physics-shaped
   condensation funnel, dust tracers, storm environment, layer toggles, picking and probe markers.
 - v1.1: larger ground (whole path fits), arrow window around the tornado, bigger arrows and a

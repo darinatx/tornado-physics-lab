@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { SIM_DEFAULTS } from "../../src/config/sim";
 import { createSim } from "../../src/sim/loop";
 import { createRng } from "../../src/sim/rng";
+import { PRESETS } from "../../src/config/presets";
 
 describe("Spec 08 — simulation loop", () => {
   test("SIM-01: same state however elapsed time is split", () => {
@@ -76,6 +77,34 @@ describe("Spec 08 — simulation loop", () => {
       expect(Math.abs(cross)).toBeLessThan(1e-6);
     }
   });
+
+  test("SIM-08: world damage version, histogram and reset", () => {
+    const ef4 = PRESETS.find((p) => p.id === "ef4-wedge")!;
+    const sim = createSim({}, 3, ef4.params);
+    const n = sim.world.buildings.length;
+    expect(n).toBeGreaterThan(3000);
+    expect(sim.snapshot.damageHistogram[0]).toBe(n);
+    let lastVersion = sim.snapshot.damageVersion;
+    let sawChange = false;
+    while (sim.time < 200) {
+      sim.advance(0.25);
+      const snap = sim.snapshot;
+      expect(snap.damageHistogram.reduce((a, b) => a + b, 0)).toBe(n);
+      expect(snap.damageVersion).toBeGreaterThanOrEqual(lastVersion);
+      if (snap.damageVersion > lastVersion) sawChange = true;
+      lastVersion = snap.damageVersion;
+    }
+    expect(sawChange).toBe(true);
+    const hist = sim.snapshot.damageHistogram;
+    const dods = new Array(11).fill(0);
+    for (const b of sim.world.buildings) dods[b.dod]++;
+    expect([...hist]).toEqual(dods);
+    expect(hist[0]).toBeLessThan(n);
+
+    sim.reset();
+    expect(sim.snapshot.damageHistogram[0]).toBe(sim.world.buildings.length);
+    expect(sim.world.buildings.every((b) => b.dod === 0)).toBe(true);
+  }, 60000);
 
   test("SIM-07: time scale 0 pauses, 2 runs twice as fast", () => {
     const paused = createSim();

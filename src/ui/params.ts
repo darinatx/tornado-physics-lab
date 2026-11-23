@@ -13,6 +13,7 @@ export interface PanelState {
   arrows: boolean;
   funnel: boolean;
   tracers: boolean;
+  damageColors: boolean;
   probeHeight: number;
 }
 
@@ -40,6 +41,7 @@ export function createPanel(
     arrows: false,
     funnel: true,
     tracers: true,
+    damageColors: true,
     probeHeight: 10,
   };
   const controllers: Controller[] = [];
@@ -140,6 +142,10 @@ export function createPanel(
   const emit = () => onChange(state);
   tip(display.add(state, "funnel").name("Funnel cloud").onChange(emit), "The visible condensation funnel, shaped by the tornado's pressure drop.");
   tip(display.add(state, "tracers").name("Dust & debris").onChange(emit), "Dust particles carried by the wind.");
+  tip(
+    display.add(state, "damageColors").name("Damage colors").onChange(emit),
+    "Tint houses by damage rating: yellow (minor) → orange → red → purple (swept away). Off shows their real colors.",
+  );
   tip(display.add(state, "arrows").name("Wind arrows").onChange(emit), "Arrows showing wind direction and speed at 10 m, colored by EF rating.");
   tip(
     display.add(state, "probeHeight", 2, 200, 1).name("Probe height (m)").onChange(emit),

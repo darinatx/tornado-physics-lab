@@ -11,7 +11,11 @@ import { twoCellBlend, windAt } from "../../src/core/wind/windField";
 import { createSim } from "../../src/sim/loop";
 import { defaultParams } from "../../src/sim/types";
 import { buildControlDefs } from "../../src/ui/controls";
-import { computeReadout } from "../../src/ui/readout";
+import { computeReadout, computeTally } from "../../src/ui/readout";
+import { buildingReport, efFromDamage } from "../../src/core/damage/building";
+import { DI2_DODS } from "../../src/config/buildings";
+import { samplePassCase, tornadoPass } from "../../src/core/damage/steadyRamp";
+import { randomHouses } from "../houseHelpers";
 
 describe("Spec 07 — instruments", () => {
   test("INST-01: every ranged wind parameter has a matching control that changes the wind", () => {
@@ -25,8 +29,8 @@ describe("Spec 07 — instruments", () => {
 
       // Run into the mature phase, then change the parameter and compare the wind at the
       // same tornado-relative point one step later against an unchanged twin sim.
-      const changed = createSim();
-      const control = createSim();
+      const changed = createSim({ buildings: false });
+      const control = createSim({ buildings: false });
       for (let i = 0; i < 400; i++) {
         changed.advance(0.25);
         control.advance(0.25);
@@ -46,7 +50,7 @@ describe("Spec 07 — instruments", () => {
   });
 
   test("INST-02: EF readout matches efRating of the peak speed, in mph and m/s", () => {
-    const sim = createSim();
+    const sim = createSim({ buildings: false });
     for (let i = 0; i < 400; i++) sim.advance(0.25); // into the mature phase
     const r = computeReadout(sim.snapshot);
     expect(sim.snapshot.phase).toBe("mature");
@@ -82,7 +86,7 @@ describe("Spec 07 — instruments", () => {
 
   test("INST-05: every preset produces its labeled EF rating when mature", () => {
     for (const p of PRESETS) {
-      const sim = createSim({}, 1, p.params);
+      const sim = createSim({ buildings: false }, 1, p.params);
       const mid = sim.params.tUp + sim.params.tMature / 2;
       while (sim.time < mid) sim.advance(0.25);
       expect(sim.snapshot.phase).toBe("mature");
@@ -119,6 +123,27 @@ describe("Spec 07 — instruments", () => {
     expect(h.values[0]).toBe(42);
   });
 
+  test("INST-08: building report matches the building", () => {
+    for (const { b, rng } of randomHouses(60, 8)) {
+      const c = samplePassCase(rng);
+      tornadoPass(b, c.state, "open", c.offset * 2);
+      const r = buildingReport(b);
+      expect(r.dod).toBe(b.dod);
+      expect(r.estimate).toEqual(efFromDamage(b.dod));
+      expect(r.description).toBe(b.dod ? DI2_DODS[b.dod - 1]!.text : "No damage");
+      expect(r.peakMph).toBe(b.peakMph);
+      const n = Object.keys(b.failed).length + b.windowFailed.filter(Boolean).length;
+      expect(r.failures.length).toBe(n);
+      for (let i = 1; i < r.failures.length; i++) expect(r.failures[i]!.time).toBeGreaterThanOrEqual(r.failures[i - 1]!.time);
+      for (const f of r.failures) expect(f.load).toBeGreaterThan(f.capacity);
+    }
+  }, 30000);
+
+  test("INST-09: neighborhood tally counts damaged (≥ 1) and destroyed (≥ 7) houses", () => {
+    expect(computeTally([10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])).toEqual({ total: 65, damaged: 55, destroyed: 34 });
+    expect(computeTally([5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])).toEqual({ total: 5, damaged: 0, destroyed: 0 });
+  });
+
   test("INST-03: vortex structure label follows the one-cell/two-cell blend", () => {
     const cases: [number, number, string][] = [
       [20, 30, "one-cell"], // S ≈ 0.67
@@ -126,7 +151,7 @@ describe("Spec 07 — instruments", () => {
       [100, 30, "two-cell"], // S ≈ 3.3
     ];
     for (const [vPeak, updraftMax, expected] of cases) {
-      const sim = createSim({}, 1, { vPeak, updraftMax });
+      const sim = createSim({ buildings: false }, 1, { vPeak, updraftMax });
       for (let i = 0; i < 400; i++) sim.advance(0.25); // mature
       const r = computeReadout(sim.snapshot);
       const b = twoCellBlend(sim.snapshot.tornado);

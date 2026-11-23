@@ -4,6 +4,8 @@ import { condensationDeficit, funnelBottom, funnelRadius } from "../../src/core/
 import { EF_LOWER_MPH, efRating, mphToMs } from "../../src/core/wind/efScale";
 import { pressureDeficit } from "../../src/core/wind/pressure";
 import { HIDDEN_Y, TracerField } from "../../src/render/tracers";
+import { DOD_COLORS, houseVisual } from "../../src/render/houses";
+import { exactHouse } from "../houseHelpers";
 import { computeArrowField, createArrowField } from "../../src/render/arrowField";
 import { BELOW_EF0_COLOR, EF5_THRESHOLD_MS, EF_COLORS, arrowColor, arrowLength } from "../../src/render/arrowStyle";
 import { interpolateTornado } from "../../src/render/interpolate";
@@ -92,6 +94,34 @@ describe("Spec 06 — rendering", () => {
       expect(r).toBeLessThanOrEqual(4 * s.rMax);
     }
     expect(alive).toBeGreaterThan(1000);
+  });
+
+  test("REND-08: house visuals follow the damage state", () => {
+    const rec = (part: string) => ({ part: part as never, time: 0, load: 0, capacity: 0, mph: 0 });
+    const intact = exactHouse();
+    expect(houseVisual(intact, true)).toMatchObject({ showRoof: true, wallFrac: 1, wallColor: intact.wallColor, roofColor: intact.roofColor });
+
+    const stages: [string[], number, number, boolean][] = [
+      [["trim"], 1, 1, true],
+      [["trim", "roofStructure"], 6, 1, false],
+      [["roofStructure", "exteriorWalls"], 7, 0.55, false],
+      [["roofStructure", "exteriorWalls", "mostWalls"], 8, 0.3, false],
+      [["roofStructure", "exteriorWalls", "mostWalls", "allWalls"], 9, 0.1, false],
+      [["roofStructure", "exteriorWalls", "mostWalls", "allWalls", "slab"], 10, 0, false],
+    ];
+    for (const [parts, dod, frac, roof] of stages) {
+      const b = exactHouse();
+      for (const p of parts) (b.failed as Record<string, unknown>)[p] = rec(p);
+      b.dod = dod;
+      const v = houseVisual(b, true);
+      expect(v.wallFrac).toBe(frac);
+      expect(v.showRoof).toBe(roof);
+      expect(v.wallColor).toBe(DOD_COLORS[dod]);
+      expect(houseVisual(b, false).wallColor).toBe(b.wallColor);
+    }
+    const shifted = exactHouse();
+    shifted.shift = { x: 2, z: 0 };
+    expect(houseVisual(shifted, false)).toMatchObject({ offsetX: 2, offsetZ: 0 });
   });
 
   test("REND-04: rendering computations never mutate sim state", () => {

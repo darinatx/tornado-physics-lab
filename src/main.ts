@@ -7,13 +7,14 @@ import "./style.css";
 
 const app = document.getElementById("app")!;
 const sim = createSim();
-const view = createRenderer(app);
+const view = createRenderer(app, () => sim.world.buildings);
 const panel = createPanel(sim, (state) => {
   view.setFollow(state.follow);
   view.setLayers({ arrows: state.arrows, funnel: state.funnel, tracers: state.tracers });
+  view.setDamageColors(state.damageColors);
 });
 const readout = mountReadout(document.body);
-const probe = createProbeUI(app, view);
+const probe = createProbeUI(app, view, (x, z) => sim.world.buildingAt(x, z));
 
 /** Seconds to wait after dissipation before repeating. */
 const REPEAT_DELAY = 3;

@@ -1,0 +1,60 @@
+/**
+ * The simulated world (Spec 08 v1.2): the neighborhood and its damage state.
+ */
+import { DAMAGE_RANGE_RMAX } from "../config/buildings";
+import { updateBuilding } from "../core/damage/building";
+import type { Building } from "../core/damage/types";
+import { pressureDeficit } from "../core/wind/pressure";
+import type { TerrainClass, TornadoState } from "../core/wind/types";
+import { windAt } from "../core/wind/windField";
+import { generateNeighborhood } from "./city";
+
+export interface World {
+  readonly buildings: readonly Building[];
+  buildingAt(x: number, z: number): Building | null;
+  /** Increases whenever any building's damage changes. */
+  readonly version: number;
+  /** Count of buildings at each DOD 0–10. */
+  readonly histogram: readonly number[];
+  update(dt: number, s: TornadoState, terrain: TerrainClass, time: number): void;
+}
+
+export function createWorld(seed: number, withBuildings = true): World {
+  const hood = withBuildings ? generateNeighborhood(seed) : { buildings: [] as Building[], buildingAt: () => null };
+  const histogram = new Array<number>(11).fill(0);
+  histogram[0] = hood.buildings.length;
+  let version = 0;
+  const p = { x: 0, y: 0, z: 0 };
+
+  return {
+    buildings: hood.buildings,
+    buildingAt: hood.buildingAt,
+    get version() {
+      return version;
+    },
+    histogram,
+    update(dt, s, terrain, time) {
+      const range = DAMAGE_RANGE_RMAX * s.rMax;
+      const active = s.vMax > 0;
+      let changed = false;
+      for (const b of hood.buildings) {
+        if (b.dod >= 10) continue;
+        const r = Math.hypot(b.x - s.center.x, b.z - s.center.z);
+        // Far houses feel only the translation wind; keep updating only while venting.
+        if ((!active || r > range) && b.deficitIn < 1) continue;
+        p.x = b.x;
+        p.y = b.roofHeight;
+        p.z = b.z;
+        const before = b.dod;
+        if (updateBuilding(b, windAt(p, s, terrain), pressureDeficit(r, s), dt, time)) {
+          changed = true;
+          if (b.dod !== before) {
+            histogram[before]!--;
+            histogram[b.dod]!++;
+          }
+        }
+      }
+      if (changed) version++;
+    },
+  };
+}

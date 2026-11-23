@@ -1,10 +1,13 @@
 /**
  * Fixed-timestep simulation loop (Spec 08).
  */
+import { DAMAGE_STEP_INTERVAL } from "../config/buildings";
 import { SIM_DEFAULTS } from "../config/sim";
 import { lifecycle, lifetime } from "../core/wind/lifecycle";
 import type { Vec2 } from "../core/math/vec";
 import { createRng } from "./rng";
+import { createWorld } from "./world";
+import type { World } from "./world";
 import { defaultParams } from "./types";
 import type { SimConfig, SimFrame, SimSnapshot, TornadoParams } from "./types";
 
@@ -22,6 +25,8 @@ export interface Sim {
   readonly timeScale: number;
   /** The sim's seeded RNG. Nothing else may use Math.random. */
   readonly rng: () => number;
+  /** The neighborhood and its damage state (read-only for callers). */
+  readonly world: Pick<World, "buildings" | "buildingAt">;
 }
 
 const DEG = Math.PI / 180;
@@ -39,6 +44,8 @@ export function createSim(
 ): Sim {
   const dt = config.dt ?? SIM_DEFAULTS.dt;
   const maxFrameDt = config.maxFrameDt ?? SIM_DEFAULTS.maxFrameDt;
+  const withBuildings = config.buildings ?? true;
+  let world: World = createWorld(seed, withBuildings);
 
   let params: TornadoParams = { ...defaultParams(), ...initial };
   let pending: Partial<TornadoParams> | null = null;
@@ -70,6 +77,8 @@ export function createSim(
       cloudBase: params.cloudBase,
       phase: lc.phase,
       lifetime: lifetime(params),
+      damageVersion: world.version,
+      damageHistogram: Object.freeze([...world.histogram]),
       tornado: Object.freeze({
         center: Object.freeze({ x: center.x, z: center.z }),
         velocity: Object.freeze({ x: d.x * params.translationSpeed, z: d.z * params.translationSpeed }),
@@ -105,12 +114,18 @@ export function createSim(
     stepCount++;
     prev = curr;
     curr = makeSnapshot();
+    if (stepCount % DAMAGE_STEP_INTERVAL === 0) {
+      const before = world.version;
+      world.update(dt * DAMAGE_STEP_INTERVAL, curr.tornado, curr.terrain, curr.time);
+      if (world.version !== before) curr = makeSnapshot();
+    }
   }
 
   function reset(newSeed?: number): void {
     applyPending();
     if (newSeed !== undefined) currentSeed = newSeed;
     rng = createRng(currentSeed);
+    world = createWorld(currentSeed, withBuildings);
     stepCount = 0;
     acc = 0;
     headingDeg = params.heading;
@@ -155,6 +170,9 @@ export function createSim(
     },
     get rng() {
       return rng;
+    },
+    get world() {
+      return world;
     },
   };
 }

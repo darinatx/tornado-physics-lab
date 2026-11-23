@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.3) — Phase 1 criteria; later criteria are added in later phases
+Status: Approved (v1.4) — Phases 1–2
 
 ## Purpose
 
@@ -30,12 +30,18 @@ Phase 1 scope:
   - distance from the center, and whether the spot is inside the core and left or right of
     the path.
 
+  Hovering over a house switches the tooltip to a **building inspector**: construction class,
+  current DOD with its description, estimated EF with its range, peak wind it experienced, and
+  each failed part with the time, the load and the capacity it exceeded, so every failure is
+  explainable.
+
   Clicking pins a probe (up to 4). Pinned probes stay fixed on the ground and show live
   readings plus a 60-second speed history, so you can watch a tornado pass over a spot.
   Pins can be removed individually or all at once.
 - **EF readout:** the current EF rating and the peak ground-relative speed (mph and m/s),
   computed with `efRating` from Spec 01, plus the vortex structure (one-cell, transitioning,
-  two-cell) and swirl ratio.
+  two-cell) and swirl ratio, plus a neighborhood tally: houses damaged (DOD ≥ 1) and destroyed
+  (DOD ≥ 7).
 - **Wind visualization:** a grid of arrows over the ground plane at a chosen height (default
   10 m), colored by speed band (one color per EF level, gray below EF0).
 
@@ -81,6 +87,9 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
   range and default, and changing it changes the next `windAt` result.
 - **INST-02**: The EF readout matches `efRating(peak speed)` for the current state, and
   shows speed in both mph and m/s.
+- **INST-08**: The building report matches the building: DOD and description, EF estimate and
+  range from Spec 03, peak wind, and failures listed in time order with load > capacity.
+- **INST-09**: The neighborhood tally equals the count of houses at DOD ≥ 1 and DOD ≥ 7.
 - **INST-03**: The readout's vortex structure label matches the Spec 01 blend: one-cell when
   b < 0.1, two-cell when b > 0.9, transitioning otherwise, and it shows the swirl ratio.
 - **INST-04**: `probeAt` agrees with `windAt` (speed and components), `pressureDeficit` and
@@ -101,6 +110,7 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.4: building inspector and neighborhood tally (INST-08, INST-09).
 - v1.3: presets, plain-language panel with tooltips, inspect probe with pinning and history
   (INST-04 to INST-07).
 - v1.2: vortex structure and swirl ratio in the readout (INST-03).

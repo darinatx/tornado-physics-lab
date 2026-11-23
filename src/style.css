@@ -52,6 +52,17 @@ body {
   color: #aab4c0;
 }
 
+.readout .tally {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #e6ebf1;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout .tally span {
+  color: #8792a0;
+}
+
 .readout .legend {
   display: flex;
   flex-wrap: wrap;
@@ -100,7 +111,7 @@ body {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 20;
+  z-index: 2000;
   min-width: 230px;
   padding: 10px 12px;
   background: rgba(12, 16, 22, 0.92);
@@ -132,6 +143,19 @@ body {
 
 .p-dim {
   color: #8792a0;
+}
+
+.p-fails {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+
+.p-fails li {
+  margin: 1px 0;
+}
+
+.probe-tip {
+  max-width: 360px;
 }
 
 .probe-hint {

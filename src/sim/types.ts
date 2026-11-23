@@ -60,11 +60,17 @@ export interface SimSnapshot {
   readonly phase: Phase;
   /** Total lifecycle duration (s). */
   readonly lifetime: number;
+  /** Increases whenever any building's damage changes. */
+  readonly damageVersion: number;
+  /** Count of buildings at each DOD 0–10. */
+  readonly damageHistogram: readonly number[];
 }
 
 export interface SimConfig {
   dt: number;
   maxFrameDt: number;
+  /** Generate the neighborhood (default true). Tests of the wind alone can turn it off. */
+  buildings: boolean;
 }
 
 export interface SimFrame {
