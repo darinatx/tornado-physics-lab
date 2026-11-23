@@ -1,0 +1,223 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0e12;
+  color: #e6ebf1;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+.readout {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  padding: 14px 16px;
+  min-width: 220px;
+  background: rgba(14, 18, 24, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.readout .ef {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.5px;
+}
+
+.readout .speed {
+  margin-top: 6px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout .phase {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #aab4c0;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout .cells {
+  margin-top: 2px;
+  font-size: 13px;
+  color: #aab4c0;
+}
+
+.readout .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 12px;
+  font-size: 11px;
+  color: #c3ccd6;
+}
+
+.readout .legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.readout .note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #8792a0;
+}
+
+/* ---------- Panel ---------- */
+.lil-gui.root {
+  --background-color: rgba(14, 18, 24, 0.88);
+  --title-background-color: rgba(30, 36, 46, 0.95);
+  --widget-color: #2a323d;
+  --hover-color: #36404d;
+  --focus-color: #3f4a59;
+  --number-color: #8fd3ff;
+  --font-size: 12px;
+  --name-width: 48%;
+}
+
+.preset-desc {
+  padding: 2px 8px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #aab4c0;
+}
+
+/* ---------- Probe ---------- */
+.probe-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  min-width: 230px;
+  padding: 10px 12px;
+  background: rgba(12, 16, 22, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.p-ef {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.p-ef span {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e6ebf1;
+  margin-left: 4px;
+}
+
+.p-row b {
+  font-weight: 500;
+  color: #8792a0;
+}
+
+.p-dim {
+  color: #8792a0;
+}
+
+.probe-hint {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #c3ccd6;
+  background: rgba(14, 18, 24, 0.7);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.pin-dock {
+  position: fixed;
+  left: 16px;
+  bottom: 48px;
+  width: 290px;
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  padding: 10px;
+  background: rgba(14, 18, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.pin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c3ccd6;
+}
+
+.pin-dock button {
+  font: inherit;
+  font-size: 11px;
+  color: #c3ccd6;
+  background: #2a323d;
+  border: 0;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.pin-dock button:hover {
+  background: #36404d;
+}
+
+.pin-card {
+  position: relative;
+  margin-top: 8px;
+  padding: 8px 10px 6px;
+  border-left: 3px solid #fff;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.pin-card .p-ef {
+  font-size: 15px;
+}
+
+.pin-card .pin-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 0 6px;
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.pin-card canvas {
+  display: block;
+  width: 100%;
+  height: 40px;
+  margin-top: 6px;
+}
+
+.pin-axis {
+  font-size: 10px;
+  color: #6f7a88;
+}

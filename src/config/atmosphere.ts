@@ -1,0 +1,18 @@
+/** Atmosphere constants (Specs 01, 06). */
+
+/** Near-surface air density in a warm, humid storm environment (kg/m³). */
+export const AIR_DENSITY = 1.2;
+
+/** Gravitational acceleration (m/s²). */
+export const GRAVITY = 9.81;
+
+/** 1 lb/ft² in pascals. */
+export const PA_PER_PSF = 47.880259;
+
+/** Environment parameters with UI controls. */
+export const ATMOSPHERE_PARAMS = {
+  cloudBase: {
+    label: "Cloud base height", unit: "m", default: 500, min: 250, max: 1500, step: 10,
+    source: "Lifting condensation level; tornadic storms typically have low bases (< 1000 m)",
+  },
+} as const;
