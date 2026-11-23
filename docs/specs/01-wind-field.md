@@ -1,6 +1,6 @@
 # Spec 01 — Wind Field
 
-Status: Approved (v1.3)
+Status: Approved (v1.5)
 
 ## Purpose
 
@@ -83,8 +83,10 @@ two-celled as it intensifies, then reverts while roping out. Real tornadoes do t
 ### Translation
 
 Ground-relative wind = storm-relative wind + translation velocity `V_trans` (a horizontal
-vector). Far from the core this leaves a uniform wind equal to V_trans, standing in for the
-environmental flow that carries the tornado. With cyclonic rotation this makes the right side of the path (relative to motion)
+vector). Far from the core this leaves a wind equal to V_trans, standing in for the
+environmental flow that carries the tornado. That environmental wind slows near the ground
+like any surface wind: it equals V_trans at and above 10 m and follows the terrain power law
+below, (max(z/10, ε))^β. With cyclonic rotation this makes the right side of the path (relative to motion)
 faster by 2·|V_trans| compared with the left. This is why real damage swaths are usually
 worse on the right side.
 
@@ -173,7 +175,7 @@ what's in `TornadoState`.
 | S_peak | – | 1.3 | 1.0–1.6 | near-ground overshoot; lab and LES studies find ~1.2–1.6 |
 | z_p | m | 20 | 5–60 | height of peak winds; observed ~10–50 m |
 | β (open / suburban / urban) | – | 0.11 / 0.22 / 0.33 | — | standard power-law exponents |
-| ε | – | 0.05 | — | numerical floor for z / z_p |
+| ε | – | 0.005 | — | numerical floor for z / z_p (0.1 m at the default z_p) |
 | S₁ / S₂ | – | 1.1 / 1.7 | — | swirl thresholds for one-cell → two-cell; calibrated so at default W_max EF0–2 are one-celled, EF3 transitional and EF4–5 two-celled, matching radar observations |
 | k_d | – | 0.5 | — | central downdraft strength / W_max; observed downdrafts are weaker than the annular updraft |
 | x_d | – | 0.5 | — | downdraft radius / R_max |
@@ -212,6 +214,9 @@ All values live in `src/config/wind.ts`.
 - **WIND-18**: The center pressure deficit equals ρ·V_max²·(1/(2α) + ½) (±1e-9 relative).
 - **WIND-19**: The pressure deficit is continuous at R_max, decreases monotonically with r, and
   satisfies cyclostrophic balance (dΔp/dr = −ρ·v_t²/r, numerically within 0.5%).
+- **WIND-20**: The environmental (translation) wind is unchanged at and above 10 m and
+  reduced below it by the terrain power law; far from the core at 1 m it's slower than at 10 m,
+  and slower over urban than open terrain.
 - **WIND-17**: The axis vertical velocity decreases monotonically as S rises from S₁ to S₂,
   with no jumps (one-cell and two-cell blend smoothly).
 
@@ -246,6 +251,11 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
 
 ## Changelog
 
+- v1.5: ε lowered from 0.05 to 0.005. The old floor held the profile constant below 1 m, so
+  wind at ground level stayed near 94% of the peak and dragged resting debris along with the
+  tornado. Heights of 1 m and above (houses, EF readout) are unaffected.
+- v1.4: environmental wind follows the surface-layer profile below 10 m (WIND-20). Found in
+  Phase 3: debris on the ground was being pushed by the full 15 m/s storm motion and never settled.
 - v1.3: V_peak range lowered to 15 m/s (INST-06 showed EF0/EF1 presets need less than 30 m/s
   aloft once the near-ground boost is counted).
 - v1.3: pressure deficit from cyclostrophic balance (moved here from Spec 02 so the funnel

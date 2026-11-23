@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "trace": "tsx scripts/check-trace.ts",
-    "verify": "npm run typecheck && npm run test && npm run trace"
+    "verify": "npm run typecheck && npm run test && npm run trace",
+    "test:fast": "vitest run tests/unit"
   },
   "dependencies": {
     "lil-gui": "^0.20.0",

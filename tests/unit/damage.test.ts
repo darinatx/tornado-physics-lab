@@ -121,16 +121,40 @@ describe("Spec 03 — damage", () => {
     expect(run()).toEqual(run());
   });
 
-  test("DMG-08: EF estimate and range come from the DI 2 table", () => {
+  test("DMG-08: EF estimate adjusts within the DI 2 bounds by construction quality", () => {
     for (const r of DI2_DODS) {
-      const e = efFromDamage(r.dod);
-      expect(e.ef).toBe(efRating(mphToMs(r.expected)));
-      expect(e.low).toBe(efRating(mphToMs(r.lower)));
-      expect(e.high).toBe(efRating(mphToMs(r.upper)));
+      const weak = efFromDamage(r.dod, "weak");
+      const std = efFromDamage(r.dod, "standard");
+      const strong = efFromDamage(r.dod, "strong");
+      expect([weak.mph, std.mph, strong.mph]).toEqual([r.lower, r.expected, r.upper]);
+      expect(weak.ef).toBe(efRating(mphToMs(r.lower)));
+      expect(std.ef).toBe(efRating(mphToMs(r.expected)));
+      expect(strong.ef).toBe(efRating(mphToMs(r.upper)));
+      for (const e of [weak, std, strong]) {
+        expect(e.low).toBe(efRating(mphToMs(r.lower)));
+        expect(e.high).toBe(efRating(mphToMs(r.upper)));
+      }
     }
     expect(efFromDamage(0).ef).toBeNull();
-    expect(efFromDamage(10)).toEqual({ ef: 4, low: 3, high: 5 });
+    expect([efFromDamage(10, "weak").ef, efFromDamage(10).ef, efFromDamage(10, "strong").ef]).toEqual([3, 4, 5]);
   });
+
+  test("DMG-10: EF5-strength cores can produce EF5 surveys; EF4-strength ones cannot", () => {
+    const survey = (vMax: number, cls: "standard" | "strong", seed: number) =>
+      randomHouses(150, seed, cls).map(({ b, rng }) => {
+        const c = samplePassCase(rng);
+        tornadoPass(b, { ...c.state, vMax }, "open", c.offset * 0.5);
+        return { ef: efFromDamage(b.dod, b.cls).ef, peak: b.peakMph };
+      });
+    const ef5Strong = survey(85, "strong", 21);
+    expect(ef5Strong.some((r) => r.ef === 5)).toBe(true);
+    for (const cls of ["standard", "strong"] as const) {
+      for (const r of survey(50, cls, 22)) {
+        expect(r.peak).toBeLessThan(200);
+        expect(r.ef === 5).toBe(false);
+      }
+    }
+  }, 60000);
 
   test("DMG-09: steady wind ramps land inside the DI 2 bounds", () => {
     const firsts: number[][] = Array.from({ length: 11 }, () => []);

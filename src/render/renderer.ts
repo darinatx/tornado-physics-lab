@@ -5,6 +5,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RENDER } from "../config/render";
 import type { Building } from "../core/damage/types";
+import type { Piece } from "../core/debris/piece";
+import { DEBRIS } from "../config/debris";
 import type { Vec3 } from "../core/math/vec";
 import type { SimSnapshot } from "../sim/types";
 import { computeArrowField, createArrowField } from "./arrowField";
@@ -12,6 +14,7 @@ import { arrowColor, arrowLength } from "./arrowStyle";
 import { createEnvironment } from "./environment";
 import { createFunnel } from "./funnel";
 import { createHouseLayer } from "./houses";
+import { createDebrisLayer, createSettledLayer } from "./debris";
 import { interpolateTornado } from "./interpolate";
 import { TracerField } from "./tracers";
 
@@ -19,6 +22,7 @@ export interface Layers {
   arrows: boolean;
   funnel: boolean;
   tracers: boolean;
+  debris: boolean;
 }
 
 export interface SimRenderer {
@@ -29,6 +33,9 @@ export interface SimRenderer {
   pick(ndcX: number, ndcY: number): Vec3 | null;
   setProbes(hover: Vec3 | null, pins: { point: Vec3; color: number }[]): void;
   setDamageColors(on: boolean): void;
+  setDebrisScale(scale: number): void;
+  /** Scene exposure multiplier (1 = default). */
+  setBrightness(exposure: number): void;
   dispose(): void;
 }
 
@@ -62,16 +69,25 @@ function dustSprite(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(c);
 }
 
-export function createRenderer(host: HTMLElement, getBuildings: () => readonly Building[]): SimRenderer {
+export function createRenderer(
+  host: HTMLElement,
+  getBuildings: () => readonly Building[],
+  getDebris: () => readonly Piece[] = () => [],
+  getSettled: () => { pieces: readonly Piece[]; dropped: number } = () => ({ pieces: [], dropped: 0 }),
+): SimRenderer {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(host.clientWidth, host.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Linear tone mapping so the Brightness control can scale exposure.
+  renderer.toneMapping = THREE.LinearToneMapping;
+  renderer.toneMappingExposure = 1;
   host.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, host.clientWidth / host.clientHeight, 1, 30000);
   const env = createEnvironment(scene);
+  const baseSky = (scene.background as THREE.Color).clone();
 
   // Wind arrows.
   const fieldOpts = { spacing: RENDER.arrowGridSpacing, range: RENDER.arrowRange, height: RENDER.arrowHeight };
@@ -90,6 +106,13 @@ export function createRenderer(host: HTMLElement, getBuildings: () => readonly B
   const houses = createHouseLayer();
   scene.add(houses.group);
   let damageColors = true;
+
+  // Flying debris.
+  const debris = createDebrisLayer(DEBRIS.cap);
+  const settledLayer = createSettledLayer(DEBRIS.settledCap);
+  scene.add(settledLayer.mesh);
+  let debrisScale = 3;
+  scene.add(debris.mesh);
 
   // R_max ring.
   const ring = new THREE.Mesh(
@@ -169,7 +192,7 @@ export function createRenderer(host: HTMLElement, getBuildings: () => readonly B
 
   let follow = true;
   let placed = false;
-  let layers: Layers = { arrows: false, funnel: true, tracers: true };
+  let layers: Layers = { arrows: false, funnel: true, tracers: true, debris: true };
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const pos = new THREE.Vector3();
@@ -206,6 +229,13 @@ export function createRenderer(host: HTMLElement, getBuildings: () => readonly B
 
       env.update(s.center, s.rMax, curr.cloudBase);
       houses.sync(getBuildings(), curr.damageVersion, damageColors);
+      debris.mesh.visible = layers.debris;
+      settledLayer.mesh.visible = layers.debris;
+      if (layers.debris) {
+        debris.sync(getDebris(), debrisScale);
+        const st = getSettled();
+        settledLayer.sync(st.pieces, debrisScale, st.dropped);
+      }
 
       funnel.mesh.visible = layers.funnel;
       if (layers.funnel) funnel.update(s, curr.cloudBase, t);
@@ -250,6 +280,16 @@ export function createRenderer(host: HTMLElement, getBuildings: () => readonly B
     },
     setDamageColors(on) {
       damageColors = on;
+    },
+    setDebrisScale(scale) {
+      debrisScale = scale;
+    },
+    setBrightness(exposure) {
+      renderer.toneMappingExposure = exposure;
+      // The sky and fog color aren't tone-mapped; scale them to match.
+      const sky = baseSky.clone().multiplyScalar(exposure);
+      scene.background = sky;
+      if (scene.fog) (scene.fog as THREE.Fog).color.copy(sky);
     },
     pick(ndcX, ndcY) {
       raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);

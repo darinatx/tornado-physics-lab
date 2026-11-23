@@ -5,6 +5,9 @@ import { EF_LOWER_MPH, efRating, mphToMs } from "../../src/core/wind/efScale";
 import { pressureDeficit } from "../../src/core/wind/pressure";
 import { HIDDEN_Y, TracerField } from "../../src/render/tracers";
 import { DOD_COLORS, houseVisual } from "../../src/render/houses";
+import { debrisInstance } from "../../src/render/debris";
+import { DEBRIS_KINDS } from "../../src/config/debris";
+import { DebrisField } from "../../src/core/debris/field";
 import { exactHouse } from "../houseHelpers";
 import { computeArrowField, createArrowField } from "../../src/render/arrowField";
 import { BELOW_EF0_COLOR, EF5_THRESHOLD_MS, EF_COLORS, arrowColor, arrowLength } from "../../src/render/arrowStyle";
@@ -94,6 +97,28 @@ describe("Spec 06 — rendering", () => {
       expect(r).toBeLessThanOrEqual(4 * s.rMax);
     }
     expect(alive).toBeGreaterThan(1000);
+  });
+
+  test("REND-09: debris instances use the piece's size, orientation, position and color", () => {
+    const f = new DebrisField(1);
+    const b = exactHouse();
+    f.spawnFrom(b, { part: "roofStructure", time: 0, load: 1, capacity: 0, mph: 0 });
+    f.spawnFrom(b, { part: "exteriorWalls", time: 0, load: 1, capacity: 0, mph: 0 });
+    for (const p of f.pieces) {
+      const d = debrisInstance(p);
+      const [L, W, T] = DEBRIS_KINDS[p.kind].dims;
+      expect(d.scale).toEqual([L, T, W]);
+      expect(d.quaternion).toEqual(p.q);
+      expect(d.position).toEqual([p.pos.x, p.pos.y, p.pos.z]);
+      const expected = p.kind === "shingle" ? b.roofColor : p.kind === "siding" ? b.wallColor : p.color;
+      expect(d.color).toBe(expected);
+    }
+    const resting = { ...f.pieces[0]!, pos: { x: 1, y: 0, z: 2 }, resting: true };
+    const [L, W, T] = DEBRIS_KINDS[resting.kind].dims;
+    expect(debrisInstance(resting).position).toEqual([1, T / 2, 2]);
+    const big = debrisInstance(resting, 3);
+    expect(big.scale).toEqual([3 * L, 3 * T, 3 * W]);
+    expect(big.position).toEqual([1, (3 * T) / 2, 2]);
   });
 
   test("REND-08: house visuals follow the damage state", () => {

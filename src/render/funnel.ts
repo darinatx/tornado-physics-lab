@@ -68,6 +68,8 @@ const fragmentShader = /* glsl */ `
     alpha *= 0.75 + 0.35 * n;
 
     gl_FragColor = vec4(col, alpha);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
     #include <fog_fragment>
   }
 `;
@@ -107,8 +109,8 @@ export function createFunnel(): Funnel {
       {
         uSpin: { value: 0 },
         uOpacity: { value: 0.92 },
-        uColor: { value: new THREE.Color(0x8d939a) },
-        uDust: { value: new THREE.Color(0x6e604f) },
+        uColor: { value: new THREE.Color(0xa3a9b0) },
+        uDust: { value: new THREE.Color(0x7d6e5c) },
         uLight: { value: new THREE.Vector3(-0.6, 0.5, 0.4) },
       },
     ]),

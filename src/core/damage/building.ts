@@ -13,7 +13,7 @@ import {
   PART_LABEL,
   ROOF_BRACING_FACTOR,
 } from "../../config/buildings";
-import type { Part } from "../../config/buildings";
+import type { ConstructionClass, Part } from "../../config/buildings";
 import { MS_PER_MPH } from "../../config/units";
 import type { Vec3 } from "../math/vec";
 import { efRating, mphToMs } from "../wind/efScale";
@@ -69,7 +69,14 @@ export function degreeOfDamage(b: Building): number {
  * Advance one damage evaluation. `wind` is the ground-relative wind at roof height (m/s),
  * `deficitOut` the tornado's pressure deficit at the house (Pa). Returns true if anything failed.
  */
-export function updateBuilding(b: Building, wind: Vec3, deficitOut: number, dt: number, time: number): boolean {
+export function updateBuilding(
+  b: Building,
+  wind: Vec3,
+  deficitOut: number,
+  dt: number,
+  time: number,
+  onFail?: (rec: FailureRecord) => void,
+): boolean {
   if (b.failed.slab) return false;
   const ms = Math.hypot(wind.x, wind.y, wind.z);
   const mph = ms / MS_PER_MPH;
@@ -78,7 +85,9 @@ export function updateBuilding(b: Building, wind: Vec3, deficitOut: number, dt: 
 
   const fail = (part: SinglePart, load: number, capacity: number): boolean => {
     if (b.failed[part] || load <= capacity) return false;
-    b.failed[part] = { part, time, load, capacity, mph };
+    const rec: FailureRecord = { part, time, load, capacity, mph };
+    b.failed[part] = rec;
+    onFail?.(rec);
     return true;
   };
 
@@ -99,7 +108,9 @@ export function updateBuilding(b: Building, wind: Vec3, deficitOut: number, dt: 
     if (wallsUp) {
       for (let k = 0; k < 4; k++) {
         if (!b.windowFailed[k] && L.windows[k]! > b.windowCapacity[k]!) {
-          b.windowFailed[k] = { part: "windows", face: k, time, load: L.windows[k]!, capacity: b.windowCapacity[k]!, mph };
+          const rec: FailureRecord = { part: "windows", face: k, time, load: L.windows[k]!, capacity: b.windowCapacity[k]!, mph };
+          b.windowFailed[k] = rec;
+          onFail?.(rec);
           any = true;
         }
       }
@@ -127,15 +138,33 @@ export interface EFEstimate {
   ef: EFRating | null;
   low: EFRating | null;
   high: EFRating | null;
+  /** Wind speed the survey assigns (mph), or 0 with no damage. */
+  mph: number;
+  /** Why that speed was chosen within the DOD's bounds. */
+  basis: string;
 }
 
-export function efFromDamage(dod: number): EFEstimate {
+const RATING_BASIS: Record<ConstructionClass, string> = {
+  weak: "rated at the lower bound: below-average construction fails at lower wind",
+  standard: "rated at the expected value for typical construction",
+  strong: "rated at the upper bound: well-built (straps, anchor bolts) needs more wind to fail",
+};
+
+/**
+ * Survey-style EF estimate (Spec 03 v1.2). As in EF-scale practice, the assigned speed is
+ * adjusted within the DOD's lower–upper bounds by construction quality: weak → lower bound,
+ * standard → expected, strong → upper bound.
+ */
+export function efFromDamage(dod: number, cls: ConstructionClass = "standard"): EFEstimate {
   const row = DI2_DODS.find((r) => r.dod === dod);
-  if (!row) return { ef: null, low: null, high: null };
+  if (!row) return { ef: null, low: null, high: null, mph: 0, basis: "" };
+  const mph = cls === "weak" ? row.lower : cls === "strong" ? row.upper : row.expected;
   return {
-    ef: efRating(mphToMs(row.expected)),
+    ef: efRating(mphToMs(mph)),
     low: efRating(mphToMs(row.lower)),
     high: efRating(mphToMs(row.upper)),
+    mph,
+    basis: RATING_BASIS[cls],
   };
 }
 
@@ -167,7 +196,7 @@ export function buildingReport(b: Building): BuildingReport {
     classLabel: CLASS_LABEL[b.cls],
     dod: b.dod,
     description: row ? row.text : "No damage",
-    estimate: efFromDamage(b.dod),
+    estimate: efFromDamage(b.dod, b.cls),
     peakMph: b.peakMph,
     failures: recs.map(({ label, time, load, capacity, mph }) => ({ label, time, load, capacity, mph })),
   };

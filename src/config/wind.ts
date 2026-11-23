@@ -61,8 +61,12 @@ export const TERRAIN_BETA = {
   urban: 0.33,
 } as const;
 
-/** Numerical floor for z / z_p so speed stays nonzero at z = 0. */
-export const PROFILE_EPSILON = 0.05;
+/**
+ * Numerical floor for z / z_p so speed stays nonzero at z = 0 (0.1 m with z_p = 20 m).
+ * Was 0.05 (a 1 m floor), which held wind at ground level near 94% of the peak and made
+ * resting debris far too mobile (Spec 01 v1.5).
+ */
+export const PROFILE_EPSILON = 0.005;
 
 /**
  * One-cell → two-cell vortex structure (Spec 01 v1.2).
@@ -79,6 +83,12 @@ export const CELL_STRUCTURE = {
   /** Downdraft radius as a fraction of R_max. */
   downdraftRadius: 0.5,
 } as const;
+
+/**
+ * The far-field (environmental) wind equals V_trans at and above this height and follows the
+ * terrain power law below it (Spec 01 v1.4).
+ */
+export const ENV_REFERENCE_HEIGHT = 10;
 
 /** Height at which the EF rating is evaluated (m). Standard 10 m anemometer height. */
 export const EF_REFERENCE_HEIGHT = 10;

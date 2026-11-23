@@ -1,6 +1,6 @@
 # Spec 08 — Simulation Loop
 
-Status: Approved (v1.2)
+Status: Approved (v1.3)
 
 ## Purpose
 
@@ -26,6 +26,9 @@ and provide deterministic, replayable runs.
   updated by the damage model (Spec 03) every 4th step. Snapshots carry a `damageVersion`
   counter and the DOD histogram (count of houses at each DOD), so the renderer and UI can tell
   when anything changed without the snapshot copying every house.
+- **Debris:** the sim owns a seeded debris pool (Spec 04). Failures reported by the damage
+  model spawn pieces; airborne pieces advance every step, and resting pieces are re-checked
+  every 4th step. Snapshots carry the debris stats.
 - **Snapshots:** after each step, an immutable `SimSnapshot` (time, tornado state) is made
   available to the renderer and UI.
 
@@ -66,6 +69,8 @@ function createRng(seed: number): () => number;   // uniform in [0, 1)
 - **SIM-05**: Parameter changes from `setParams` take effect at the next step, not mid-step.
 - **SIM-06**: With turnRate = 0 the center moves in a straight line at the translation speed
   (distance after t seconds = speed · t, ±1e-6).
+- **SIM-09**: Every new failure spawns its debris in the same step; reset empties the pool;
+  snapshot debris stats match the pool.
 - **SIM-08**: Reset restores the neighborhood to undamaged; the damage version increases
   whenever any house's damage changes; the histogram always sums to the number of houses.
 - **SIM-07**: Time scale 0 pauses (state unchanged); time scale 2 advances twice as far as 1.
@@ -76,6 +81,7 @@ function createRng(seed: number): () => number;   // uniform in [0, 1)
 
 ## Changelog
 
+- v1.3: debris in the loop (SIM-09).
 - v1.2: world, damage version and DOD histogram (SIM-08).
 - v1.1: SIM-01 uses 0.25 s (a 1 s call conflicts with the SIM-02 clamp); start position and
   setTimeScale documented.

@@ -58,6 +58,7 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
 ## Commands
 
 - `npm run dev`: start the app
-- `npm run test`: unit and validation tests
+- `npm run test`: unit and validation tests (a few minutes; full tornado runs)
+- `npm run test:fast`: unit tests only (seconds), for everyday work
 - `npm run trace`: check that every acceptance criterion has a test
 - `npm run verify`: everything required for a phase gate

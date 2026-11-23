@@ -7,6 +7,8 @@ import { lifecycle, lifetime } from "../core/wind/lifecycle";
 import type { Vec2 } from "../core/math/vec";
 import { createRng } from "./rng";
 import { createWorld } from "./world";
+import { DebrisField } from "../core/debris/field";
+import { DEBRIS } from "../config/debris";
 import type { World } from "./world";
 import { defaultParams } from "./types";
 import type { SimConfig, SimFrame, SimSnapshot, TornadoParams } from "./types";
@@ -27,6 +29,8 @@ export interface Sim {
   readonly rng: () => number;
   /** The neighborhood and its damage state (read-only for callers). */
   readonly world: Pick<World, "buildings" | "buildingAt">;
+  /** Debris pool (read-only for callers). */
+  readonly debris: Pick<DebrisField, "pieces" | "stats" | "cap" | "settled" | "settledDropped">;
 }
 
 const DEG = Math.PI / 180;
@@ -46,6 +50,7 @@ export function createSim(
   const maxFrameDt = config.maxFrameDt ?? SIM_DEFAULTS.maxFrameDt;
   const withBuildings = config.buildings ?? true;
   let world: World = createWorld(seed, withBuildings);
+  let debris = new DebrisField(seed);
 
   let params: TornadoParams = { ...defaultParams(), ...initial };
   let pending: Partial<TornadoParams> | null = null;
@@ -79,6 +84,7 @@ export function createSim(
       lifetime: lifetime(params),
       damageVersion: world.version,
       damageHistogram: Object.freeze([...world.histogram]),
+      debris: Object.freeze({ ...debris.stats }),
       tornado: Object.freeze({
         center: Object.freeze({ x: center.x, z: center.z }),
         velocity: Object.freeze({ x: d.x * params.translationSpeed, z: d.z * params.translationSpeed }),
@@ -113,12 +119,15 @@ export function createSim(
     headingDeg += params.turnRate * dt;
     stepCount++;
     prev = curr;
-    curr = makeSnapshot();
-    if (stepCount % DAMAGE_STEP_INTERVAL === 0) {
-      const before = world.version;
-      world.update(dt * DAMAGE_STEP_INTERVAL, curr.tornado, curr.terrain, curr.time);
-      if (world.version !== before) curr = makeSnapshot();
+    const pre = makeSnapshot();
+    const damageStep = stepCount % DAMAGE_STEP_INTERVAL === 0;
+    if (damageStep) {
+      world.update(dt * DAMAGE_STEP_INTERVAL, pre.tornado, pre.terrain, pre.time, (b, rec) => debris.spawnFrom(b, rec));
     }
+    if (stepCount % DEBRIS.stepInterval === 0) {
+      debris.step(dt * DEBRIS.stepInterval, pre.tornado, pre.terrain, damageStep, pre.time, pre.cloudBase);
+    }
+    curr = makeSnapshot();
   }
 
   function reset(newSeed?: number): void {
@@ -126,6 +135,7 @@ export function createSim(
     if (newSeed !== undefined) currentSeed = newSeed;
     rng = createRng(currentSeed);
     world = createWorld(currentSeed, withBuildings);
+    debris = new DebrisField(currentSeed);
     stepCount = 0;
     acc = 0;
     headingDeg = params.heading;
@@ -173,6 +183,9 @@ export function createSim(
     },
     get world() {
       return world;
+    },
+    get debris() {
+      return debris;
     },
   };
 }

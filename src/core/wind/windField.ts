@@ -5,7 +5,7 @@
  * World frame: Y up, ground plane X–Z. Cyclonic rotation is positive rotation about +Y
  * (counter-clockwise viewed from above).
  */
-import { CELL_STRUCTURE, PROFILE_EPSILON, TERRAIN_BETA } from "../../config/wind";
+import { CELL_STRUCTURE, ENV_REFERENCE_HEIGHT, PROFILE_EPSILON, TERRAIN_BETA } from "../../config/wind";
 import type { Vec3 } from "../math/vec";
 import type { TerrainClass, TornadoState } from "./types";
 
@@ -81,6 +81,12 @@ export function windComponents(
   };
 }
 
+/** Surface-layer factor for the environmental (translation) wind: 1 at ≥ 10 m, power law below. */
+export function envFactor(z: number, terrain: TerrainClass): number {
+  if (z >= ENV_REFERENCE_HEIGHT) return 1;
+  return Math.pow(Math.max(z / ENV_REFERENCE_HEIGHT, PROFILE_EPSILON), TERRAIN_BETA[terrain]);
+}
+
 /** Ground-relative wind velocity at world point p (m/s). Pure and deterministic. */
 export function windAt(p: Vec3, s: TornadoState, terrain: TerrainClass): Vec3 {
   const dx = p.x - s.center.x;
@@ -99,5 +105,6 @@ export function windAt(p: Vec3, s: TornadoState, terrain: TerrainClass): Vec3 {
     hx = c.tangential * tx + c.radial * ux;
     hz = c.tangential * tz + c.radial * uz;
   }
-  return { x: hx + s.velocity.x, y: c.vertical, z: hz + s.velocity.z };
+  const e = envFactor(p.y, terrain);
+  return { x: hx + e * s.velocity.x, y: c.vertical, z: hz + e * s.velocity.z };
 }

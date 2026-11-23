@@ -129,7 +129,7 @@ describe("Spec 07 — instruments", () => {
       tornadoPass(b, c.state, "open", c.offset * 2);
       const r = buildingReport(b);
       expect(r.dod).toBe(b.dod);
-      expect(r.estimate).toEqual(efFromDamage(b.dod));
+      expect(r.estimate).toEqual(efFromDamage(b.dod, b.cls));
       expect(r.description).toBe(b.dod ? DI2_DODS[b.dod - 1]!.text : "No damage");
       expect(r.peakMph).toBe(b.peakMph);
       const n = Object.keys(b.failed).length + b.windowFailed.filter(Boolean).length;
@@ -138,6 +138,20 @@ describe("Spec 07 — instruments", () => {
       for (const f of r.failures) expect(f.load).toBeGreaterThan(f.capacity);
     }
   }, 30000);
+
+  test("INST-10: debris stats match the pool", () => {
+    const ef4 = PRESETS.find((p) => p.id === "ef4-wedge")!;
+    const sim = createSim({}, 2, ef4.params);
+    while (sim.time < 120) sim.advance(0.25);
+    const r = computeReadout(sim.snapshot);
+    const live = sim.debris.pieces;
+    const air = live.filter((p) => !p.resting);
+    expect(r.debris.airborne).toBe(air.length);
+    expect(r.debris.resting).toBe(live.length - air.length);
+    expect(r.debris.airborne).toBeGreaterThan(100);
+    expect(r.debris.maxSpeed).toBeCloseTo(Math.max(...air.map((p) => Math.hypot(p.vel.x, p.vel.y, p.vel.z))), 9);
+    expect(r.debris.maxHeight).toBeCloseTo(Math.max(...air.map((p) => p.pos.y)), 9);
+  }, 60000);
 
   test("INST-09: neighborhood tally counts damaged (≥ 1) and destroyed (≥ 7) houses", () => {
     expect(computeTally([10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])).toEqual({ total: 65, damaged: 55, destroyed: 34 });

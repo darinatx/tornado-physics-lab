@@ -1,6 +1,6 @@
 # Spec 03 — Damage Model
 
-Status: Approved (v1.1) — Phase 2 scope: one- and two-family houses (EF Damage Indicator 2)
+Status: Approved (v1.2) — Phase 2 scope: one- and two-family houses (EF Damage Indicator 2)
 
 ## Purpose
 
@@ -73,8 +73,18 @@ failed about 15 mph too early. Calibrating in tornado passes removed the bias.
 
 ### Damage rating and EF estimate
 
-A house's DOD is the highest DOD whose part has failed. Its EF estimate is the EF of that
-DOD's expected speed, with a range from the lower and upper bounds, as a damage survey reports it.
+A house's DOD is the highest DOD whose part has failed. As in EF-scale survey practice, the
+assigned wind speed is adjusted within that DOD's lower–upper bounds by construction quality:
+
+| Class | Assigned speed |
+|---|---|
+| Weak | lower bound (it failed at less wind than a typical house) |
+| Standard | expected value |
+| Strong | upper bound (it took more wind than a typical house) |
+
+The EF estimate is the EF of the assigned speed, reported with the DOD's full range. This is how
+real EF5 ratings arise: a well-built house swept off its slab is rated at 220 mph (EF5), while
+a typical one swept clean is rated 200 mph (EF4) and a weak one 165 mph (EF3).
 
 ### Update rate
 
@@ -112,8 +122,12 @@ Base capacities, class factors and fragility β live in `src/config/buildings.ts
   houses at a higher one.
 - **DMG-06**: Below 50 mph steady wind, fewer than 1% of standard houses show any damage.
 - **DMG-07**: Same seed → identical capacities and identical damage histories.
-- **DMG-08**: The EF estimate for each DOD equals `efRating` of its expected speed, and the
-  range comes from its lower and upper bounds.
+- **DMG-08**: The EF estimate for each DOD uses the lower bound for weak houses, the expected
+  value for standard ones and the upper bound for strong ones, and the range comes from the
+  lower and upper bounds.
+- **DMG-10** *(validation)*: Strong houses passing through the core of an EF5-strength tornado
+  can be surveyed EF5; no house passing through an EF4-strength tornado (peak wind < 200 mph)
+  is surveyed EF5.
 
 ## Simplifications / out of scope
 
@@ -126,6 +140,9 @@ Base capacities, class factors and fragility β live in `src/config/buildings.ts
 
 ## Changelog
 
+- v1.2: survey estimate adjusted within the DOD bounds by construction quality (DMG-08 updated,
+  DMG-10 added). Before this, DOD 10 always rated EF4 (200 mph expected), so even an EF5
+  tornado could never produce an EF5 survey rating.
 - v1.1: calibration moved from steady wind to tornado passes (steady wind biased roof failures
   early); DMG-04 updated and DMG-09 added for the steady-wind check.
 - v1.0: written and approved for Phase 2.

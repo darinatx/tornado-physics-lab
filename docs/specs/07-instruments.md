@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.4) — Phases 1–2
+Status: Approved (v1.5) — Phases 1–3
 
 ## Purpose
 
@@ -31,7 +31,8 @@ Phase 1 scope:
     the path.
 
   Hovering over a house switches the tooltip to a **building inspector**: construction class,
-  current DOD with its description, estimated EF with its range, peak wind it experienced, and
+  current DOD with its description, estimated EF with the assigned speed, the DOD's range and
+  the reason for the rating (construction quality), peak wind it experienced, and
   each failed part with the time, the load and the capacity it exceeded, so every failure is
   explainable.
 
@@ -41,7 +42,8 @@ Phase 1 scope:
 - **EF readout:** the current EF rating and the peak ground-relative speed (mph and m/s),
   computed with `efRating` from Spec 01, plus the vortex structure (one-cell, transitioning,
   two-cell) and swirl ratio, plus a neighborhood tally: houses damaged (DOD ≥ 1) and destroyed
-  (DOD ≥ 7).
+  (DOD ≥ 7), and debris stats: pieces airborne and on the ground, the fastest piece's speed
+  and the highest piece's height.
 - **Wind visualization:** a grid of arrows over the ground plane at a chosen height (default
   10 m), colored by speed band (one color per EF level, gray below EF0).
 
@@ -87,6 +89,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
   range and default, and changing it changes the next `windAt` result.
 - **INST-02**: The EF readout matches `efRating(peak speed)` for the current state, and
   shows speed in both mph and m/s.
+- **INST-10**: Debris stats match the debris pool: airborne and resting counts, maximum
+  speed and maximum height over live pieces.
 - **INST-08**: The building report matches the building: DOD and description, EF estimate and
   range from Spec 03, peak wind, and failures listed in time order with load > capacity.
 - **INST-09**: The neighborhood tally equals the count of houses at DOD ≥ 1 and DOD ≥ 7.
@@ -110,6 +114,7 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.5: debris stats in the readout (INST-10).
 - v1.4: building inspector and neighborhood tally (INST-08, INST-09).
 - v1.3: presets, plain-language panel with tooltips, inspect probe with pinning and history
   (INST-04 to INST-07).

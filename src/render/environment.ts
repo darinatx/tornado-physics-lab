@@ -96,12 +96,12 @@ export interface Environment {
 }
 
 export function createEnvironment(scene: THREE.Scene): Environment {
-  const sky = new THREE.Color(0x56616d);
+  const sky = new THREE.Color(0x8793a0);
   scene.background = sky;
-  scene.fog = new THREE.Fog(sky, 1800, 10000);
+  scene.fog = new THREE.Fog(sky, 2500, 12000);
 
-  scene.add(new THREE.HemisphereLight(0xaab5c2, 0x2f3526, 1.4));
-  const sun = new THREE.DirectionalLight(0xfff1dc, 0.9);
+  scene.add(new THREE.HemisphereLight(0xc4ced9, 0x4a5240, 2.0));
+  const sun = new THREE.DirectionalLight(0xfff1dc, 1.4);
   sun.position.set(-3000, 1500, 2000); // low western light under the storm
   scene.add(sun);
 
@@ -109,7 +109,7 @@ export function createEnvironment(scene: THREE.Scene): Environment {
   groundTex.repeat.set(RENDER.groundSize / 1000, RENDER.groundSize / 1000);
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(RENDER.groundSize, RENDER.groundSize).rotateX(-Math.PI / 2),
-    new THREE.MeshLambertMaterial({ map: groundTex, color: 0x8a8f86 }),
+    new THREE.MeshLambertMaterial({ map: groundTex, color: 0xb4b8ae }),
   );
   scene.add(ground);
 
@@ -118,7 +118,7 @@ export function createEnvironment(scene: THREE.Scene): Environment {
   cloudTex.repeat.set(10, 10);
   const deck = new THREE.Mesh(
     new THREE.PlaneGeometry(RENDER.groundSize * 2, RENDER.groundSize * 2).rotateX(Math.PI / 2),
-    new THREE.MeshBasicMaterial({ map: cloudTex, color: 0x8d949c }),
+    new THREE.MeshBasicMaterial({ map: cloudTex, color: 0xb2b9c1 }),
   );
   scene.add(deck);
 
@@ -126,7 +126,7 @@ export function createEnvironment(scene: THREE.Scene): Environment {
   const wallTex = cloudTexture(23);
   const wall = new THREE.Mesh(
     new THREE.CircleGeometry(1, 64).rotateX(Math.PI / 2),
-    new THREE.MeshBasicMaterial({ map: wallTex, alphaMap: radialFade(), color: 0x5d636b, transparent: true, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ map: wallTex, alphaMap: radialFade(), color: 0x7a8189, transparent: true, depthWrite: false }),
   );
   scene.add(wall);
 

@@ -7,11 +7,18 @@ import "./style.css";
 
 const app = document.getElementById("app")!;
 const sim = createSim();
-const view = createRenderer(app, () => sim.world.buildings);
+const view = createRenderer(
+  app,
+  () => sim.world.buildings,
+  () => sim.debris.pieces,
+  () => ({ pieces: sim.debris.settled, dropped: sim.debris.settledDropped }),
+);
 const panel = createPanel(sim, (state) => {
   view.setFollow(state.follow);
-  view.setLayers({ arrows: state.arrows, funnel: state.funnel, tracers: state.tracers });
+  view.setLayers({ arrows: state.arrows, funnel: state.funnel, tracers: state.tracers, debris: state.debris });
   view.setDamageColors(state.damageColors);
+  view.setDebrisScale(state.enlargeDebris ? 3 : 1);
+  view.setBrightness(state.brightness);
 });
 const readout = mountReadout(document.body);
 const probe = createProbeUI(app, view, (x, z) => sim.world.buildingAt(x, z));

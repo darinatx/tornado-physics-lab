@@ -106,6 +106,31 @@ describe("Spec 08 — simulation loop", () => {
     expect(sim.world.buildings.every((b) => b.dod === 0)).toBe(true);
   }, 60000);
 
+  test("SIM-09: failures spawn debris in the same step; reset empties the pool", () => {
+    const ef4 = PRESETS.find((p) => p.id === "ef4-wedge")!;
+    const sim = createSim({}, 4, ef4.params);
+    let lastFailures = 0;
+    while (sim.time < 100) {
+      sim.advance(1 / 30);
+      const failures = sim.world.buildings.reduce(
+        (a, b) => a + Object.keys(b.failed).length + b.windowFailed.filter(Boolean).length,
+        0,
+      );
+      if (failures > lastFailures) {
+        // New failures this frame: their pieces exist (or were counted as skipped/lofted).
+        const d = sim.snapshot.debris;
+        expect(d.airborne + d.resting + d.skipped + d.lofted).toBeGreaterThan(0);
+      }
+      lastFailures = failures;
+      const live = sim.debris.pieces;
+      expect(sim.snapshot.debris.airborne + sim.snapshot.debris.resting).toBe(live.length);
+    }
+    expect(sim.debris.pieces.length).toBeGreaterThan(0);
+    sim.reset();
+    expect(sim.debris.pieces.length).toBe(0);
+    expect(sim.snapshot.debris.airborne).toBe(0);
+  }, 60000);
+
   test("SIM-07: time scale 0 pauses, 2 runs twice as fast", () => {
     const paused = createSim();
     paused.setTimeScale(0);

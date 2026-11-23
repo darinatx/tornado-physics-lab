@@ -4,7 +4,7 @@ import { lifecycle } from "../../src/core/wind/lifecycle";
 import { AIR_DENSITY } from "../../src/config/atmosphere";
 import { CELL_STRUCTURE } from "../../src/config/wind";
 import { pressureDeficit } from "../../src/core/wind/pressure";
-import { heightFactor, swirlRatio, twoCellBlend, windAt, windComponents } from "../../src/core/wind/windField";
+import { envFactor, heightFactor, swirlRatio, twoCellBlend, windAt, windComponents } from "../../src/core/wind/windField";
 import { baseState, hspeed } from "../helpers";
 
 describe("Spec 01 — wind field", () => {
@@ -226,6 +226,15 @@ describe("Spec 01 — wind field", () => {
       const expected = -(AIR_DENSITY * vt * vt) / r;
       expect(Math.abs(dpdr - expected) / Math.abs(expected)).toBeLessThan(0.005);
     }
+  });
+
+  test("WIND-20: environmental wind follows the surface layer below 10 m", () => {
+    const s = baseState({ vMax: 0, velocity: { x: 15, z: 0 } }); // no vortex: environment only
+    for (const z of [10, 50, 300]) expect(hspeed(windAt({ x: 0, y: z, z: 0 }, s, "open"))).toBeCloseTo(15, 9);
+    const at1 = hspeed(windAt({ x: 0, y: 1, z: 0 }, s, "open"));
+    expect(at1).toBeLessThan(15);
+    expect(at1).toBeCloseTo(15 * envFactor(1, "open"), 9);
+    expect(hspeed(windAt({ x: 0, y: 1, z: 0 }, s, "urban"))).toBeLessThan(at1);
   });
 
   test("WIND-15: vertical profile is continuous at z_p", () => {

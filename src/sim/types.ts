@@ -1,6 +1,7 @@
 import { ATMOSPHERE_PARAMS } from "../config/atmosphere";
 import { SIM_DEFAULTS } from "../config/sim";
 import { LIFECYCLE_DEFAULTS, WIND_PARAMS } from "../config/wind";
+import type { DebrisStats } from "../core/debris/field";
 import type { Phase } from "../core/wind/lifecycle";
 import type { TerrainClass, TornadoState } from "../core/wind/types";
 
@@ -64,6 +65,8 @@ export interface SimSnapshot {
   readonly damageVersion: number;
   /** Count of buildings at each DOD 0–10. */
   readonly damageHistogram: readonly number[];
+  /** Debris pool stats (Spec 04). */
+  readonly debris: Readonly<DebrisStats>;
 }
 
 export interface SimConfig {

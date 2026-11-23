@@ -3,7 +3,7 @@
  */
 import { DAMAGE_RANGE_RMAX } from "../config/buildings";
 import { updateBuilding } from "../core/damage/building";
-import type { Building } from "../core/damage/types";
+import type { Building, FailureRecord } from "../core/damage/types";
 import { pressureDeficit } from "../core/wind/pressure";
 import type { TerrainClass, TornadoState } from "../core/wind/types";
 import { windAt } from "../core/wind/windField";
@@ -16,7 +16,13 @@ export interface World {
   readonly version: number;
   /** Count of buildings at each DOD 0–10. */
   readonly histogram: readonly number[];
-  update(dt: number, s: TornadoState, terrain: TerrainClass, time: number): void;
+  update(
+    dt: number,
+    s: TornadoState,
+    terrain: TerrainClass,
+    time: number,
+    onFail?: (b: Building, rec: FailureRecord) => void,
+  ): void;
 }
 
 export function createWorld(seed: number, withBuildings = true): World {
@@ -33,7 +39,7 @@ export function createWorld(seed: number, withBuildings = true): World {
       return version;
     },
     histogram,
-    update(dt, s, terrain, time) {
+    update(dt, s, terrain, time, onFail) {
       const range = DAMAGE_RANGE_RMAX * s.rMax;
       const active = s.vMax > 0;
       let changed = false;
@@ -46,7 +52,8 @@ export function createWorld(seed: number, withBuildings = true): World {
         p.y = b.roofHeight;
         p.z = b.z;
         const before = b.dod;
-        if (updateBuilding(b, windAt(p, s, terrain), pressureDeficit(r, s), dt, time)) {
+        const cb = onFail ? (rec: FailureRecord) => onFail(b, rec) : undefined;
+        if (updateBuilding(b, windAt(p, s, terrain), pressureDeficit(r, s), dt, time, cb)) {
           changed = true;
           if (b.dod !== before) {
             histogram[before]!--;

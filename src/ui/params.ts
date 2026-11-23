@@ -13,7 +13,10 @@ export interface PanelState {
   arrows: boolean;
   funnel: boolean;
   tracers: boolean;
+  debris: boolean;
+  enlargeDebris: boolean;
   damageColors: boolean;
+  brightness: number;
   probeHeight: number;
 }
 
@@ -41,7 +44,10 @@ export function createPanel(
     arrows: false,
     funnel: true,
     tracers: true,
+    debris: true,
+    enlargeDebris: true,
     damageColors: true,
+    brightness: 1,
     probeHeight: 10,
   };
   const controllers: Controller[] = [];
@@ -140,8 +146,20 @@ export function createPanel(
   // --- Display ---------------------------------------------------------------
   const display = gui.addFolder("Display");
   const emit = () => onChange(state);
+  tip(
+    display.add(state, "brightness", 0.5, 2, 0.05).name("Brightness").onChange(emit),
+    "Scene brightness. Real tornado light is often dim under the storm; raise this to see detail.",
+  );
   tip(display.add(state, "funnel").name("Funnel cloud").onChange(emit), "The visible condensation funnel, shaped by the tornado's pressure drop.");
-  tip(display.add(state, "tracers").name("Dust & debris").onChange(emit), "Dust particles carried by the wind.");
+  tip(display.add(state, "tracers").name("Dust").onChange(emit), "Fine dust carried by the wind.");
+  tip(
+    display.add(state, "debris").name("Flying debris").onChange(emit),
+    "Pieces of failed houses (shingles, plywood, lumber, glass) flying with real mass, drag and lift.",
+  );
+  tip(
+    display.add(state, "enlargeDebris").name("Enlarge debris ×3").onChange(emit),
+    "Draws debris 3× its real size so it's visible from a distance. Display only: the physics always uses real sizes and masses.",
+  );
   tip(
     display.add(state, "damageColors").name("Damage colors").onChange(emit),
     "Tint houses by damage rating: yellow (minor) → orange → red → purple (swept away). Off shows their real colors.",

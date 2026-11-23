@@ -45,7 +45,7 @@ function fmtBuilding(r: BuildingReport, hereMph: number): string {
   const col = r.dod > 0 ? hex(DOD_COLORS[r.dod]!) : "#c3ccd6";
   const est = r.estimate.ef === null
     ? "No damage"
-    : `${efText(r.estimate.ef)} <span class="p-dim">(range ${efText(r.estimate.low)}–${efText(r.estimate.high)})</span>`;
+    : `${efText(r.estimate.ef)} · ${r.estimate.mph} mph <span class="p-dim">(DOD range ${efText(r.estimate.low)}–${efText(r.estimate.high)}; ${r.estimate.basis})</span>`;
   const fails = r.failures
     .map((f) => `<li>${f.label} <span class="p-dim">at ${Math.round(f.mph)} mph · ${kpa(f.load)} &gt; ${kpa(f.capacity)}</span></li>`)
     .join("");

@@ -7,6 +7,7 @@ import { peakGroundSpeed } from "../core/wind/peak";
 import { swirlRatio, twoCellBlend } from "../core/wind/windField";
 import { BELOW_EF0_COLOR, EF_COLORS } from "../render/arrowStyle";
 import type { SimSnapshot } from "../sim/types";
+import type { DebrisStats } from "../core/debris/field";
 
 export interface Tally {
   total: number;
@@ -40,6 +41,7 @@ export interface Readout {
   time: number;
   lifetime: number;
   tally: Tally;
+  debris: DebrisStats;
 }
 
 /** Pure: the readout for a snapshot. */
@@ -56,6 +58,7 @@ export function computeReadout(snap: SimSnapshot): Readout {
     time: snap.time,
     lifetime: snap.lifetime,
     tally: computeTally(snap.damageHistogram),
+    debris: { ...snap.debris },
   };
 }
 
@@ -83,6 +86,7 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
     <div class="phase"></div>
     <div class="cells"></div>
     <div class="tally"></div>
+    <div class="debris"></div>
     <div class="legend">${["<EF0", "EF0", "EF1", "EF2", "EF3", "EF4", "EF5"]
       .map((l, i) => `<span><i style="background:${hex(i === 0 ? BELOW_EF0_COLOR : EF_COLORS[i - 1]!)}"></i>${l}</span>`)
       .join("")}</div>
@@ -93,6 +97,7 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
   const phase = el.querySelector<HTMLElement>(".phase")!;
   const cells = el.querySelector<HTMLElement>(".cells")!;
   const tally = el.querySelector<HTMLElement>(".tally")!;
+  const debrisEl = el.querySelector<HTMLElement>(".debris")!;
 
   return {
     update(r) {
@@ -105,6 +110,13 @@ export function mountReadout(host: HTMLElement): { update(r: Readout): void } {
       tally.innerHTML = t.total
         ? `<b>${t.damaged.toLocaleString()}</b> homes damaged · <b>${t.destroyed.toLocaleString()}</b> destroyed <span>of ${t.total.toLocaleString()}</span>`
         : "";
+      const d = r.debris;
+      debrisEl.innerHTML =
+        d.airborne + d.resting + d.settled + d.lofted > 0
+          ? `Debris: <b>${d.airborne.toLocaleString()}</b> flying · ${(d.resting + d.settled).toLocaleString()} on the ground` +
+            (d.lofted ? ` · ${d.lofted.toLocaleString()} lofted into the storm` : "") +
+            (d.airborne ? `<br><span>fastest ${Math.round(msToMph(d.maxSpeed))} mph · highest ${Math.round(d.maxHeight)} m</span>` : "")
+          : "";
       phase.textContent = `${PHASE_LABEL[r.phase]} · ${Math.floor(r.time)} s / ${Math.round(r.lifetime)} s`;
     },
   };
