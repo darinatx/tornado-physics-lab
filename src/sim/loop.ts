@@ -91,8 +91,9 @@ export function createSim(
   let detailN = 0;
   let lagging = false;
   let stepMs = 0;
-  // Default spot: the middle of the path (it's centered on the origin, in the town center).
-  let focus: { x: number; z: number } | null = { x: 0, z: 0 };
+  // No spot until the user picks one: the detail zone is opt-in (it slows the sim while its
+  // houses are torn apart).
+  let focus: { x: number; z: number } | null = null;
   let pendingFocus: { x: number; z: number } | null | undefined = undefined;
   /** Detail steps the sim may be ahead of the engine. */
   const maxLead = Math.round(DETAIL.maxLeadS / (dt * DETAIL.stepEvery));
@@ -113,6 +114,8 @@ export function createSim(
       const gone = removedOnEntry(b, framing);
       return { index: i, removed: gone.flatMap((g, id) => (g ? [id] : [])) };
     });
+    // Nothing in the zone and nothing changing: don't make the sim wait on an empty step.
+    if (!enter.length && !ops.exit.length && zone.active.size === 0) return;
     detail.post({ n: detailN++, tornado: pre.tornado, terrain: pre.terrain, enter, exit: ops.exit });
   }
 

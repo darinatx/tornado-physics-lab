@@ -17,6 +17,7 @@ beforeAll(async () => {
 describe("Spec 09 slice B — detail zone in the sim", () => {
   test("STR-14: the component model leaves detailed houses alone (no failures or debris after entry)", () => {
     const sim = createSim({}, 3, QUICK, (_s, b) => createLocalBackend(b));
+    sim.setDetailFocus({ x: 0, z: 0 });
     const entered = new Map<number, number>();
     for (let t = 0; t < 8; t += 1 / 30) {
       sim.advance(1 / 30);
@@ -34,9 +35,11 @@ describe("Spec 09 slice B — detail zone in the sim", () => {
   test("STR-18: never more than 0.25 s ahead of the detail physics; frame timing doesn't change results", () => {
     const maxLead = Math.round(DETAIL.maxLeadS / (dt * DETAIL.stepEvery));
     const a = createSim({}, 3, QUICK, (_s, b) => createLocalBackend(b));
+    a.setDetailFocus({ x: 0, z: 0 });
     for (let k = 0; k < 6 * 60; k++) a.advance(1 / 60);
     let deferred: ReturnType<typeof createDeferredBackend> | null = null;
     const b = createSim({}, 3, QUICK, (_s, bs) => (deferred = createDeferredBackend(bs)));
+    b.setDetailFocus({ x: 0, z: 0 });
     const rng = createRng(9);
     let lagged = false;
     while (b.time < a.time - 1e-9) {

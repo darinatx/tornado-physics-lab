@@ -1,6 +1,6 @@
 # Spec 09 — Structural Physics (Detail Zone)
 
-Status: Approved (v0.9) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
+Status: Approved (v0.10) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
 
 ## Purpose
 
@@ -213,8 +213,8 @@ Decisions:
 house's slab and fixed body, and every loose piece), so debris from one house hits the
 next house and those impacts load its connections like any other contact.
 
-**Which houses.** The user picks a spot in town (default: the middle of the path, which is
-centered on the town center). The N_max = 30 houses nearest that spot are the detail houses
+**Which houses.** The user picks a spot in town; until they do, there is no detail zone (the
+whole town runs on the component model at full speed). The N_max = 30 houses nearest that spot are the detail houses
 (about as many as can be torn apart at once near real time, ~1–2 ms each per step). Each
 enters the zone once the tornado's center is within R_enter = 4·R_max + 20 s × translation
 speed (well before it feels damaging wind, so the hand-off is normally invisible), nearest
@@ -397,6 +397,8 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
 
 ## Changelog
 
+- v0.10: no detail spot by default; the user picks one. With the default spot on the town
+  center, every run tore 30 detailed houses apart at the start and played in slow motion.
 - v0.9: slice C, validation against DI 2 in tornado passes (STR-24, STR-25). Physics added
   or fixed while validating: ASCE 7 MWFRS roof pressures; ceiling-joist toe-nails; gable bottom
   plate nailed along its length, braced through the roof diaphragm; code anchor-bolt spacing;
