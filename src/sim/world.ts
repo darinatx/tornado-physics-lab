@@ -16,6 +16,8 @@ export interface World {
   readonly version: number;
   /** Count of buildings at each DOD 0–10. */
   readonly histogram: readonly number[];
+  /** Set a detailed house's surveyed DOD (Spec 09 slice B). */
+  setDod(b: Building, dod: number): void;
   update(
     dt: number,
     s: TornadoState,
@@ -39,12 +41,20 @@ export function createWorld(seed: number, withBuildings = true): World {
       return version;
     },
     histogram,
+    setDod(b, dod) {
+      if (dod === b.dod) return;
+      histogram[b.dod]!--;
+      histogram[dod]!++;
+      b.dod = dod;
+      b.rev++;
+      version++;
+    },
     update(dt, s, terrain, time, onFail) {
       const range = DAMAGE_RANGE_RMAX * s.rMax;
       const active = s.vMax > 0;
       let changed = false;
       for (const b of hood.buildings) {
-        if (b.dod >= 10) continue;
+        if (b.dod >= 10 || b.detail) continue;
         const r = Math.hypot(b.x - s.center.x, b.z - s.center.z);
         // Far houses feel only the translation wind; keep updating only while venting.
         if ((!active || r > range) && b.deficitIn < 1) continue;

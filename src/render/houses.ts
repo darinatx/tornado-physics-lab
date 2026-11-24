@@ -1,3 +1,4 @@
+import { LUMBER } from "../config/structure";
 /**
  * Component houses (Spec 06 v1.5, REND-08): every wall panel, pane, roof section, rafter,
  * gable, partition, slab, sill plate and anchor bolt is its own instance, shown or hidden
@@ -74,6 +75,12 @@ export function houseInstances(b: Building, damageColors: boolean): HouseDraw {
   };
   const swept = !!b.sweep.failed;
 
+  if (b.detail) {
+    // Detailed house (Spec 09 slice B): its members are drawn by the detail layer; the slab
+    // here matches the detail model's (flush with the wall frames).
+    d.slab.push({ p: w(0, 0, 0, false), q: yawQ(b.yaw), s: [b.width + LUMBER.stud[1], SLAB, b.depth + LUMBER.stud[1]], color: HOUSE_COLORS.slab });
+    return d;
+  }
   d.slab.push({ p: w(0, 0, 0, false), q: yawQ(b.yaw), s: [b.width + 0.6, SLAB, b.depth + 0.6], color: HOUSE_COLORS.slab });
 
   b.panels.forEach((panel, i) => {

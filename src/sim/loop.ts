@@ -12,6 +12,12 @@ import { DEBRIS } from "../config/debris";
 import type { World } from "./world";
 import { defaultParams } from "./types";
 import type { SimConfig, SimFrame, SimSnapshot, TornadoParams } from "./types";
+import { DETAIL } from "../config/structure";
+import { buildFraming } from "../core/structure/framing";
+import { removedOnEntry } from "../core/structure/survey";
+import { DetailView } from "./detailBackend";
+import type { DetailBackend } from "./detailBackend";
+import { ZoneSelector } from "./detailZone";
 
 export interface Sim {
   /** Advance by real elapsed seconds (clamped, then scaled by the time scale). */
@@ -29,6 +35,17 @@ export interface Sim {
   readonly rng: () => number;
   /** The neighborhood and its damage state (read-only for callers). */
   readonly world: Pick<World, "buildings" | "buildingAt">;
+  /** Detailed houses' member poses (Spec 09 slice B; read-only for callers). */
+  readonly detail: DetailView;
+  /** Detail physics is holding the sim back (it may not run more than 0.25 s ahead). */
+  readonly detailLagging: boolean;
+  /** The spot whose houses get member-level detail (null = none). Applies at the next step. */
+  setDetailFocus(p: { x: number; z: number } | null): void;
+  readonly detailFocus: { x: number; z: number } | null;
+  /** Radius around the spot that holds its detail houses (m), for drawing it. */
+  readonly detailSpotRadius: number;
+  /** Detail physics cost per step (ms, smoothed), for display. */
+  readonly detailStepMs: number;
   /** Debris pool (read-only for callers). */
   readonly debris: Pick<
     DebrisField,
@@ -48,6 +65,8 @@ export function createSim(
   config: Partial<SimConfig> = {},
   seed: number = SIM_DEFAULTS.seed,
   initial: Partial<TornadoParams> = {},
+  /** Detail zone engine (Spec 09 slice B); none = component model everywhere. */
+  makeDetail?: (seed: number, buildings: readonly import("../core/damage/types").Building[]) => DetailBackend,
 ): Sim {
   const dt = config.dt ?? SIM_DEFAULTS.dt;
   const maxFrameDt = config.maxFrameDt ?? SIM_DEFAULTS.maxFrameDt;
@@ -66,6 +85,52 @@ export function createSim(
   let timeScale = 1;
   let prev: SimSnapshot;
   let curr: SimSnapshot;
+  let detail: DetailBackend | null = null;
+  let zone = new ZoneSelector();
+  const detailView = new DetailView();
+  let detailN = 0;
+  let lagging = false;
+  let stepMs = 0;
+  // Default spot: the middle of the path (it's centered on the origin, in the town center).
+  let focus: { x: number; z: number } | null = { x: 0, z: 0 };
+  let pendingFocus: { x: number; z: number } | null | undefined = undefined;
+  /** Detail steps the sim may be ahead of the engine. */
+  const maxLead = Math.round(DETAIL.maxLeadS / (dt * DETAIL.stepEvery));
+
+  function detailStep(pre: SimSnapshot): void {
+    if (!detail) return;
+    if (pendingFocus !== undefined) {
+      focus = pendingFocus;
+      pendingFocus = undefined;
+    }
+    const ops = zone.update(pre.tornado, world.buildings, focus);
+    const enter = ops.enter.map((i) => {
+      const b = world.buildings[i]!;
+      b.detail = true;
+      b.rev++;
+      const framing = buildFraming(b);
+      detailView.add(i, b, framing);
+      const gone = removedOnEntry(b, framing);
+      return { index: i, removed: gone.flatMap((g, id) => (g ? [id] : [])) };
+    });
+    detail.post({ n: detailN++, tornado: pre.tornado, terrain: pre.terrain, enter, exit: ops.exit });
+  }
+
+  function applyDetail(): void {
+    if (!detail) return;
+    for (const r of detail.drain()) {
+      stepMs += (r.ms - stepMs) * 0.05;
+      detailView.apply(r.poses);
+      for (let k = 0; k < r.dods.length; k += 2) world.setDod(world.buildings[r.dods[k]!]!, r.dods[k + 1]!);
+      for (const f of r.frozen)
+        if (f.undamaged) {
+          // Untouched: back to the component model, which draws it the same.
+          world.buildings[f.index]!.detail = false;
+          world.buildings[f.index]!.rev++;
+          detailView.remove(f.index);
+        }
+    }
+  }
 
   function startPosition(): Vec2 {
     // Center the full path on the origin so the whole lifecycle stays on the map.
@@ -124,6 +189,7 @@ export function createSim(
     prev = curr;
     const pre = makeSnapshot();
     const damageStep = stepCount % DAMAGE_STEP_INTERVAL === 0;
+    if (stepCount % DETAIL.stepEvery === 0) detailStep(pre);
     if (damageStep) {
       world.update(dt * DAMAGE_STEP_INTERVAL, pre.tornado, pre.terrain, pre.time, (b, rec) => debris.spawnFrom(b, rec));
     }
@@ -139,6 +205,13 @@ export function createSim(
     rng = createRng(currentSeed);
     world = createWorld(currentSeed, withBuildings);
     debris = new DebrisField(currentSeed);
+    zone = new ZoneSelector();
+    detailView.clear();
+    detailN = 0;
+    if (makeDetail && withBuildings) {
+      if (detail) detail.reset(currentSeed, world.buildings);
+      else detail = makeDetail(currentSeed, world.buildings);
+    }
     stepCount = 0;
     acc = 0;
     headingDeg = params.heading;
@@ -154,9 +227,18 @@ export function createSim(
       const real = Math.min(Math.max(realDtSeconds, 0), maxFrameDt);
       acc += real * timeScale;
       // Tolerance keeps step counts identical however the same time is split across calls.
+      applyDetail();
+      lagging = false;
       while (acc >= dt - 1e-12) {
+        // Never run more than maxLeadS ahead of the detail physics: slow down instead.
+        if (detail && detailN - 1 - detail.done >= maxLead) {
+          lagging = true;
+          acc = Math.min(acc, dt);
+          break;
+        }
         step();
         acc -= dt;
+        if (detail) applyDetail();
       }
       if (acc < 0) acc = 0;
       const alpha = Math.min(acc / dt, 1 - 1e-9);
@@ -189,6 +271,24 @@ export function createSim(
     },
     get debris() {
       return debris;
+    },
+    get detail() {
+      return detailView;
+    },
+    get detailLagging() {
+      return lagging;
+    },
+    setDetailFocus(p) {
+      pendingFocus = p ? { x: p.x, z: p.z } : null;
+    },
+    get detailFocus() {
+      return pendingFocus !== undefined ? pendingFocus : focus;
+    },
+    get detailStepMs() {
+      return stepMs;
+    },
+    get detailSpotRadius() {
+      return zone.radius(world.buildings, pendingFocus !== undefined ? pendingFocus : focus);
     },
   };
 }

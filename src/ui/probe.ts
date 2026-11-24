@@ -101,6 +101,8 @@ export function createProbeUI(
   canvasHost: HTMLElement,
   view: SimRenderer,
   buildingAt: (x: number, z: number) => Building | null,
+  /** A click goes here first; return true if it was used (e.g. placing the detail spot). */
+  interceptClick: (p: Vec3) => boolean = () => false,
 ): ProbeUI {
   const tooltip = document.createElement("div");
   tooltip.className = "probe-tip";
@@ -151,7 +153,7 @@ export function createProbeUI(
     down = null;
     const n = toNdc(e);
     const p = view.pick(n.x, n.y);
-    if (p) addPin(p);
+    if (p && !interceptClick(p)) addPin(p);
   });
 
   function addPin(point: Vec3): void {

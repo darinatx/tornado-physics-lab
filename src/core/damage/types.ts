@@ -122,4 +122,6 @@ export interface Building extends HouseSpec {
   breached: boolean;
   /** Smallest capacity among intact components (Pa), for skipping calm evaluations. */
   minCap: number;
+  /** In the structural detail zone (Spec 09): the component model leaves it alone. */
+  detail?: boolean;
 }

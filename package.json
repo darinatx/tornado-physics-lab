@@ -14,6 +14,7 @@
     "test:fast": "vitest run tests/unit"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "lil-gui": "^0.20.0",
     "three": "^0.170.0"
   },

@@ -35,6 +35,7 @@ function tip(c: Controller, text: string): Controller {
 export function createPanel(
   sim: Sim,
   onChange: (state: PanelState) => void,
+  actions: { pickDetailSpot?: () => void; viewDetailSpot?: () => void } = {},
 ): Panel {
   const gui = new GUI({ title: "Tornado controls", width: 300 });
   const values = { ...sim.params } as Record<string, unknown>;
@@ -88,6 +89,17 @@ export function createPanel(
     descEl.textContent = "Your own settings.";
   };
   tip(gui.add({ restart: () => sim.reset() }, "restart").name("↻ Restart tornado"), "Start this tornado over from the beginning.");
+  if (actions.pickDetailSpot)
+    tip(
+      gui.add({ spot: actions.pickDetailSpot }, "spot").name("📍 Pick detail spot"),
+      "Click the ground to choose where houses get full structural detail: the ~30 houses there are built from real framing and torn apart by the physics as the tornado passes. The sim slows down while they're coming apart.",
+    );
+  if (actions.viewDetailSpot)
+    tip(gui.add({ view: actions.viewDetailSpot }, "view").name("🎥 View detail spot"), "Move the camera close to the detail spot (turns off camera follow).");
+  tip(
+    gui.add({ lab: () => (location.search = "?lab") }, "lab").name("🔬 Structure lab"),
+    "Open one house built from real framing (studs, rafters, sheathing, windows) with breakable connections and full rigid-body physics.",
+  );
 
   // --- Basic & advanced sliders ---------------------------------------------
   const basic = gui.addFolder("Basic");
@@ -180,7 +192,7 @@ export function createPanel(
       .onChange((k: number) => sim.setTimeScale(k)),
     "Speed up, slow down or pause the simulation.",
   );
-  tip(runFolder.add(state, "follow").name("Camera follows tornado").onChange(emit), "Keep the camera centered on the tornado.");
+  tip(runFolder.add(state, "follow").name("Camera follows tornado").listen().onChange(emit), "Keep the camera centered on the tornado.");
   tip(runFolder.add(state, "autoRepeat").name("Repeat when it dissipates"), "Start the tornado again a few seconds after it dies.");
 
   applyPreset(DEFAULT_PRESET_ID);

@@ -230,6 +230,9 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- Pieces settling flat keep their heading (was a yaw derived from the piece id), so a piece
+  that lands doesn't twist (Phase 5 slice B).
+
 - v1.4: component spawning, rubble, mass bookkeeping, frozen (not erased) overflow, debris
   field drawn with multiplicity (DEB-14 to DEB-16; DEB-06 updated). Found by the user: hardly
   any debris was left in town (about 7 pieces and 0.2 t per destroyed house).

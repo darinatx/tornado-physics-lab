@@ -263,3 +263,30 @@ body {
   font-size: 10px;
   color: #6f7a88;
 }
+
+.lab-log {
+  bottom: 16px;
+  max-height: 40vh;
+  font-size: 12px;
+}
+
+/* Detail spot (Spec 09 slice B) */
+.spot-hint {
+  top: 16px;
+  bottom: auto;
+  background: rgba(255, 211, 77, 0.92);
+  color: #1d1d1d;
+  font-weight: 600;
+}
+.detail-status {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 44px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(20, 22, 26, 0.75);
+  color: #ffd34d;
+  font: 12px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+}

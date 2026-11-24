@@ -13,7 +13,9 @@ const vertexShader = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vN;
   varying vec3 vWorld;
+  #include <common>
   #include <fog_pars_vertex>
+  #include <logdepthbuf_pars_vertex>
   void main() {
     vUv = uv;
     vN = normalize(mat3(modelMatrix) * normal);
@@ -21,6 +23,7 @@ const vertexShader = /* glsl */ `
     vWorld = world.xyz;
     vec4 mvPosition = viewMatrix * world;
     gl_Position = projectionMatrix * mvPosition;
+    #include <logdepthbuf_vertex>
     #include <fog_vertex>
   }
 `;
@@ -35,6 +38,7 @@ const fragmentShader = /* glsl */ `
   varying vec3 vN;
   varying vec3 vWorld;
   #include <fog_pars_fragment>
+  #include <logdepthbuf_pars_fragment>
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
@@ -49,6 +53,7 @@ const fragmentShader = /* glsl */ `
   }
 
   void main() {
+    #include <logdepthbuf_fragment>
     float u = vUv.x - uSpin;
     float ang = 6.2831853 * u;
     // Seamless around the funnel: sample noise on a circle, sheared with height (helical).

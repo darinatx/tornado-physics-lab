@@ -116,10 +116,17 @@ export function supportHeight(p: Piece): number {
   return 0.5 * (Math.abs(rxY) * L + Math.abs(ryY) * T + Math.abs(rzY) * W);
 }
 
-/** Flat on the ground with a deterministic yaw, its center half its thickness up. */
+/** Flat on the ground keeping its heading and which face is up, center half its thickness up. */
 export function flatten(p: Piece): void {
-  const a = (p.id * 2.399963) % (2 * Math.PI);
-  p.q = [0, Math.sin(a / 2), 0, Math.cos(a / 2)];
+  const [x, y, z, w] = p.q;
+  // Long axis (+X) in the world, projected on the ground.
+  const lx = 1 - 2 * (y * y + z * z);
+  const lz = 2 * (x * z - w * y);
+  const a = Math.hypot(lx, lz) > 1e-3 ? Math.atan2(-lz, lx) : (p.id * 2.399963) % (2 * Math.PI);
+  const yaw: [number, number, number, number] = [0, Math.sin(a / 2), 0, Math.cos(a / 2)];
+  // Face down stays face down: thickness axis (+Y) pointing down → turned over about its length.
+  const faceDown = 1 - 2 * (x * x + z * z) < 0;
+  p.q = faceDown ? quatMul(yaw, [1, 0, 0, 0]) : yaw;
   p.pos.y = p.def.dims[2] / 2;
   p.grounded = true;
 }

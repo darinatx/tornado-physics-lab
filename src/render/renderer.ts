@@ -14,9 +14,11 @@ import { arrowColor, arrowLength } from "./arrowStyle";
 import { createEnvironment } from "./environment";
 import { createFunnel } from "./funnel";
 import { createHouseLayer } from "./houses";
+import { createDetailLayer } from "./detailLayer";
+import type { DetailView } from "../sim/detailBackend";
 import { createDebrisLayer, createSettledLayer } from "./debris";
 import { interpolateTornado } from "./interpolate";
-import { TracerField } from "./tracers";
+import { createDustLayer } from "./dust";
 
 export interface Layers {
   arrows: boolean;
@@ -29,6 +31,8 @@ export interface SimRenderer {
   draw(prev: SimSnapshot, curr: SimSnapshot, alpha: number): void;
   resize(width: number, height: number): void;
   setFollow(follow: boolean): void;
+  /** Look at a ground point from close by (stops following the tornado). */
+  lookAt(x: number, z: number, distance: number): void;
   setLayers(l: Layers): void;
   pick(ndcX: number, ndcY: number): Vec3 | null;
   setProbes(hover: Vec3 | null, pins: { point: Vec3; color: number }[]): void;
@@ -55,25 +59,13 @@ function arrowGeometry(): THREE.BufferGeometry {
   return g;
 }
 
-function dustSprite(): THREE.CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = c.height = 64;
-  const g = c.getContext("2d")!;
-  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  grad.addColorStop(0, "rgba(255,255,255,0.9)");
-  grad.addColorStop(0.25, "rgba(255,255,255,0.5)");
-  grad.addColorStop(0.6, "rgba(255,255,255,0.15)");
-  grad.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(c);
-}
-
 export function createRenderer(
   host: HTMLElement,
   getBuildings: () => readonly Building[],
   getDebris: () => readonly Piece[] = () => [],
   getSettled: () => { pieces: readonly Piece[]; dropped: number; version: number } = () => ({ pieces: [], dropped: 0, version: 0 }),
+  /** Detailed houses (Spec 09 slice B) and the detail spot, if any. */
+  getDetail: () => { view: DetailView; spot: { x: number; z: number; r: number } | null } | null = () => null,
 ): SimRenderer {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -122,41 +114,23 @@ export function createRenderer(
   ring.position.y = 2;
   scene.add(ring);
 
+  // Detailed houses, and a dashed ring around the detail spot.
+  const detail = createDetailLayer();
+  scene.add(detail.group);
+  const spotRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.97, 1.0, 96).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.6, depthWrite: false }),
+  );
+  spotRing.visible = false;
+  scene.add(spotRing);
+
   // Funnel.
   const funnel = createFunnel();
   scene.add(funnel.mesh);
 
   // Dust tracers.
-  const tracers = new TracerField(RENDER.tracerCount, 99);
-  const tracerGeo = new THREE.BufferGeometry();
-  tracerGeo.setAttribute("position", new THREE.BufferAttribute(tracers.positions, 3));
-  const tint = new Float32Array(RENDER.tracerCount * 3);
-  {
-    let seed = 12345;
-    for (let i = 0; i < RENDER.tracerCount; i++) {
-      seed = (seed * 1103515245 + 12345) >>> 0;
-      const v = 0.75 + 0.35 * ((seed >>> 8) / 16777216);
-      tint[i * 3] = 0.2 * v;
-      tint[i * 3 + 1] = 0.17 * v;
-      tint[i * 3 + 2] = 0.14 * v;
-    }
-  }
-  tracerGeo.setAttribute("color", new THREE.BufferAttribute(tint, 3));
-  const tracerPoints = new THREE.Points(
-    tracerGeo,
-    new THREE.PointsMaterial({
-      size: RENDER.tracerSize,
-      map: dustSprite(),
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.7,
-      depthWrite: false,
-      sizeAttenuation: true,
-    }),
-  );
-  tracerPoints.frustumCulled = false;
-  scene.add(tracerPoints);
-  let lastTime = 0;
+  const dust = createDustLayer(RENDER.tracerCount, RENDER.tracerSize);
+  scene.add(dust.points);
 
   // Probe markers.
   const hoverRing = new THREE.Mesh(
@@ -229,6 +203,14 @@ export function createRenderer(
 
       env.update(s.center, s.rMax, curr.cloudBase);
       houses.sync(getBuildings(), damageColors);
+      const det = getDetail();
+      if (det) detail.sync(det.view, damageColors);
+      spotRing.visible = !!det?.spot;
+      if (det?.spot) {
+        const r = det.spot.r + 12; // around the houses, not through them
+        spotRing.scale.set(r, 1, r);
+        spotRing.position.set(det.spot.x, 1.5, det.spot.z);
+      }
       debris.mesh.visible = layers.debris;
       settledLayer.mesh.visible = layers.debris;
       if (layers.debris) {
@@ -241,12 +223,8 @@ export function createRenderer(
       if (layers.funnel) funnel.update(s, curr.cloudBase, t);
 
       // Tracers advance with sim time; a restart (time going backwards) clears them.
-      const dt = t - lastTime;
-      if (dt < 0) tracers.clear();
-      tracers.update(Math.min(Math.max(dt, 0), 0.5), s, curr.terrain, curr.cloudBase);
-      lastTime = t;
-      tracerPoints.visible = layers.tracers;
-      tracerGeo.attributes.position!.needsUpdate = true;
+      dust.update(t, s, curr.terrain, curr.cloudBase);
+      dust.points.visible = layers.tracers;
 
       // Camera.
       if (!placed) {
@@ -274,6 +252,14 @@ export function createRenderer(
     },
     setFollow(f) {
       follow = f;
+    },
+    lookAt(x, z, distance) {
+      follow = false;
+      placed = true;
+      controls.target.set(x, 3, z);
+      // From the south-west, about 35° above the horizon.
+      camera.position.set(x - distance * 0.55, distance * 0.6, z + distance * 0.58);
+      controls.update();
     },
     setLayers(l) {
       layers = { ...l };

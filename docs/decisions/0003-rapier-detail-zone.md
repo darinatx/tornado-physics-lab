@@ -1,7 +1,7 @@
 # ADR 0003 — Rigid-body engine (Rapier) for a structural detail zone
 
 Date: 2026-11-23
-Status: Proposed (Phase 5)
+Status: Accepted (Phase 5, user chose the hybrid detail zone)
 
 ## Context
 

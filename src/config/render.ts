@@ -18,6 +18,11 @@ export const RENDER = {
   tracerCount: 8000,
   /** Dust sprite size (m). */
   tracerSize: 45,
+  /** Dust tracers in the structure lab (more, smaller: it's viewed from tens of metres,
+   *  where 45 m sprites would fill the screen; visual only). */
+  labTracerCount: 12000,
+  /** Lab dust sprite size (m). */
+  labTracerSize: 14,
   /** Ground wind needed to loft dust (m/s). */
   dustLiftSpeed: 25,
 } as const;
