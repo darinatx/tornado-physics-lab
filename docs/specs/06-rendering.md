@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.5) — Phases 1–4
+Status: Approved (v1.7) — Phases 1–4
 
 ## Purpose
 
@@ -12,9 +12,20 @@ can be removed without affecting physics results.
 Phase 1 scope:
 - **Scene:** a 6 km × 6 km ground plane with a faint 100 m grid for scale (Y-up, meters), sky-colored background, a sun light
   and an ambient light.
-- **Camera:** perspective camera with orbit controls (`OrbitControls`). It starts about 1.1 km
-  from the tornado, looking down at roughly 35°. An optional "follow" toggle keeps the orbit
-  target on the tornado center.
+- **Camera:** a perspective camera that can go anywhere above the ground, from street level
+  (eye height, 1.7 m) to the whole map. It starts as a storm-chaser view ~1.8 km from the
+  tornado. Mouse, as in map apps: drag (one finger) to slide over the ground, right-drag (or
+  Ctrl/⌘/Shift + drag) to turn the camera in place, like turning your head (left/right, and
+  up/down to 85° from level), scroll to zoom toward the cursor (down to 2 m from the point
+  you look at). Keyboard: W/A/S/D fly forward, left, back and right along the ground in the
+  direction you face, the arrow keys turn in place (90°/s), E/Q (or Page Up/Down) rise and
+  sink, Shift is 4× faster;
+  flying speed scales with height (~1.2 m/s per metre above the ground, 10–1,000 m/s), so you
+  creep along a street and cross the town quickly from high up. The camera and the point it
+  orbits never go below 1.7 m and 0 m. Keys are ignored while typing in a panel field. Sliding
+  or flying turns off "Camera follows tornado" (turning and zooming keep it). With follow on,
+  the camera is carried along as the tornado moves, keeping the view you chose; turning it on
+  brings the tornado back to the middle of the view. A hint line lists the controls.
 - **Wind arrows:** one `InstancedMesh` of arrows on a world-fixed grid (so arrows don't slide)
   within ±arrowRange of the tornado, sampled at the arrow height (Spec 07). Each arrow points along the horizontal wind, its length scales with speed
   (capped), and its color follows the EF band of its speed (gray below EF0).
@@ -32,11 +43,18 @@ Phase 1 scope:
   The radius is capped at 1.6·R_max, where it blends into the wall cloud. It's drawn as a
   deforming lathe mesh with a shader that streaks and rotates at the real angular rate
   V_max / R_max.
-- **Dust and debris tracers:** about 8,000 soft particles that follow `windAt` exactly (fine
-  dust tracks the air). They spawn at random points near the ground within 2·R_max where the
-  ground wind exceeds the dust-lifting threshold (25 m/s), and die after their lifetime, above
-  0.8·H, or beyond 4·R_max. They use their own seeded RNG (visual only). Heavy debris with
-  inertia is Spec 04.
+- **Dust and debris tracers:** soft particles that follow `windAt` exactly (fine dust tracks
+  the air). Dust lifts wherever the ground wind (at 3 m) exceeds the lifting threshold
+  u_t = 25 m/s, within the damage range (6·R_max, Spec 03), at the standard dust-emission rate
+  F ∝ u³(1 − u_t²/u²) (Gillette & Passi 1988): tracers spawn near the ground at random points
+  of that area, accepted in proportion to F, so the cloud is dense where winds are strong and
+  thins to a haze at the edge. The number of tracers follows the total emission ∫F dA
+  (surveyed 4 times a second on a polar grid): ~12,000 for the default tornado at full
+  strength, at least 2,000 while any dust lifts, capped at the measured frame budget (40,000);
+  beyond the count, tracers retire as they die, so the cloud grows and fades with the tornado.
+  They die after their lifetime, above 0.8·H, or beyond max(4·R_max, 1.5 × the dust radius).
+  They use their own seeded RNG (visual only). Heavy debris with inertia is Spec 04. (The
+  structure lab keeps a fixed count around the core: it's viewed from tens of metres.)
 - **Storm environment:** a cloud deck at the cloud base, visible from below; a lowered wall
   cloud around the tornado; overcast storm lighting and fog; procedurally textured farmland.
   Lighting favors readability over a realistically dark storm, and a Brightness control
@@ -98,7 +116,9 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 | Name | Unit | Default | Note |
 |---|---|---|---|
 | groundSize | m | 12000 | square; fits the longest preset path |
-| tracerCount | – | 8000 | |
+| tracersPerEmission | 1/(m²·(m/s)³) | 7.8e-8 | ~12,000 tracers for the default tornado |
+| tracerMin / tracerCap | – | 2000 / 40000 | measured at the cap: ~3.3 ms CPU per frame, no measurable GPU cost far or inside the cloud |
+| dustRangeRmax | – | 6 | dust lifts within the damage range |
 | dustLiftSpeed | m/s | 25 | ground wind needed to loft dust |
 | maxArrowLength | m | 34 | arrow length at or above the EF5 threshold |
 | maxArrowWidth | m | 7 | |
@@ -125,7 +145,21 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
   show once all walls are down; bolts only on a swept slab; shifted houses are offset; DOD
   color tints apply only in damage-color mode.
 - **REND-07**: Tracers are deterministic for a given seed and update sequence, and every live
-  tracer stays above the ground, below 0.8·H, and within 4·R_max of the axis.
+  tracer stays above the ground, below 0.8·H, and within max(4·R_max, 1.5 × the dust radius)
+  of the axis.
+- **REND-12**: Dust spawns only where the ground wind exceeds u_t, within 6·R_max, over the
+  whole area where it does (a tornado whose lifting area reaches beyond 2·R_max gets dust
+  there), with spawn density in proportion to the emission rate F.
+- **REND-14**: Flying moves the camera and its orbit point together: W/S along the horizontal
+  view direction, A/D across it, E/Q straight up and down, at ~1.2 m/s per metre of height
+  (clamped 10–1,000 m/s, ×4 with Shift), never below 1.7 m (camera) or 0 m (orbit point).
+- **REND-15**: Turning moves only the point the camera looks at: the camera stays put, the
+  look direction rotates by the yaw about the vertical and by the pitch about the camera's
+  right axis, pitch stays within ±85° of level, and the look point never goes below the
+  ground (looking down, it lands where the view meets the ground).
+- **REND-13**: The tracer count follows the total emission, within [2,000, 40,000]: a larger
+  or stronger tornado gets more tracers, a tornado lifting no dust none, and the count drops as
+  the tornado weakens.
 
 ## Simplifications / out of scope
 
@@ -137,6 +171,14 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 
 ## Changelog
 
+- v1.7: free camera at the user's request: keyboard flying with height-scaled speed, map-style
+  panning (left-drag pans, right-drag turns: with orbit on the left button the view kept
+  turning around the same point), zoom to the cursor, down to street level (REND-14). Right-drag
+  and the arrow keys turn the camera in place, not around a far-off point (REND-15).
+- v1.6: dust lifts over the whole area where the ground wind exceeds the threshold (within
+  the damage range), weighted by the dust-emission rate, and the tracer count follows the total
+  emission (REND-12, REND-13; REND-07 bounds). At the user's request: the fixed 2·R_max area
+  left wide tornadoes damaging far beyond their dust.
 - v1.5: component houses; debris field drawn with multiplicity (REND-08 rewritten).
 - v1.4: flying debris layer (REND-09); brighter default lighting and a Brightness control.
 - v1.3: houses with damage visuals and damage colors (REND-08).

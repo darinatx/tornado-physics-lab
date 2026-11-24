@@ -48,6 +48,10 @@ const panel = createPanel(sim, (state) => {
     view.lookAt(f.x, f.z, Math.max(120, sim.detailSpotRadius * 2.2));
   },
 });
+// Panning or flying the camera stops it following the tornado (the panel checkbox shows it).
+view.onCameraMoved(() => {
+  panel.state.follow = false;
+});
 const readout = mountReadout(document.body);
 const probe = createProbeUI(app, view, (x, z) => sim.world.buildingAt(x, z), (p) => {
   if (!pickingSpot) return false;

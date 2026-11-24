@@ -93,6 +93,14 @@ export const CELL_STRUCTURE = {
  */
 export const ENV_REFERENCE_HEIGHT = 10;
 
+/**
+ * Environmental surface wind far from the tornado (m/s at 10 m, Spec 01 v1.8): at most this,
+ * along the motion. Tornadic environments typically have 10 m winds of ~5–15 m/s, while storm
+ * motion follows the 0–6 km mean wind (often 15–25 m/s); the vortex carries the full
+ * translation only within its own circulation.
+ */
+export const ENV_SURFACE_WIND = 10;
+
 /** Strongest tornado wind ever measured near the ground (m/s): ~302 mph, mobile radar. */
 export const RECORD_WIND_MS = 135;
 

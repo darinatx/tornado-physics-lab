@@ -131,7 +131,7 @@ export function createProbeUI(
 
   const hint = document.createElement("div");
   hint.className = "probe-hint";
-  hint.textContent = "Hover the ground to inspect · click to pin a probe";
+  hint.textContent = "Hover the ground to inspect · click to pin a probe · drag to move · right-drag or arrow keys to turn · scroll to zoom · W/A/S/D to fly, E/Q up/down, Shift faster";
   document.body.appendChild(hint);
 
   let hover: Vec3 | null = null;

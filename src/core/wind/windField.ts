@@ -5,7 +5,7 @@
  * World frame: Y up, ground plane X–Z. Cyclonic rotation is positive rotation about +Y
  * (counter-clockwise viewed from above).
  */
-import { CELL_STRUCTURE, ENV_REFERENCE_HEIGHT, PROFILE_EPSILON, TERRAIN_BETA } from "../../config/wind";
+import { CELL_STRUCTURE, ENV_REFERENCE_HEIGHT, ENV_SURFACE_WIND, PROFILE_EPSILON, TERRAIN_BETA } from "../../config/wind";
 import type { Vec3 } from "../math/vec";
 import type { TerrainClass, TornadoState } from "./types";
 
@@ -87,6 +87,17 @@ export function envFactor(z: number, terrain: TerrainClass): number {
   return Math.pow(Math.max(z / ENV_REFERENCE_HEIGHT, PROFILE_EPSILON), TERRAIN_BETA[terrain]);
 }
 
+/**
+ * The carried wind as a multiple of V_trans (Spec 01 v1.8): g·V_trans + (1 − g)·V_env with
+ * g = 1 inside R_max and (R_max / r)^α beyond, and V_env = V_trans·min(1, U_env / |V_trans|).
+ */
+export function carriedFactors(r: number, s: TornadoState): number {
+  const g = r <= s.rMax ? 1 : Math.pow(s.rMax / r, s.alpha);
+  const speed = Math.hypot(s.velocity.x, s.velocity.z);
+  const env = speed > ENV_SURFACE_WIND ? ENV_SURFACE_WIND / speed : 1;
+  return g + (1 - g) * env;
+}
+
 /** Ground-relative wind velocity at world point p (m/s). Pure and deterministic. */
 export function windAt(p: Vec3, s: TornadoState, terrain: TerrainClass): Vec3 {
   const dx = p.x - s.center.x;
@@ -106,5 +117,6 @@ export function windAt(p: Vec3, s: TornadoState, terrain: TerrainClass): Vec3 {
     hz = c.tangential * tz + c.radial * uz;
   }
   const e = envFactor(p.y, terrain);
-  return { x: hx + e * s.velocity.x, y: c.vertical, z: hz + e * s.velocity.z };
+  const k = carriedFactors(r, s);
+  return { x: hx + e * k * s.velocity.x, y: c.vertical, z: hz + e * k * s.velocity.z };
 }

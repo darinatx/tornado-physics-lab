@@ -7,7 +7,7 @@ import { efRating, msToMph } from "./efScale";
 import type { EFRating } from "./efScale";
 import { pressureDeficit } from "./pressure";
 import type { TerrainClass, TornadoState } from "./types";
-import { windAt } from "./windField";
+import { carriedFactors, envFactor, windAt } from "./windField";
 
 export interface ProbeReading {
   point: Vec3;
@@ -40,9 +40,10 @@ export function probeAt(p: Vec3, s: TornadoState, terrain: TerrainClass): ProbeR
   const dz = p.z - s.center.z;
   const r = Math.hypot(dx, dz);
 
-  // Storm-relative components in the cylindrical frame.
-  const sx = w.x - s.velocity.x;
-  const sz = w.z - s.velocity.z;
+  // Storm-relative components in the cylindrical frame (the carried wind removed).
+  const carried = envFactor(p.y, terrain) * carriedFactors(r, s);
+  const sx = w.x - carried * s.velocity.x;
+  const sz = w.z - carried * s.velocity.z;
   let tangential = 0;
   let radial = 0;
   if (r > 1e-9) {

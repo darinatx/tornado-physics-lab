@@ -246,6 +246,29 @@ describe("Spec 01 — wind field", () => {
     expect(hspeed(windAt({ x: 0, y: 1, z: 0 }, s, "urban"))).toBeLessThan(at1);
   });
 
+  test("WIND-22: translation is carried with the vortex; far away the wind is the environment's", () => {
+    // Swirl removed (vMax 0) to see the carried wind alone, at 10 m.
+    for (const fwd of [5, 15, 30]) {
+      const s = baseState({ vMax: 0, rMax: 300, alpha: 0.6, velocity: { x: fwd, z: 0 } });
+      const at = (r: number) => windAt({ x: 0, y: 10, z: r }, s, "open");
+      const env = Math.min(fwd, 10);
+      for (const r of [0, 150, 300, 600, 1500, 6000, 15000]) {
+        const g = r <= 300 ? 1 : Math.pow(300 / r, 0.6);
+        const want = g * fwd + (1 - g) * env;
+        const w = at(r);
+        expect(Math.abs(w.x - want) / want).toBeLessThan(1e-9);
+        expect(w.z).toBeCloseTo(0, 12); // along the motion
+      }
+      let prev = Infinity;
+      for (let r = 300; r <= 15000; r += 300) {
+        const u = hspeed(at(r));
+        expect(u).toBeLessThanOrEqual(prev + 1e-9);
+        prev = u;
+      }
+      if (fwd > env) expect((hspeed(at(50 * 300)) - env) / (fwd - env)).toBeLessThan(0.15);
+    }
+  });
+
   test("WIND-15: vertical profile is continuous at z_p", () => {
     const s = baseState();
     for (const t of ["open", "suburban", "urban"] as const) {

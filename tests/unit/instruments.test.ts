@@ -7,7 +7,7 @@ import { probeAt } from "../../src/core/wind/probe";
 import { History } from "../../src/ui/history";
 import { baseState } from "../helpers";
 import { efRating, msToMph } from "../../src/core/wind/efScale";
-import { twoCellBlend, windAt } from "../../src/core/wind/windField";
+import { carriedFactors, envFactor, twoCellBlend, windAt } from "../../src/core/wind/windField";
 import { createSim } from "../../src/sim/loop";
 import { defaultParams } from "../../src/sim/types";
 import { buildControlDefs } from "../../src/ui/controls";
@@ -75,7 +75,8 @@ describe("Spec 07 — instruments", () => {
       expect(r.pressureDeficit).toBeCloseTo(pressureDeficit(d, s), 6);
       expect(r.dynamicPressure).toBeCloseTo(0.5 * AIR_DENSITY * (w.x ** 2 + w.y ** 2 + w.z ** 2), 6);
       // Storm-relative components recombine to the storm-relative horizontal wind.
-      expect(Math.hypot(r.tangential, r.radial)).toBeCloseTo(Math.hypot(w.x - 12, w.z), 9);
+      const carried = 12 * envFactor(p.y, "suburban") * carriedFactors(Math.hypot(p.x - s.center.x, p.z - s.center.z), s);
+      expect(Math.hypot(r.tangential, r.radial)).toBeCloseTo(Math.hypot(w.x - carried, w.z), 9);
       expect(r.radial).toBeLessThan(0); // inflow near the ground
       expect(r.inCore).toBe(d < s.rMax);
     }

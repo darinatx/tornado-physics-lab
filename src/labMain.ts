@@ -70,7 +70,7 @@ async function start(): Promise<void> {
   };
   const funnel = createFunnel();
   scene.add(funnel.mesh);
-  const dust = createDustLayer(RENDER.labTracerCount, RENDER.labTracerSize);
+  const dust = createDustLayer(RENDER.labTracerCount, RENDER.labTracerSize, 99, "core");
   scene.add(dust.points);
   // Cutaway: hide the roof and ceiling while they're still on the house (view only).
   const ROOF_KINDS = new Set(["rafterPair", "roofSheet", "roofShingle", "ceiling", "fascia"]);

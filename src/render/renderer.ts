@@ -3,7 +3,9 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RENDER } from "../config/render";
+import { flyStep, lookStep, NO_KEYS } from "./cameraFly";
+import type { FlyKeys } from "./cameraFly";
+import { CAMERA, RENDER } from "../config/render";
 import type { Building } from "../core/damage/types";
 import type { Piece } from "../core/debris/piece";
 import { DEBRIS } from "../config/debris";
@@ -40,6 +42,10 @@ export interface SimRenderer {
   setDebrisScale(scale: number): void;
   /** Scene exposure multiplier (1 = default). */
   setBrightness(exposure: number): void;
+  /** Called when the user moves the camera away from following (pan or fly). */
+  onCameraMoved(cb: () => void): void;
+  /** Where the camera is and the point it looks at (read-only). */
+  cameraPose(): { position: Vec3; target: Vec3 };
   dispose(): void;
 }
 
@@ -129,7 +135,7 @@ export function createRenderer(
   scene.add(funnel.mesh);
 
   // Dust tracers.
-  const dust = createDustLayer(RENDER.tracerCount, RENDER.tracerSize);
+  const dust = createDustLayer(RENDER.tracerCap, RENDER.tracerSize);
   scene.add(dust.points);
 
   // Probe markers.
@@ -154,17 +160,104 @@ export function createRenderer(
     pinMeshes.push(g);
   }
 
+  // Free camera (Spec 06 v1.7): orbit, map-style pan along the ground, zoom to the cursor,
+  // keyboard flying; never below eye height.
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.maxPolarAngle = Math.PI / 2 - 0.02;
-  controls.minDistance = 40;
-  controls.maxDistance = 9000;
+  // Any view angle (looking up from street level too); the floors below keep it above ground.
+  controls.maxPolarAngle = Math.PI;
+  controls.minDistance = CAMERA.minDistance;
+  controls.maxDistance = CAMERA.maxDistance;
+  controls.screenSpacePanning = false;
+  controls.zoomToCursor = true;
+  // Map-style: left-drag (one finger) slides over the ground; right-drag (or Ctrl/⌘/Shift +
+  // left-drag) turns the camera in place (handled below, not OrbitControls' orbit, which swings
+  // the camera around a possibly far-off point).
+  controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+  controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.enableRotate = false;
+  const turnKeys = { left: false, right: false, up: false, down: false };
+  const turnMap: Record<string, keyof typeof turnKeys> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
+  let turnFrom: { x: number; y: number } | null = null;
+  const turn = (yaw: number, pitch: number) => {
+    const t = lookStep(camera.position, controls.target, yaw, pitch);
+    controls.target.set(t.x, t.y, t.z);
+    camera.lookAt(controls.target);
+  };
+  const keys: FlyKeys = { ...NO_KEYS };
+  const keyMap: Record<string, keyof FlyKeys> = {
+    KeyW: "forward", KeyS: "back", KeyA: "left", KeyD: "right",
+    KeyE: "up", PageUp: "up", KeyQ: "down", PageDown: "down",
+  };
+  const typing = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+  };
+  const onKey = (down: boolean) => (e: KeyboardEvent) => {
+    keys.fast = e.shiftKey;
+    const tk = turnMap[e.code];
+    if (tk && !(down && typing(e))) {
+      turnKeys[tk] = down;
+      if (down) e.preventDefault();
+      return;
+    }
+    const k = keyMap[e.code];
+    if (!k || (down && typing(e)) || e.metaKey || e.ctrlKey || e.altKey) return;
+    keys[k] = down;
+    if (down) e.preventDefault();
+  };
+  const keyDown = onKey(true);
+  const keyUp = onKey(false);
+  const clearKeys = () => {
+    Object.assign(keys, NO_KEYS);
+    Object.assign(turnKeys, { left: false, right: false, up: false, down: false });
+  };
+  window.addEventListener("keydown", keyDown);
+  window.addEventListener("keyup", keyUp);
+  window.addEventListener("blur", clearKeys);
+  let movedCb: (() => void) | null = null;
+  const leaveFollow = () => {
+    if (!follow) return;
+    follow = false;
+    movedCb?.();
+  };
+  // A pan (plain left-drag, one finger) stops following the tornado once the pointer moves;
+  // orbiting and zooming keep following.
+  let panFrom: { x: number; y: number } | null = null;
+  const onPointer = (e: PointerEvent) => {
+    const modified = e.shiftKey || e.ctrlKey || e.metaKey;
+    panFrom = e.button === 0 && !modified ? { x: e.clientX, y: e.clientY } : null;
+    turnFrom = e.button === 2 || (e.button === 0 && modified) ? { x: e.clientX, y: e.clientY } : null;
+  };
+  const onPointerMove = (e: PointerEvent) => {
+    if (turnFrom) {
+      // Mouse-look: move right to look right, up to look up.
+      const k = CAMERA.turnPerPixel;
+      turn(-(e.clientX - turnFrom.x) * k, -(e.clientY - turnFrom.y) * k);
+      turnFrom = { x: e.clientX, y: e.clientY };
+    }
+    if (panFrom && Math.hypot(e.clientX - panFrom.x, e.clientY - panFrom.y) > 4) {
+      panFrom = null;
+      leaveFollow();
+    }
+  };
+  const onPointerUp = () => {
+    panFrom = null;
+    turnFrom = null;
+  };
+  renderer.domElement.addEventListener("pointerdown", onPointer);
+  renderer.domElement.addEventListener("pointermove", onPointerMove);
+  renderer.domElement.addEventListener("pointerup", onPointerUp);
+  let lastFrame = performance.now();
 
   const raycaster = new THREE.Raycaster();
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const hit = new THREE.Vector3();
 
   let follow = true;
+  /** Tornado center at the last frame (follow moves the camera by how far it went). */
+  let followFrom: { x: number; z: number } | null = null;
+  let recenter = false;
   let placed = false;
   let layers: Layers = { arrows: false, funnel: true, tracers: true, debris: true };
   const m = new THREE.Matrix4();
@@ -234,15 +327,42 @@ export function createRenderer(
         controls.target.set(s.center.x, curr.cloudBase * 0.45, s.center.z);
         camera.position.set(s.center.x - d * 0.5, h, s.center.z + d * 0.87);
         placed = true;
-      } else if (follow) {
+      } else if (follow && recenter) {
         const dx = s.center.x - controls.target.x;
         const dz = s.center.z - controls.target.z;
         controls.target.x += dx;
         controls.target.z += dz;
         camera.position.x += dx;
         camera.position.z += dz;
+        recenter = false;
+      } else if (follow && followFrom) {
+        // Follow: carry the camera along as the tornado moves, keeping the view you chose
+        // (turned, zoomed or tilted) rather than pulling it back onto the center.
+        const dx = s.center.x - followFrom.x;
+        const dz = s.center.z - followFrom.z;
+        controls.target.x += dx;
+        controls.target.z += dz;
+        camera.position.x += dx;
+        camera.position.z += dz;
+      }
+      followFrom = { x: s.center.x, z: s.center.z };
+      // Keyboard flying (real time, not sim time: the camera moves while paused too).
+      const now = performance.now();
+      const fdt = Math.min((now - lastFrame) / 1000, 0.1);
+      lastFrame = now;
+      const yawKeys = (turnKeys.left ? 1 : 0) - (turnKeys.right ? 1 : 0);
+      const pitchKeys = (turnKeys.up ? 1 : 0) - (turnKeys.down ? 1 : 0);
+      if (yawKeys || pitchKeys) turn(yawKeys * CAMERA.turnRate * fdt, pitchKeys * CAMERA.turnRate * fdt);
+      const mv = flyStep(keys, fdt, camera.position, controls.target);
+      if (mv.camera.x || mv.camera.y || mv.camera.z || mv.target.y) {
+        if (mv.camera.x || mv.camera.z) leaveFollow();
+        camera.position.add(mv.camera as THREE.Vector3Like);
+        controls.target.add(mv.target as THREE.Vector3Like);
       }
       controls.update();
+      // Floors: zooming toward the cursor can carry either below them.
+      if (controls.target.y < 0) controls.target.y = 0;
+      if (camera.position.y < CAMERA.minHeight) camera.position.y = CAMERA.minHeight;
       renderer.render(scene, camera);
     },
     resize(width, height) {
@@ -251,6 +371,8 @@ export function createRenderer(
       renderer.setSize(width, height);
     },
     setFollow(f) {
+      // Turning follow on brings the tornado back to the middle of the view once.
+      if (f && !follow) recenter = true;
       follow = f;
     },
     lookAt(x, z, distance) {
@@ -296,7 +418,21 @@ export function createRenderer(
         }
       });
     },
+    onCameraMoved(cb) {
+      movedCb = cb;
+    },
+    cameraPose() {
+      const p = camera.position;
+      const t = controls.target;
+      return { position: { x: p.x, y: p.y, z: p.z }, target: { x: t.x, y: t.y, z: t.z } };
+    },
     dispose() {
+      window.removeEventListener("keydown", keyDown);
+      window.removeEventListener("keyup", keyUp);
+      window.removeEventListener("blur", clearKeys);
+      renderer.domElement.removeEventListener("pointerdown", onPointer);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerup", onPointerUp);
       controls.dispose();
       renderer.dispose();
       renderer.domElement.remove();

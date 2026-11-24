@@ -1,6 +1,6 @@
 # Spec 01 — Wind Field
 
-Status: Approved (v1.7)
+Status: Approved (v1.8)
 
 ## Purpose
 
@@ -82,13 +82,23 @@ two-celled as it intensifies, then reverts while roping out. Real tornadoes do t
 
 ### Translation
 
-Ground-relative wind = storm-relative wind + translation velocity `V_trans` (a horizontal
-vector). Far from the core this leaves a wind equal to V_trans, standing in for the
-environmental flow that carries the tornado. That environmental wind slows near the ground
-like any surface wind: it equals V_trans at and above 10 m and follows the terrain power law
-below, (max(z/10, ε))^β. With cyclonic rotation this makes the right side of the path (relative to motion)
-faster by 2·|V_trans| compared with the left. This is why real damage swaths are usually
-worse on the right side.
+Ground-relative wind = storm-relative wind + a carried wind. Near the vortex the air moves
+with it: the carried wind is the full translation velocity `V_trans` (a horizontal vector).
+With cyclonic rotation this makes the right side of the path (relative to motion) faster by
+2·|V_trans| than the left, which is why real damage swaths are usually worse on the right
+side. Far away it is the environmental surface wind `V_env`: a tornado is steered by the
+storm's mean wind through several kilometres of depth, much stronger than the wind at the
+surface, so the far-field 10 m wind is not the forward speed. Between them it blends with the
+vortex's own strength:
+
+```
+g(r)   = 1 for r ≤ R_max, (R_max / r)^α beyond      (the swirl's radial shape)
+carried = g·V_trans + (1 − g)·V_env
+V_env  = V_trans · min(1, U_env / |V_trans|)         along the motion, U_env = 10 m/s
+```
+
+That carried wind slows near the ground like any surface wind: it is unchanged at and above
+10 m and follows the terrain power law below, (max(z/10, ε))^β.
 
 ### Pressure deficit (cyclostrophic balance)
 
@@ -214,9 +224,12 @@ All values live in `src/config/wind.ts`.
 - **WIND-18**: The center pressure deficit equals ρ·V_max²·(1/(2α) + ½) (±1e-9 relative).
 - **WIND-19**: The pressure deficit is continuous at R_max, decreases monotonically with r, and
   satisfies cyclostrophic balance (dΔp/dr = −ρ·v_t²/r, numerically within 0.5%).
-- **WIND-20**: The environmental (translation) wind is unchanged at and above 10 m and
+- **WIND-20**: The carried (translation and environmental) wind is unchanged at and above 10 m and
   reduced below it by the terrain power law; far from the core at 1 m it's slower than at 10 m,
   and slower over urban than open terrain.
+- **WIND-22**: The carried wind at 10 m is g·V_trans + (1 − g)·V_env (±1e-9 relative): the full
+  translation at r ≤ R_max, falling monotonically with r, and tending to the environmental wind
+  min(|V_trans|, 10 m/s) along the motion (at 50·R_max within 15% of the way from it to V_trans).
 - **WIND-21**: With a typical 15 m/s forward speed, V_peak = 94 m/s gives a 10 m peak at or
   below 135 m/s (the strongest measured tornado winds), and the maximum setting (128 m/s) gives
   380–400 mph, the hypothetical ceiling the user chose.
@@ -251,9 +264,18 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
    with no extra rule.
 4. **Two-cell structure:** added in v1.2. Intense tornadoes have a central downdraft and an
    annular updraft; a single central updraft is only right for weak ones.
+5. **Far-field wind (v1.8):** the translation velocity is carried with the vortex (weight
+   g(r), the swirl's own radial shape), and the wind far away is an environmental surface
+   wind of at most 10 m/s at 10 m (typical of tornadic environments; storm motion follows the
+   0–6 km mean wind). Adding V_trans everywhere made a 30 m/s tornado blow 67 mph across the
+   whole map.
 
 ## Changelog
 
+- v1.8: the translation velocity is carried with the vortex and blends to a ≤ 10 m/s
+  environmental surface wind far away (WIND-22, WIND-20 reworded). Found by the user: with a
+  30 m/s forward speed, 67 mph of wind blew across the whole map and damaged houses far from
+  the tornado.
 - v1.7: at the user's request, V_peak may go to 128 m/s (~400 mph at 10 m) to explore
   tornadoes beyond anything observed; the UI flags winds above the record as hypothetical
   (Spec 07, INST-11).

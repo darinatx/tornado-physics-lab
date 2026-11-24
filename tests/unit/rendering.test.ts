@@ -3,7 +3,9 @@ import { AIR_DENSITY, GRAVITY } from "../../src/config/atmosphere";
 import { condensationDeficit, funnelBottom, funnelRadius } from "../../src/core/wind/condensation";
 import { EF_LOWER_MPH, efRating, mphToMs } from "../../src/core/wind/efScale";
 import { pressureDeficit } from "../../src/core/wind/pressure";
-import { HIDDEN_Y, TracerField } from "../../src/render/tracers";
+import { dustEmission, dustTracerCount, HIDDEN_Y, surveyDust, TracerField } from "../../src/render/tracers";
+import { RENDER } from "../../src/config/render";
+import { windAt } from "../../src/core/wind/windField";
 import { DOD_COLORS, HOUSE_COLORS, houseInstances, houseSlots } from "../../src/render/houses";
 import { rec as hrec } from "../houseHelpers";
 import { debrisInstance } from "../../src/render/debris";
@@ -95,9 +97,75 @@ describe("Spec 06 — rendering", () => {
       const r = Math.hypot(a.positions[i * 3]! - s.center.x, a.positions[i * 3 + 2]! - s.center.z);
       expect(y).toBeGreaterThan(0);
       expect(y).toBeLessThanOrEqual(0.8 * H);
-      expect(r).toBeLessThanOrEqual(4 * s.rMax);
+      expect(r).toBeLessThanOrEqual(Math.max(4 * s.rMax, 1.5 * a.survey.radius) + 1e-6);
     }
     expect(alive).toBeGreaterThan(1000);
+  });
+
+  test("REND-12: dust lifts over the whole area above the threshold, densest where emission is", () => {
+    // A wide tornado whose lifting area reaches well beyond 2·R_max.
+    const s = baseState({ vMax: 70, rMax: 300, alpha: 0.6, velocity: { x: 15, z: 0 } });
+    const ut = RENDER.dustLiftSpeed;
+    const f = new TracerField(20000, 3);
+    const spawns: { r: number; u: number }[] = [];
+    for (let k = 0; k < 120; k++) {
+      f.update(1e-3, s, "open", 500);
+      for (let i = 0; i < f.count; i++) {
+        if (!f.isAlive(i) || f.age[i] !== 0) continue; // spawned this update
+        const x = f.positions[i * 3]!;
+        const z = f.positions[i * 3 + 2]!;
+        const w = windAt({ x, y: 3, z }, s, "open");
+        spawns.push({ r: Math.hypot(x - s.center.x, z - s.center.z), u: Math.hypot(w.x, w.z) });
+      }
+    }
+    expect(spawns.length).toBeGreaterThan(5000);
+    for (const p of spawns) {
+      expect(p.u).toBeGreaterThanOrEqual(ut);
+      expect(p.r).toBeLessThanOrEqual(6 * s.rMax + 1e-6);
+    }
+    expect(spawns.some((p) => p.r > 3 * s.rMax)).toBe(true);
+    // Spawn share per annulus ∝ ∫F dA over it.
+    const edges = [0, 1.5, 3, 6].map((k) => k * s.rMax);
+    const emissionIn = (r0: number, r1: number) => {
+      let t = 0;
+      for (let i = 0; i < 200; i++) {
+        const r = r0 + ((i + 0.5) * (r1 - r0)) / 200;
+        for (let d = 0; d < 72; d++) {
+          const a = (d / 72) * 2 * Math.PI;
+          const w = windAt({ x: r * Math.cos(a), y: 3, z: r * Math.sin(a) }, s, "open");
+          t += dustEmission(Math.hypot(w.x, w.z), ut) * r * ((r1 - r0) / 200); // F·dA (∝ r·dr)
+        }
+      }
+      return t;
+    };
+    const want = [0, 1, 2].map((j) => emissionIn(edges[j]!, edges[j + 1]!));
+    const got = [0, 1, 2].map((j) => spawns.filter((p) => p.r >= edges[j]! && p.r < edges[j + 1]!).length);
+    const wt = want.reduce((a, b) => a + b, 0);
+    const gt = got.reduce((a, b) => a + b, 0);
+    for (let j = 0; j < 3; j++) expect(Math.abs(got[j]! / gt - want[j]! / wt), `annulus ${j}`).toBeLessThan(0.03);
+  });
+
+  test("REND-13: the tracer count follows the total dust emission, within its limits", () => {
+    const count = (o: Parameters<typeof baseState>[0]) => dustTracerCount(surveyDust(baseState(o), "open", RENDER.dustLiftSpeed).total);
+    const typical = count({ vMax: 52, rMax: 300, alpha: 0.6, velocity: { x: 15, z: 0 } });
+    expect(typical).toBeGreaterThan(10000);
+    expect(typical).toBeLessThan(14000);
+    expect(count({ vMax: 60, rMax: 300, alpha: 0.6, velocity: { x: 15, z: 0 } })).toBeGreaterThan(typical); // stronger
+    expect(count({ vMax: 52, rMax: 400, alpha: 0.6, velocity: { x: 15, z: 0 } })).toBeGreaterThan(typical); // larger
+    expect(count({ vMax: 128, rMax: 800, alpha: 0.5, velocity: { x: 30, z: 0 } })).toBe(RENDER.tracerCap);
+    expect(count({ vMax: 15, rMax: 300, alpha: 0.6, velocity: { x: 5, z: 0 } })).toBe(0); // no dust lifts
+    expect(count({ vMax: 20, rMax: 150, alpha: 0.6, velocity: { x: 10, z: 0 } })).toBe(RENDER.tracerMin);
+    // In a field, tracers beyond the count retire as the tornado weakens.
+    const f = new TracerField(RENDER.tracerCap, 4);
+    const strong = baseState({ vMax: 70, rMax: 300, velocity: { x: 15, z: 0 } });
+    for (let k = 0; k < 300; k++) f.update(1 / 30, strong, "open", 500);
+    const before = f.target;
+    const alive = () => Array.from({ length: f.count }, (_, i) => f.isAlive(i)).filter(Boolean).length;
+    expect(alive()).toBeGreaterThan(0.5 * before);
+    const weak = baseState({ vMax: 35, rMax: 300, velocity: { x: 10, z: 0 } });
+    for (let k = 0; k < 30 * 30; k++) f.update(1 / 30, weak, "open", 500);
+    expect(f.target).toBeLessThan(before);
+    expect(alive()).toBeLessThanOrEqual(f.target);
   });
 
   test("REND-09: debris instances use the piece's size, orientation, position and color", () => {
@@ -187,5 +255,76 @@ describe("Spec 06 — rendering", () => {
     const opts = { spacing: 50, range: 500, height: 10 };
     computeArrowField(s, f.curr.terrain, opts, createArrowField(opts));
     expect(JSON.stringify([f.prev, f.curr])).toBe(before);
+  });
+
+  test("REND-14: flying moves the camera and its orbit point along the view, at height-scaled speed", async () => {
+    const { flySpeed, flyStep, NO_KEYS } = await import("../../src/render/cameraFly");
+    const { CAMERA } = await import("../../src/config/render");
+    const cam = { x: 0, y: 100, z: 0 };
+    const tgt = { x: 300, y: 0, z: 400 }; // looking toward +x+z (3-4-5)
+    const dt = 0.1;
+    // W: along the horizontal view direction, at 1.2 m/s per metre of height.
+    const w = flyStep({ ...NO_KEYS, forward: true }, dt, cam, tgt);
+    expect(w.camera).toEqual(w.target);
+    const v = 1.2 * 100;
+    expect(w.camera.x).toBeCloseTo(0.6 * v * dt, 9);
+    expect(w.camera.z).toBeCloseTo(0.8 * v * dt, 9);
+    expect(Math.abs(w.camera.y)).toBe(0);
+    // D: across it (to the right of the view, on the ground).
+    const d = flyStep({ ...NO_KEYS, right: true }, dt, cam, tgt);
+    expect(d.camera.x * 0.6 + d.camera.z * 0.8).toBeCloseTo(0, 9);
+    expect(Math.hypot(d.camera.x, d.camera.z)).toBeCloseTo(v * dt, 9);
+    expect(-0.8 * d.camera.x + 0.6 * d.camera.z).toBeGreaterThan(0); // right of the view: forward × up = (−0.8, 0.6)
+    // Diagonal keeps the same speed; Shift is 4× faster.
+    const wd = flyStep({ ...NO_KEYS, forward: true, right: true }, dt, cam, tgt);
+    expect(Math.hypot(wd.camera.x, wd.camera.z)).toBeCloseTo(v * dt, 9);
+    const fast = flyStep({ ...NO_KEYS, forward: true, fast: true }, dt, cam, tgt);
+    expect(Math.hypot(fast.camera.x, fast.camera.z)).toBeCloseTo(4 * v * dt, 9);
+    // E/Q: straight up and down.
+    const e = flyStep({ ...NO_KEYS, up: true }, dt, cam, tgt);
+    expect(Math.abs(e.camera.x) + Math.abs(e.camera.z)).toBe(0);
+    expect(e.camera.y).toBeCloseTo(v * dt, 9);
+    // Speed limits.
+    expect(flySpeed(1, false)).toBe(CAMERA.flyMinSpeed);
+    expect(flySpeed(5000, false)).toBe(CAMERA.flyMaxSpeed);
+    // Floors: the camera never below eye height, the orbit point never below the ground.
+    const low = { x: 0, y: 2, z: 0 };
+    const q = flyStep({ ...NO_KEYS, down: true, fast: true }, 1, low, { x: 10, y: 0, z: 0 });
+    expect(low.y + q.camera.y).toBeCloseTo(CAMERA.minHeight, 9);
+    expect(Math.abs(q.target.y)).toBe(0);
+    // No keys: no move.
+    const none = flyStep(NO_KEYS, dt, cam, tgt).camera;
+    expect(Math.abs(none.x) + Math.abs(none.y) + Math.abs(none.z)).toBe(0);
+  });
+
+  test("REND-15: turning moves only the look point, around the camera", async () => {
+    const { lookStep } = await import("../../src/render/cameraFly");
+    const { CAMERA } = await import("../../src/config/render");
+    const cam = { x: 100, y: 20, z: -50 };
+    const tgt = { x: 100, y: 20, z: 950 }; // level, looking along +z, 1 km away
+    // Yaw left 90°: the view turns to +x (left of +z with y up), same distance, still level.
+    const l = lookStep(cam, tgt, Math.PI / 2, 0);
+    expect(l.x - cam.x).toBeCloseTo(1000, 6);
+    expect(l.z - cam.z).toBeCloseTo(0, 6);
+    expect(l.y).toBeCloseTo(20, 9);
+    const fwd = { x: 0, z: 1 };
+    const right = { x: -fwd.z, z: fwd.x }; // forward × up
+    const r = lookStep(cam, tgt, -0.3, 0);
+    expect((r.x - cam.x) * right.x + (r.z - cam.z) * right.z).toBeGreaterThan(0); // negative yaw turns right
+    // Pitch up 30°: elevation 30°, same heading and distance.
+    const u = lookStep(cam, tgt, 0, Math.PI / 6);
+    expect(Math.atan2(u.y - cam.y, Math.hypot(u.x - cam.x, u.z - cam.z))).toBeCloseTo(Math.PI / 6, 9);
+    expect(Math.hypot(u.x - cam.x, u.y - cam.y, u.z - cam.z)).toBeCloseTo(1000, 6);
+    expect(u.x).toBeCloseTo(cam.x, 9);
+    // Pitch limit.
+    const up = lookStep(cam, tgt, 0, 3);
+    expect(Math.atan2(up.y - cam.y, Math.hypot(up.x - cam.x, up.z - cam.z))).toBeCloseTo(CAMERA.maxPitch, 9);
+    // Looking down: the point lands on the ground where the view meets it.
+    const d = lookStep(cam, tgt, 0, -Math.PI / 4);
+    expect(d.y).toBeCloseTo(0, 9);
+    expect(d.z - cam.z).toBeCloseTo(20, 6); // 45° down from 20 m up
+    // Yaw keeps pitch, and the camera itself never moves (lookStep returns only the point).
+    const e = lookStep(cam, u, 1, 0);
+    expect(Math.atan2(e.y - cam.y, Math.hypot(e.x - cam.x, e.z - cam.z))).toBeCloseTo(Math.PI / 6, 9);
   });
 });

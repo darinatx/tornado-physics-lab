@@ -4,7 +4,8 @@
  */
 import * as THREE from "three";
 import type { TerrainClass, TornadoState } from "../core/wind/types";
-import { TracerField } from "./tracers";
+import { DEFAULT_TRACER_OPTIONS, TracerField } from "./tracers";
+import type { TracerOptions } from "./tracers";
 
 function dustSprite(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
@@ -27,9 +28,11 @@ export interface DustLayer {
   clear(): void;
 }
 
-/** count tracers drawn `size` metres across. */
-export function createDustLayer(count: number, size: number, seed = 99): DustLayer {
-  const tracers = new TracerField(count, seed);
+/** Up to `count` tracers drawn `size` metres across; "emission" spreads them over the whole
+ *  dust-lifting area with the count following the emission (town), "core" keeps a fixed count
+ *  around the core (lab). */
+export function createDustLayer(count: number, size: number, seed = 99, area: TracerOptions["area"] = "emission"): DustLayer {
+  const tracers = new TracerField(count, seed, { ...DEFAULT_TRACER_OPTIONS, area });
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(tracers.positions, 3));
   const tint = new Float32Array(count * 3);
@@ -63,7 +66,12 @@ export function createDustLayer(count: number, size: number, seed = 99): DustLay
       if (dt < 0) tracers.clear();
       tracers.update(Math.min(Math.max(dt, 0), 0.5), s, terrain, cloudBase);
       lastTime = t;
-      geo.attributes.position!.needsUpdate = true;
+      // Only the tracers in use are uploaded and drawn.
+      geo.setDrawRange(0, tracers.inUse);
+      const attr = geo.attributes.position as THREE.BufferAttribute;
+      attr.clearUpdateRanges();
+      attr.addUpdateRange(0, tracers.inUse * 3);
+      attr.needsUpdate = true;
     },
     clear() {
       tracers.clear();
