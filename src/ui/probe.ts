@@ -52,7 +52,13 @@ function fmtBuilding(r: BuildingReport, hereMph: number): string {
   // Town-model failures (before the house went into full detail) and connection failures in
   // the detail zone, in order of first failure.
   const rows = [
-    ...r.failures.map((f) => ({ time: f.time, html: `${f.label}${f.total > 1 ? `: ${f.count} of ${f.total} ${f.unit}` : ""} <span class="p-dim">first at ${Math.round(f.mph)} mph · ${kpa(f.load)} &gt; ${kpa(f.capacity)}</span>` })),
+    ...r.failures.map((f) => {
+      const why = [
+        f.windTime < Infinity ? `${kpa(f.load)} &gt; ${kpa(f.capacity)}` : "",
+        f.fellWithWall ? `${f.fellWithWall === f.count ? (f.count > 1 ? "all fell" : "fell") : `${f.fellWithWall} fell`} with a bearing wall` : "",
+      ].filter(Boolean).join(" · ");
+      return { time: f.time, html: `${f.label}${f.total > 1 ? `: ${f.count} of ${f.total} ${f.unit}` : ""} <span class="p-dim">first at ${Math.round(f.mph)} mph · ${why}</span>` };
+    }),
     ...r.detailFailures.map((f) => ({ time: f.time, html: `${f.label}: ${f.count} of ${f.total} ${f.unit} <span class="p-dim">first at ${Math.round(f.mph)} mph · ${kn(f.load)} &gt; ${kn(f.capacity)}</span>` })),
   ].sort((a, b) => a.time - b.time);
   const fails = rows.map((x) => `<li>${x.html}</li>`).join("");

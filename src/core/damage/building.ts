@@ -387,11 +387,16 @@ export interface FailureGroup {
   count: number;
   total: number;
   unit: string;
-  /** First failure of this part type. */
+  /** First failure of this part type: time (s) and roof-height wind (mph). */
   time: number;
+  mph: number;
+  /** Load and capacity of the first failure the wind caused (0 if none did). */
   load: number;
   capacity: number;
-  mph: number;
+  /** Time of that failure (Infinity if none). */
+  windTime: number;
+  /** Roof bays that came down because a bearing wall under them fell (no wind load). */
+  fellWithWall: number;
 }
 
 export interface BuildingReport {
@@ -423,16 +428,20 @@ export function partTotal(b: Building, part: Part): number {
 export function buildingReport(b: Building): BuildingReport {
   const groups = new Map<Part, FailureGroup>();
   for (const r of allFailures(b)) {
-    const g = groups.get(r.part);
+    // A roof bay that came down with its bearing wall wasn't overloaded by wind.
+    const fell = r.part === "roofBay" && r.sign === -1;
+    let g = groups.get(r.part);
     if (!g) {
-      groups.set(r.part, {
-        part: r.part, label: PART_LABEL[r.part], count: 1, total: partTotal(b, r.part), unit: PART_UNIT[r.part],
-        time: r.time, load: r.load, capacity: r.capacity, mph: r.mph,
-      });
-    } else {
-      g.count++;
-      if (r.time < g.time) Object.assign(g, { time: r.time, load: r.load, capacity: r.capacity, mph: r.mph });
+      g = {
+        part: r.part, label: PART_LABEL[r.part], count: 0, total: partTotal(b, r.part), unit: PART_UNIT[r.part],
+        time: r.time, load: 0, capacity: 0, mph: r.mph, fellWithWall: 0, windTime: Infinity,
+      };
+      groups.set(r.part, g);
     }
+    g.count++;
+    if (r.time < g.time) Object.assign(g, { time: r.time, mph: r.mph });
+    if (fell) g.fellWithWall++;
+    else if (r.time < g.windTime) Object.assign(g, { windTime: r.time, load: r.load, capacity: r.capacity });
   }
   const row = DI2_DODS.find((r) => r.dod === b.dod);
   return {

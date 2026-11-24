@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.8) — Phases 1–4
+Status: Approved (v1.9) — Phases 1–4
 
 ## Purpose
 
@@ -34,7 +34,9 @@ Phase 1 scope:
   current DOD with its description, estimated EF with the assigned speed, the DOD's range and
   the reason for the rating (construction quality), peak wind it experienced, and each part
   type that failed: how many of how many (e.g. "Roof covering: 6 of 16 sections"), with the
-  first failure's wind speed, load and capacity, so every failure is explainable. A house in
+  first failure's wind speed, load and capacity, so every failure is explainable. Roof bays
+  that came down because a bearing wall under them fell show that instead of a load ("3 fell
+  with a bearing wall"): no wind load broke them. A house in
   the structural detail zone (Spec 09) also lists its connection failures there, by connection
   type (e.g. "Rafter to wall: 12 of 30 connections", loads in kN), in the same order, after
   whatever its components lost before it entered; its peak wind keeps updating.
@@ -101,7 +103,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
   speed and maximum height over live pieces.
 - **INST-08**: The building report matches the building: DOD and description, EF estimate and
   range from Spec 03, peak wind, and failure groups in order of first failure, with correct
-  counts and the first failure's load > capacity.
+  counts, the first wind-caused failure's load > capacity, and the count of roof bays that fell
+  with a bearing wall.
 - **INST-09**: The neighborhood tally equals the count of houses at DOD ≥ 1 and DOD ≥ 7.
 - **INST-03**: The readout's vortex structure label matches the Spec 01 blend: one-cell when
   b < 0.1, two-cell when b > 0.9, transitioning otherwise, and it shows the swirl ratio.
@@ -123,6 +126,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.9: roof bays that fell with a bearing wall are shown as such, not as "1 Pa > 0 Pa"
+  (INST-08 updated).
 - v1.8: the inspector shows a detailed house's connection failures and keeps its peak wind
   current (INST-12); before, both froze when the house entered the detail zone.
 - v1.7: inspector groups component failures by part type (INST-08 updated).

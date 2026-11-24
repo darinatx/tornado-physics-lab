@@ -124,6 +124,7 @@ describe("Spec 07 — instruments", () => {
   });
 
   test("INST-08: building report matches the building", () => {
+    let sawFell = false;
     for (const { b, rng } of randomHouses(60, 8)) {
       const c = samplePassCase(rng);
       tornadoPass(b, c.state, "open", c.offset * 2);
@@ -139,10 +140,20 @@ describe("Spec 07 — instruments", () => {
         expect(g.count).toBe(mine.length);
         expect(g.total).toBe(partTotal(b, g.part));
         expect(g.time).toBe(Math.min(...mine.map((x) => x.time)));
-        expect(g.load).toBeGreaterThan(g.capacity);
+        // Load > capacity for the first failure the wind caused; bays that came down with a
+        // bearing wall are counted apart.
+        const fell = mine.filter((x) => x.part === "roofBay" && x.sign === -1);
+        const wind = mine.filter((x) => !fell.includes(x));
+        expect(g.fellWithWall).toBe(fell.length);
+        sawFell ||= fell.length > 0;
+        if (wind.length) {
+          expect(g.windTime).toBe(Math.min(...wind.map((x) => x.time)));
+          expect(g.load).toBeGreaterThan(g.capacity);
+        } else expect(g.windTime).toBe(Infinity);
       }
       for (let i = 1; i < r.failures.length; i++) expect(r.failures[i]!.time).toBeGreaterThanOrEqual(r.failures[i - 1]!.time);
     }
+    expect(sawFell).toBe(true); // a roof bay fell with its bearing wall somewhere
   }, 30000);
 
   test("INST-11: winds above the measured record are flagged as hypothetical", () => {
