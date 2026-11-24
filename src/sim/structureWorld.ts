@@ -4,13 +4,14 @@
  * to the slab become dynamic compound bodies. Contact forces from impacts (with the ground,
  * other pieces, or other houses) feed back into connection checks.
  */
-import RAPIER from "@dimforge/rapier3d-compat";
+import RAPIER from "@dimforge/rapier3d-simd-compat";
 import { AIR_DENSITY, GRAVITY } from "../config/atmosphere";
 import { APC_TAU, CP, CPI, CP_FREESTANDING } from "../config/buildings";
-import { DETAIL, FRAMING_DRAG_CD, LUMBER, PLATE, ROOF_MWFRS, SLAB_TOP } from "../config/structure";
+import { DETAIL, FRAMING_DRAG_CD, LUMBER, ROOF_MWFRS, SLAB_TOP } from "../config/structure";
 import { faceCp, faceNormal } from "../core/damage/loads";
 import type { Building } from "../core/damage/types";
-import { plateExtent, plateForce, pressureForce } from "../core/structure/aero";
+import { bodyPlates, plateExtent, pressureForce, rigidAero } from "../core/structure/aero";
+import type { BodyPlate } from "../core/structure/aero";
 import { buildFraming, floorPlan, qconj, qmul, qrot, shapePoints, shapeVolume } from "../core/structure/framing";
 import type { Framing, Q } from "../core/structure/framing";
 import { inertialRelief } from "../core/structure/inertia";
@@ -65,6 +66,46 @@ const IMPACT_DURATION = 0.1;
 const IN_FLIGHT_EVERY = 4;
 /** Ground half-size (m); pieces beyond it are retired. */
 export const GROUND_HALF = 10000;
+/** A collider's world bounding box, grown by `margin` (m). */
+function colliderBox(c: RAPIER.Collider, margin: number): { center: Vec3; half: Vec3 } {
+  const t = c.translation();
+  const r = c.rotation();
+  const q: Q = [r.x, r.y, r.z, r.w];
+  const pts: Vec3[] = [];
+  const he = c.shape.type === RAPIER.ShapeType.Cuboid ? (c.shape as RAPIER.Cuboid).halfExtents : null;
+  if (he) {
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) pts.push({ x: sx * he.x, y: sy * he.y, z: sz * he.z });
+  } else {
+    const v = (c.shape as RAPIER.ConvexPolyhedron).vertices;
+    for (let i = 0; i < v.length; i += 3) pts.push({ x: v[i]!, y: v[i + 1]!, z: v[i + 2]! });
+  }
+  const lo = { x: Infinity, y: Infinity, z: Infinity };
+  const hi = { x: -Infinity, y: -Infinity, z: -Infinity };
+  for (const p of pts) {
+    const w = qrot(q, p);
+    lo.x = Math.min(lo.x, w.x);
+    lo.y = Math.min(lo.y, w.y);
+    lo.z = Math.min(lo.z, w.z);
+    hi.x = Math.max(hi.x, w.x);
+    hi.y = Math.max(hi.y, w.y);
+    hi.z = Math.max(hi.z, w.z);
+  }
+  return {
+    center: {
+      x: t.x + (lo.x + hi.x) / 2,
+      y: t.y + (lo.y + hi.y) / 2,
+      z: t.z + (lo.z + hi.z) / 2,
+    },
+    half: {
+      x: (hi.x - lo.x) / 2 + margin,
+      y: (hi.y - lo.y) / 2 + margin,
+      z: (hi.z - lo.z) / 2 + margin,
+    },
+  };
+}
+
+/** Shared zero force (never mutated). */
+const ZERO: Vec3 = Object.freeze({ x: 0, y: 0, z: 0 });
 
 const rot = (q: Q) => ({ x: q[0], y: q[1], z: q[2], w: q[3] });
 
@@ -91,23 +132,44 @@ export class StructureWorld {
   }
 
   /** Add a detailed house; `removed` members (already failed in the component model) are left out. */
-  addHouse(b: Building, removed?: readonly boolean[]): DetailHouse {
+  addHouse(b: Building, removed?: readonly boolean[], gradual = false): DetailHouse {
     const h = new DetailHouse(this, b, removed);
     this.houses.push(h);
+    if (gradual) this.building.push(h);
+    else h.build(Infinity);
     return h;
   }
 
+  /** Houses still being built, in entry order. */
+  private readonly building: DetailHouse[] = [];
+
+  /** Spend this step's collider budget on houses still being built (Spec 09: a count, so runs
+   *  stay deterministic). */
+  private buildPending(): void {
+    let budget = DETAIL.buildCollidersPerStep;
+    while (this.building.length && budget > 0) {
+      const h = this.building[0]!;
+      const used = h.frozen ? 0 : h.build(budget, budget === DETAIL.buildCollidersPerStep);
+      budget -= used;
+      if (h.complete || h.frozen) this.building.shift();
+      else if (!used) break; // the next member doesn't fit this step
+    }
+  }
+
   step(wind: WindSource): void {
+    this.phase = "build";
+    this.buildPending();
+    const live = this.houses.filter((h) => !h.frozen && h.complete);
     this.phase = "loads";
-    for (const h of this.houses) if (!h.frozen) h.loads(wind);
+    for (const h of live) h.loads(wind);
     this.phase = "groups";
-    for (const h of this.houses) if (!h.frozen) h.checkGroups();
+    for (const h of live) h.checkGroups();
     this.phase = "aero";
-    for (const h of this.houses) if (!h.frozen) h.aero(wind);
-    for (const h of this.houses) if (!h.frozen) h.stepLight(wind);
+    for (const h of live) h.aero(wind);
+    for (const h of live) h.stepLight(wind);
 
     // Physics step; collect impact forces for the next step's checks.
-    for (const h of this.houses) if (!h.frozen) h.clearContacts();
+    for (const h of live) h.clearContacts();
     this.phase = "world.step";
     this.world.step(this.events);
     this.phase = "events";
@@ -115,6 +177,7 @@ export class StructureWorld {
     // second (it's separating from where it was attached) and forces near its own weight
     // (resting contact).
     const soften = STRUCT_DT / IMPACT_DURATION;
+    const hitRubble: [DetailHouse, number][] = [];
     this.events.drainContactForceEvents((e) => {
       const raw = e.totalForce();
       const dir = { x: raw.x * soften, y: raw.y * soften, z: raw.z * soften };
@@ -132,11 +195,40 @@ export class StructureWorld {
         if (!o) continue;
         const m = o.house.framing.members[o.id]!;
         if (mag < 5 * m.mass * GRAVITY) continue;
+        // A hit on resting rubble brings it back to life.
+        const r = o.house.rubbleHandleOf(o.id);
+        if (r !== null) hitRubble.push([o.house, r]);
         o.house.addContact(o.id, sign * dir.x, sign * dir.y, sign * dir.z);
       }
     });
+    for (const [h, r] of hitRubble) h.wakeRubble(r);
     this.time += STRUCT_DT;
     this.stepCount++;
+  }
+
+  /** Rubble (house, body handle) touching any of these colliders (their boxes overlap within
+   *  1 cm: Rapier keeps no contacts between two fixed bodies); only rubble whose center of mass
+   *  is above `aboveY` if given. */
+  rubbleTouching(colliders: readonly RAPIER.Collider[], aboveY = -Infinity): [DetailHouse, number][] {
+    const out: [DetailHouse, number][] = [];
+    const seen = new Set<number>();
+    const mine = new Set(colliders.map((c) => c.parent()?.handle));
+    for (const c of colliders) {
+      const { center, half } = colliderBox(c, 0.01);
+      this.world.collidersWithAabbIntersectingAabb(center, half, (other) => {
+        const p = other.parent();
+        if (!p || mine.has(p.handle)) return true;
+        const o = this.owner.get(other.handle);
+        if (!o) return true;
+        const h = o.house.rubbleHandleOf(o.id);
+        if (h === null || seen.has(h)) return true;
+        if (this.world.getRigidBody(h).worldCom().y <= aboveY) return true;
+        seen.add(h);
+        out.push([o.house, h]);
+        return true;
+      });
+    }
+    return out;
   }
 
   dispose(): void {
@@ -183,6 +275,15 @@ export class DetailHouse {
   private frozenPose: MemberPose[] | null = null;
   /** Scratch force array for in-flight checks (indexed by member id; only a group's entries are used). */
   private readonly groupForces: Vec3[] = [];
+  /** Resting rubble: fixed-in-place loose groups (body handle → members), and since when each
+   *  moving group has been still (Spec 09 performance). */
+  readonly rubble = new Map<number, number[]>();
+  private readonly stillSince = new Map<number, number>();
+  private rubbleTick = 0;
+  /** Loose bodies' plates (body frame) and masses, by body handle. */
+  private readonly platesOf = new Map<number, BodyPlate[]>();
+  private readonly massOf = new Map<number, number>();
+  private readonly plateForces: Vec3[] = [];
   /** Light members flying on the Spec 04 debris model: the piece, the rotation from member to
    *  piece axes, and the member-local center of the piece's box. */
   readonly light = new Map<number, LightPiece>();
@@ -221,15 +322,34 @@ export class DetailHouse {
           for (const c of f.supportsOf[m.id]!) this.intact[c] = false;
           for (const c of f.carriesOf[m.id]!) this.intact[c] = false;
         }
-    for (const m of f.members) {
-      if (this.lost[m.id]) {
-        this.bodyOf[m.id] = null;
-        continue;
-      }
+    this.hadRemoved = !!removed;
+    for (const m of f.members) if (this.lost[m.id]) this.bodyOf[m.id] = null;
+  }
+
+  /** Members whose colliders are built so far (entry is spread over steps, Spec 09). */
+  private buildNext = 0;
+  private hadRemoved = false;
+  /** All colliders built: the house carries loads and can fail. */
+  complete = false;
+
+  /** Build colliders for the next members, up to `budget` colliders (at least one member if
+   *  `atLeastOne`); returns how many were built. Completing the house drops whatever has no
+   *  support. */
+  build(budget: number, atLeastOne = true): number {
+    const f = this.framing;
+    let used = 0;
+    while (this.buildNext < f.members.length && ((atLeastOne && used === 0) || used + f.members[this.buildNext]!.collision.length <= budget)) {
+      const m = f.members[this.buildNext++]!;
+      if (this.lost[m.id]) continue;
       this.addColliders(m.id, this.body);
+      used += m.collision.length;
     }
-    // Anything left without support falls now.
-    if (removed) this.detach();
+    if (this.buildNext >= f.members.length && !this.complete) {
+      this.complete = true;
+      // Anything left without support falls now.
+      if (this.hadRemoved) this.detach();
+    }
+    return used;
   }
 
   /** Attach member `id`'s shapes to `body` (body-local frame = house-local frame). */
@@ -248,7 +368,11 @@ export class DetailHouse {
       let desc: RAPIER.ColliderDesc;
       if (s.tri) {
         // Triangular prism: convex hull of its corners, in body-local coordinates.
-        const pts = shapePoints({ ...s, pos: { x: 0, y: 0, z: 0 }, q: [0, 0, 0, 1] });
+        const pts = shapePoints({
+          ...s,
+          pos: { x: 0, y: 0, z: 0 },
+          q: [0, 0, 0, 1],
+        });
         const kz = he(s.size[2]) / (s.size[2] / 2);
         const flat = new Float32Array(pts.flatMap((v) => [v.x * 0.995, v.y * 0.995, v.z * kz]));
         desc = RAPIER.ColliderDesc.convexHull(flat) ?? RAPIER.ColliderDesc.cuboid(he(s.size[0]), he(s.size[1]), he(s.size[2]));
@@ -281,7 +405,14 @@ export class DetailHouse {
       const qb = qmul(lt.piece.q, lt.r);
       const off = qrot(qb, lt.c);
       const p = qrot(qb, m.pos);
-      return { pos: { x: lt.piece.pos.x - off.x + p.x, y: lt.piece.pos.y - off.y + p.y, z: lt.piece.pos.z - off.z + p.z }, q: qmul(qb, m.q) };
+      return {
+        pos: {
+          x: lt.piece.pos.x - off.x + p.x,
+          y: lt.piece.pos.y - off.y + p.y,
+          z: lt.piece.pos.z - off.z + p.z,
+        },
+        q: qmul(qb, m.q),
+      };
     }
     const body = this.bodyOf[id]!;
     const t = body.translation();
@@ -289,7 +420,43 @@ export class DetailHouse {
     // Every body's local frame is house-local (dynamic bodies start at the house's pose).
     const bq: Q = [r.x, r.y, r.z, r.w];
     const p = qrot(bq, m.pos);
-    return { pos: { x: t.x + p.x, y: t.y + p.y, z: t.z + p.z }, q: qmul(bq, m.q) };
+    return {
+      pos: { x: t.x + p.x, y: t.y + p.y, z: t.z + p.z },
+      q: qmul(bq, m.q),
+    };
+  }
+
+  /** World poses of the members of light pieces that moved this step (each piece's frame
+   *  computed once), appended as in `bodyPoses`. */
+  lightPoses(house: number, out: number[]): void {
+    for (const lt of this.lightMoved) {
+      if (this.lost[lt.members[0]!]) continue;
+      const qb = qmul(lt.piece.q, lt.r);
+      const off = qrot(qb, lt.c);
+      const ox = lt.piece.pos.x - off.x;
+      const oy = lt.piece.pos.y - off.y;
+      const oz = lt.piece.pos.z - off.z;
+      for (const id of lt.members) {
+        const m = this.framing.members[id]!;
+        const p = qrot(qb, m.pos);
+        const q = qmul(qb, m.q);
+        out.push(house, id, ox + p.x, oy + p.y, oz + p.z, q[0], q[1], q[2], q[3]);
+      }
+    }
+  }
+
+  /** World poses of a body's members, appended as [house, member, px, py, pz, qx, qy, qz, qw]
+   *  (the body's pose read once). */
+  bodyPoses(body: RAPIER.RigidBody, group: readonly number[], house: number, out: number[]): void {
+    const t = body.translation();
+    const r = body.rotation();
+    const bq: Q = [r.x, r.y, r.z, r.w];
+    for (const id of group) {
+      const m = this.framing.members[id]!;
+      const p = qrot(bq, m.pos);
+      const q = qmul(bq, m.q);
+      out.push(house, id, t.x + p.x, t.y + p.y, t.z + p.z, q[0], q[1], q[2], q[3]);
+    }
   }
 
   isAttached(id: number): boolean {
@@ -386,7 +553,11 @@ export class DetailHouse {
         const A = this.lumberArea(m.id);
         const u = qrot(qconj(m.q), uh); // wind direction in the member's axes
         const k = q * FRAMING_DRAG_CD;
-        const fl = qrot(m.q, { x: k * A.x * u.x * Math.abs(u.x), y: k * A.y * u.y * Math.abs(u.y), z: k * A.z * u.z * Math.abs(u.z) });
+        const fl = qrot(m.q, {
+          x: k * A.x * u.x * Math.abs(u.x),
+          y: k * A.y * u.y * Math.abs(u.y),
+          z: k * A.z * u.z * Math.abs(u.z),
+        });
         return { x: g.x + fl.x, y: g.y + fl.y, z: g.z + fl.z };
       }
       const n = m.normal;
@@ -448,8 +619,7 @@ export class DetailHouse {
     // Glass: once any part of a pane cracks, the whole pane breaks into its shards.
     const pane = this.framing.members[con.from]!.pane;
     if (pane !== undefined)
-      for (const m of this.framing.members)
-        if (m.pane === pane && m.id !== con.from) for (const s of this.framing.supportsOf[m.id]!) if (this.intact[s]) this.intact[s] = false;
+      for (const m of this.framing.members) if (m.pane === pane && m.id !== con.from) for (const s of this.framing.supportsOf[m.id]!) if (this.intact[s]) this.intact[s] = false;
     this.failures.push({
       time: this.sw.time,
       label: con.label,
@@ -480,6 +650,8 @@ export class DetailHouse {
       const o = this.sw.owner.get(c.handle);
       if (o && o.house === this && inGroup.has(o.id)) doomed.push(c);
     }
+    // Rubble resting on members that come loose from the standing house must come back to life.
+    const supported = from.isDynamic() ? [] : this.sw.rubbleTouching(doomed);
     for (const c of doomed) {
       this.sw.owner.delete(c.handle);
       this.sw.world.removeCollider(c, false);
@@ -496,6 +668,64 @@ export class DetailHouse {
     for (const id of group) this.addColliders(id, body);
     this.groupBodies.set(body.handle, group);
     this.sw.bornAt.set(body.handle, this.sw.time);
+    for (const [h, handle] of supported) h.wakeRubble(handle);
+  }
+
+  /** Rubble body of a member, if it's resting rubble. */
+  rubbleHandleOf(id: number): number | null {
+    const b = this.bodyOf[id];
+    return b && this.rubble.has(b.handle) ? b.handle : null;
+  }
+
+  /** Is the group's body touching only the ground, slabs, rubble or still pieces (not a
+   *  standing house, which its weight must keep loading)? */
+  private onlyFixedContacts(body: RAPIER.RigidBody): boolean {
+    const world = this.sw.world;
+    for (let i = 0; i < body.numColliders(); i++) {
+      let ok = true;
+      world.contactPairsWith(body.collider(i), (other) => {
+        const p = other.parent();
+        if (!p || p.handle === body.handle) return;
+        // Leaning on a standing house: stays a body, so its weight keeps loading the structure
+        // (two fixed bodies never touch in Rapier).
+        const o = this.sw.owner.get(other.handle);
+        if (p.isFixed() && o && o.house.isAttached(o.id)) {
+          ok = false;
+          return;
+        }
+        if (p.isFixed() || p.isSleeping()) return;
+        // A neighbour that is itself still counts as settled (else two pieces lying against
+        // each other would wait for each other forever).
+        const v = p.linvel();
+        const w = p.angvel();
+        if (Math.hypot(v.x, v.y, v.z) >= DETAIL.rubbleSpeed || Math.hypot(w.x, w.y, w.z) >= DETAIL.rubbleSpin) ok = false;
+      });
+      if (!ok) return false;
+    }
+    return true;
+  }
+
+  /** Fix a still group in place as rubble (exactly where it lies). */
+  private retire(handle: number, group: number[], body: RAPIER.RigidBody): void {
+    body.setBodyType(RAPIER.RigidBodyType.Fixed, false);
+    this.groupBodies.delete(handle);
+    this.stillSince.delete(handle);
+    this.rubble.set(handle, group);
+  }
+
+  /** Bring rubble back to life (at rest), with any rubble touching it (resting or leaning on
+   *  it: a pile wakes together). */
+  wakeRubble(handle: number): void {
+    const group = this.rubble.get(handle);
+    if (!group) return;
+    const body = this.sw.world.getRigidBody(handle);
+    const touching = this.sw.rubbleTouching(Array.from({ length: body.numColliders() }, (_, i) => body.collider(i)));
+    this.rubble.delete(handle);
+    body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.groupBodies.set(handle, group);
+    for (const [h, other] of touching) h.wakeRubble(other);
   }
 
   clearContacts(): void {
@@ -545,7 +775,12 @@ export class DetailHouse {
       for (const m of this.framing.members) {
         if (!this.attached[m.id] || !this.hasContact(m.id)) continue;
         const c = qrot(inv, this.contact[m.id]!);
-        for (const f of [local, avg]) f[m.id] = { x: f[m.id]!.x + c.x, y: f[m.id]!.y + c.y, z: f[m.id]!.z + c.z };
+        for (const f of [local, avg])
+          f[m.id] = {
+            x: f[m.id]!.x + c.x,
+            y: f[m.id]!.y + c.y,
+            z: f[m.id]!.z + c.z,
+          };
       }
     }
     const attachedIds = this.framing.members.filter((m) => this.attached[m.id]).map((m) => m.id);
@@ -580,7 +815,11 @@ export class DetailHouse {
         // them), through the roof diaphragm to the eave walls.
         if (!this.endRafters(m, DETAIL.gableBraceRafters).some((r) => this.attached[r])) return t;
         const along = (t.x * m.normal.x + t.z * m.normal.z) * DETAIL.gableDiaphragmShare;
-        return { x: t.x - along * m.normal.x, y: t.y, z: t.z - along * m.normal.z };
+        return {
+          x: t.x - along * m.normal.x,
+          y: t.y,
+          z: t.z - along * m.normal.z,
+        };
       }
       if (m.kind !== "wallFrame") return t;
       // Braced at the top by the roof framing: eave walls by the rafters bearing on them, end
@@ -671,7 +910,10 @@ export class DetailHouse {
     return list;
   }
 
-  private holdDowns: { isHoldDown: boolean[]; byWall: Map<number, number[][]> } | null = null;
+  private holdDowns: {
+    isHoldDown: boolean[];
+    byWall: Map<number, number[][]>;
+  } | null = null;
   /** Each rafter pair's connections to each bearing wall face, rafters in order along the ridge. */
   private rafterHoldDowns() {
     if (this.holdDowns) return this.holdDowns;
@@ -679,7 +921,11 @@ export class DetailHouse {
     const isHoldDown = f.connections.map(() => false);
     const rafters = f.members.filter((m) => m.kind === "rafterPair").sort((a, b) => a.pos.x - b.pos.x);
     const byWall = new Map<number, number[][]>();
-    for (const face of [1, 3]) byWall.set(face, rafters.map(() => []));
+    for (const face of [1, 3])
+      byWall.set(
+        face,
+        rafters.map(() => []),
+      );
     rafters.forEach((r, i) => {
       for (const c of f.supportsOf[r.id]!) {
         const to = f.connections[c]!.to;
@@ -770,6 +1016,8 @@ export class DetailHouse {
   }
 
   private removeBody(body: RAPIER.RigidBody): void {
+    this.platesOf.delete(body.handle);
+    this.massOf.delete(body.handle);
     for (let i = 0; i < body.numColliders(); i++) this.sw.owner.delete(body.collider(i).handle);
     this.sw.bornAt.delete(body.handle);
     this.sw.world.removeRigidBody(body);
@@ -778,6 +1026,38 @@ export class DetailHouse {
   /** Aerodynamic forces on the house's moving groups, per member plate, from the wind where it is. */
   aero(wind: WindSource): void {
     const world = this.sw.world;
+    // Rubble the wind could now move (lift above its weight, or push past friction) wakes.
+    if (this.rubble.size && this.rubbleTick++ % DETAIL.rubbleWindEvery === 0) {
+      const wake: number[] = [];
+      for (const [handle, group] of this.rubble) {
+        const body = world.getRigidBody(handle);
+        const tr = body.worldCom();
+        const wc = wind.at(tr);
+        if (Math.hypot(wc.x, wc.y, wc.z) < 0.5) continue;
+        const rq = body.rotation();
+        const plates = this.platesOf.get(handle) ?? bodyPlates(this.framing.members, group, this.plateExtent);
+        this.platesOf.set(handle, plates);
+        const M = this.massOf.get(handle) ?? group.reduce((a, id) => a + this.framing.members[id]!.mass, 0);
+        this.massOf.set(handle, M);
+        const still = { x: 0, y: 0, z: 0 };
+        const { force: F } = rigidAero(
+          {
+            t: body.translation(),
+            q: [rq.x, rq.y, rq.z, rq.w],
+            com: tr,
+            v: still,
+            w: still,
+          },
+          plates,
+          (p) => wind.at(p),
+          group.length <= 8 ? wc : null,
+          this.plateForces,
+        );
+        const W = M * GRAVITY;
+        if (F.y >= W || Math.hypot(F.x, F.z) >= REST_FRICTION * (W - F.y)) wake.push(handle);
+      }
+      for (const h of wake) this.wakeRubble(h);
+    }
     for (const [handle, group] of [...this.groupBodies]) {
       const body = world.getRigidBody(handle);
       // Numerical safety: drop a body whose state has gone invalid; cap runaway spin.
@@ -806,7 +1086,27 @@ export class DetailHouse {
       }
       const av = body.angvel();
       const spin = Math.hypot(av.x, av.y, av.z);
-      if (spin > MAX_SPIN) body.setAngvel({ x: (av.x * MAX_SPIN) / spin, y: (av.y * MAX_SPIN) / spin, z: (av.z * MAX_SPIN) / spin }, true);
+      // Resting rubble: still long enough, touching only fixed things.
+      if (Math.hypot(lv.x, lv.y, lv.z) < DETAIL.rubbleSpeed && spin < DETAIL.rubbleSpin) {
+        const since = this.stillSince.get(handle) ?? this.sw.time;
+        this.stillSince.set(handle, since);
+        if (this.sw.time - since >= DETAIL.rubbleAfterS - 1e-9 && this.onlyFixedContacts(body)) {
+          // A light piece at rest goes to the debris model (as a sleeping one does); the rest
+          // become rubble.
+          const light = this.sw.time - (this.sw.bornAt.get(handle) ?? 0) >= DETAIL.lightAfterS && (this.massOf.get(handle) ?? group.reduce((a, id) => a + this.framing.members[id]!.mass, 0)) < DETAIL.lightKg;
+          if (!(light && this.toLight(group, body, true))) this.retire(handle, group, body);
+          continue;
+        }
+      } else this.stillSince.delete(handle);
+      if (spin > MAX_SPIN)
+        body.setAngvel(
+          {
+            x: (av.x * MAX_SPIN) / spin,
+            y: (av.y * MAX_SPIN) / spin,
+            z: (av.z * MAX_SPIN) / spin,
+          },
+          true,
+        );
       body.resetForces(false);
       body.resetTorques(false);
       const asleep = body.isSleeping();
@@ -817,62 +1117,42 @@ export class DetailHouse {
       }
       const v = body.linvel();
       const w = body.angvel();
+      const rq = body.rotation();
+      const t = body.translation();
+      let plates = this.platesOf.get(handle);
+      if (!plates) {
+        plates = bodyPlates(this.framing.members, group, this.plateExtent);
+        this.platesOf.set(handle, plates);
+      }
+      let M = this.massOf.get(handle);
+      if (M === undefined) {
+        M = group.reduce((a, id) => a + this.framing.members[id]!.mass, 0);
+        this.massOf.set(handle, M);
+      }
+      for (const id of group) this.aeroForce[id] = ZERO;
       // Wind varies over tens of metres: one sample at the center serves a piece smaller than a
       // few metres; large chunks sample it at each member.
-      const oneSample = group.length === 1 || group.length <= 8 ? wind.at(tr) : null;
-      const applied: { f: Vec3; at: Vec3; id: number }[] = [];
-      let M = 0;
-      const F = { x: 0, y: 0, z: 0 };
-      for (const id of group) {
-        const m = this.framing.members[id]!;
-        M += m.mass;
-        this.aeroForce[id] = { x: 0, y: 0, z: 0 };
-        const plate = m.area > 0 ? m.area : (m.plate ?? 0);
-        if (plate <= 0) continue;
-        const pose = this.memberPose(id);
-        const flat = m.kind === "roofSheet" || m.kind === "roofShingle" || m.kind === "ceiling";
-        const n = qrot(pose.q, flat ? { x: 0, y: 1, z: 0 } : { x: 0, y: 0, z: 1 });
-        const r = { x: pose.pos.x - tr.x, y: pose.pos.y - tr.y, z: pose.pos.z - tr.z };
-        const vp = { x: v.x + (w.y * r.z - w.z * r.y), y: v.y + (w.z * r.x - w.x * r.z), z: v.z + (w.x * r.y - w.y * r.x) };
-        const wnd = oneSample ?? wind.at(pose.pos);
-        const f = plateForce(n, plate, { x: wnd.x - vp.x, y: wnd.y - vp.y, z: wnd.z - vp.z });
-        if (![f.x, f.y, f.z, pose.pos.x, pose.pos.y, pose.pos.z].every(Number.isFinite)) continue;
-        applied.push({ f, at: pose.pos, id });
-        F.x += f.x;
-        F.y += f.y;
-        F.z += f.z;
-      }
+      const oneSample = group.length <= 8 ? wind.at(tr) : null;
+      const forces = this.plateForces;
+      const { force: F, torque: T } = rigidAero({ t, q: [rq.x, rq.y, rq.z, rq.w], com: tr, v, w }, plates, (p) => wind.at(p), oneSample, forces);
       // A piece at rest stays put until the wind can lift it or overcome friction; waking it
       // for less only makes the solver re-settle it every step (visible trembling).
       if (asleep) {
         const W = M * GRAVITY;
         if (F.y < W && Math.hypot(F.x, F.z) < REST_FRICTION * (W - F.y)) continue;
       }
-      for (const { f, at, id } of applied) {
-        this.aeroForce[id] = f;
-        // Wake only a sleeping piece the wind can move: waking resets Rapier's sleep timer,
-        // so passing it every step would keep settled debris awake (and trembling) forever.
-        body.addForceAtPoint(f, at, asleep);
-        // Rotational drag: a plate turning about an in-plane axis sweeps air with its far
-        // parts. τ = −½ρ·C_N·w·ω|ω|·L⁴/32 for span L across the axis, width w along it.
-        const ext = this.plateExtent[id]!;
-        if (ext) {
-          const q = this.memberPose(id).q;
-          const ax = qrot(q, ext.a);
-          const bx = qrot(q, ext.b);
-          const k = 0.5 * AIR_DENSITY * PLATE.normalCoeff;
-          const wa = w.x * ax.x + w.y * ax.y + w.z * ax.z;
-          const wb = w.x * bx.x + w.y * bx.y + w.z * bx.z;
-          const ta = (-k * ext.la * wa * Math.abs(wa) * ext.lb ** 4) / 32;
-          const tb = (-k * ext.lb * wb * Math.abs(wb) * ext.la ** 4) / 32;
-          body.addTorque({ x: ax.x * ta + bx.x * tb, y: ax.y * ta + bx.y * tb, z: ax.z * ta + bx.z * tb }, asleep);
-        }
-      }
+      for (let i = 0; i < plates.length; i++) this.aeroForce[plates[i]!.id] = forces[i]!;
+      // Wake only a sleeping piece the wind can move: waking resets Rapier's sleep timer, so
+      // passing it every step would keep settled debris awake (and trembling) forever.
+      body.addForce(F, asleep);
+      body.addTorque(T, asleep);
     }
   }
 
   /** Light members whose pose changed this step (moving, or just came to rest). */
   readonly lightChanged: number[] = [];
+  /** Light pieces that moved this step (their members are in `lightChanged`). */
+  private readonly lightMoved: LightPiece[] = [];
   private lightTick = 0;
 
   /**
@@ -881,7 +1161,7 @@ export class DetailHouse {
    * ground, or at rest (kept exactly as it lies). Not while a large piece tumbles or rolls
    * along the ground: the debris model would lay it flat at once. Returns true if moved.
    */
-  private toLight(group: number[], body: RAPIER.RigidBody): boolean {
+  private toLight(group: number[], body: RAPIER.RigidBody, still = false): boolean {
     // The group's box in house-local axes (the body's own frame): center and extents.
     const lo = [Infinity, Infinity, Infinity];
     const hi = [-Infinity, -Infinity, -Infinity];
@@ -900,7 +1180,11 @@ export class DetailHouse {
         }
     }
     const d = [0, 1, 2].map((k) => Math.max(hi[k]! - lo[k]!, 0.002));
-    const c: Vec3 = { x: (lo[0]! + hi[0]!) / 2, y: (lo[1]! + hi[1]!) / 2, z: (lo[2]! + hi[2]!) / 2 };
+    const c: Vec3 = {
+      x: (lo[0]! + hi[0]!) / 2,
+      y: (lo[1]! + hi[1]!) / 2,
+      z: (lo[2]! + hi[2]!) / 2,
+    };
     // Piece axes: X = length, Y = thickness, Z = width (Spec 04).
     const thin = d.indexOf(Math.min(...d));
     const rest = [0, 1, 2].filter((k) => k !== thin);
@@ -915,14 +1199,22 @@ export class DetailHouse {
     const v = body.linvel();
     const w = body.angvel();
     const com = body.worldCom();
-    const rr = { x: center.x - com.x, y: center.y - com.y, z: center.z - com.z };
+    const rr = {
+      x: center.x - com.x,
+      y: center.y - com.y,
+      z: center.z - com.z,
+    };
     const first = this.framing.members[group[0]!]!;
     const piece: Piece = {
       id: group[0]!,
       kind: "osb",
       def: sheet(first.kind, d[long]!, d[mid]!, d[thin]!, mass),
       pos: center,
-      vel: { x: v.x + (w.y * rr.z - w.z * rr.y), y: v.y + (w.z * rr.x - w.x * rr.z), z: v.z + (w.x * rr.y - w.y * rr.x) },
+      vel: {
+        x: v.x + (w.y * rr.z - w.z * rr.y),
+        y: v.y + (w.z * rr.x - w.x * rr.z),
+        z: v.z + (w.x * rr.y - w.y * rr.x),
+      },
       q: qmul(qb, qconj(r)),
       spin: group[0]! % 2 ? 1 : -1,
       resting: false,
@@ -938,7 +1230,7 @@ export class DetailHouse {
       liftRoll: 0,
       gust: { x: 0, y: 0, z: 0 },
     };
-    const asleep = body.isSleeping();
+    const asleep = still || body.isSleeping();
     // Thickness axis (piece Y) in the world: is it lying flat?
     const [qx, , qz] = piece.q;
     const flat = 1 - 2 * (qx * qx + qz * qz) > Math.cos(DETAIL.flatTiltRad);
@@ -971,6 +1263,7 @@ export class DetailHouse {
   /** Step the house's light pieces on the Spec 04 model (no turbulence, ground contact only). */
   stepLight(wind: WindSource): void {
     this.lightChanged.length = 0;
+    this.lightMoved.length = 0;
     if (!this.light.size) return;
     // Every step (60 Hz): poses go straight to the screen without interpolation, so a coarser
     // step would show as judder. Resting pieces check the wind 4 times a second.
@@ -987,12 +1280,14 @@ export class DetailHouse {
       stepPiece(p, wind.at({ x: p.pos.x, y: p.pos.y + floor, z: p.pos.z }), STRUCT_DT);
       p.pos.y += floor;
       for (const id of lp.members) this.lightChanged.push(id);
+      this.lightMoved.push(lp);
       if (Math.abs(p.pos.x) > GROUND_HALF - 50 || Math.abs(p.pos.z) > GROUND_HALF - 50 || p.pos.y > 5000) {
         this.light.delete(key);
         for (const id of lp.members) {
           this.lightOf.delete(id);
           this.lost[id] = true;
         }
+        this.lostMembers += lp.members.length;
         this.lostWhy["left the area"] = (this.lostWhy["left the area"] ?? 0) + lp.members.length;
       }
     }
@@ -1017,9 +1312,12 @@ export class DetailHouse {
   /** Freeze: keep every member's final pose, remove the house's bodies from the world. */
   freeze(): void {
     if (this.frozen) return;
+    if (!this.complete) this.build(Infinity);
     this.frozenPose = this.framing.members.map((m) => this.memberPose(m.id));
     for (const [h] of this.groupBodies) this.removeBody(this.sw.world.getRigidBody(h));
+    for (const [h] of this.rubble) this.removeBody(this.sw.world.getRigidBody(h));
     this.groupBodies.clear();
+    this.rubble.clear();
     this.light.clear();
     this.lightOf.clear();
     this.removeBody(this.body);

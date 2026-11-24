@@ -2,6 +2,7 @@
  * The simulated world (Spec 08 v1.2): the neighborhood and its damage state.
  */
 import { DAMAGE_RANGE_RMAX } from "../config/buildings";
+import { MS_PER_MPH } from "../config/units";
 import { updateBuilding } from "../core/damage/building";
 import type { Building, FailureRecord } from "../core/damage/types";
 import { pressureDeficit } from "../core/wind/pressure";
@@ -54,8 +55,19 @@ export function createWorld(seed: number, withBuildings = true): World {
       const active = s.vMax > 0;
       let changed = false;
       for (const b of hood.buildings) {
-        if (b.dod >= 10 || b.detail) continue;
+        if (b.dod >= 10 && !b.detail) continue;
         const r = Math.hypot(b.x - s.center.x, b.z - s.center.z);
+        if (b.detail) {
+          // The detail engine owns its damage; the inspector still shows its peak wind.
+          if (active && r <= range) {
+            p.x = b.x;
+            p.y = b.roofHeight;
+            p.z = b.z;
+            const w = windAt(p, s, terrain);
+            b.peakMph = Math.max(b.peakMph, Math.hypot(w.x, w.y, w.z) / MS_PER_MPH);
+          }
+          continue;
+        }
         // Far houses feel only the translation wind; keep updating only while venting.
         if ((!active || r > range) && b.deficitIn < 1) continue;
         p.x = b.x;

@@ -608,3 +608,169 @@ describe("Spec 09 slice C — load-path mechanics (STR-25)", () => {
     lab.dispose();
   });
 });
+
+describe("Spec 09 — detail zone performance", () => {
+  beforeAll(initRapier);
+
+  test("STR-27: wind on rigid pieces from body-frame plates equals the per-member world-pose computation", async () => {
+    const { bodyPlates, plateExtent, plateNormal, rigidAero } = await import("../../src/core/structure/aero");
+    const { qmul, qrot } = await import("../../src/core/structure/framing");
+    const f = buildFraming(house());
+    // A loose roof chunk and a wall section, tumbling through a sheared wind.
+    const ext = f.members.map((m) => (m.area > 0 || (m.plate ?? 0) > 0 ? plateExtent(m.shapes) : null));
+    const groups = [f.members.filter((m) => m.kind === "roofSheet" || m.kind === "roofShingle").slice(0, 12).map((m) => m.id), f.members.filter((m) => m.panel === 2).map((m) => m.id)];
+    const s = (() => {
+      const a = 0.7;
+      const q: [number, number, number, number] = [Math.sin(a / 2) * 0.6, Math.sin(a / 2) * 0.8, 0, Math.cos(a / 2)];
+      return { t: { x: 3, y: 4, z: -2 }, q, com: { x: 4, y: 5, z: -1 }, v: { x: 12, y: 3, z: -5 }, w: { x: 1.5, y: -2, z: 0.7 } };
+    })();
+    const wind = (p: { x: number; y: number; z: number }) => ({ x: 40 + 0.5 * p.y, y: 8 - 0.2 * p.x, z: -15 + 0.3 * p.z });
+    for (const group of groups) {
+      const plates = bodyPlates(f.members, group, ext);
+      const forces: { x: number; y: number; z: number }[] = [];
+      const got = rigidAero(s, plates, wind, null, forces);
+      // Reference: each member's world pose, as the detail engine did before.
+      const F = { x: 0, y: 0, z: 0 };
+      const T = { x: 0, y: 0, z: 0 };
+      const { AIR_DENSITY } = await import("../../src/config/atmosphere");
+      const { PLATE } = await import("../../src/config/structure");
+      const k = 0.5 * AIR_DENSITY * PLATE.normalCoeff;
+      for (const id of group) {
+        const m = f.members[id]!;
+        const area = m.area > 0 ? m.area : (m.plate ?? 0);
+        if (area <= 0) continue;
+        const o = qrot(s.q, m.pos);
+        const pos = { x: s.t.x + o.x, y: s.t.y + o.y, z: s.t.z + o.z };
+        const mq = qmul(s.q, m.q);
+        const n = qrot(mq, plateNormal(m));
+        const r = { x: pos.x - s.com.x, y: pos.y - s.com.y, z: pos.z - s.com.z };
+        const w = s.w;
+        const vp = { x: s.v.x + (w.y * r.z - w.z * r.y), y: s.v.y + (w.z * r.x - w.x * r.z), z: s.v.z + (w.x * r.y - w.y * r.x) };
+        const wd = wind(pos);
+        const fm = plateForce(n, area, { x: wd.x - vp.x, y: wd.y - vp.y, z: wd.z - vp.z });
+        F.x += fm.x;
+        F.y += fm.y;
+        F.z += fm.z;
+        T.x += r.y * fm.z - r.z * fm.y;
+        T.y += r.z * fm.x - r.x * fm.z;
+        T.z += r.x * fm.y - r.y * fm.x;
+        const e = ext[id];
+        if (e) {
+          const ax = qrot(mq, e.a);
+          const bx = qrot(mq, e.b);
+          const wa = w.x * ax.x + w.y * ax.y + w.z * ax.z;
+          const wb = w.x * bx.x + w.y * bx.y + w.z * bx.z;
+          const ta = (-k * e.la * wa * Math.abs(wa) * e.lb ** 4) / 32;
+          const tb = (-k * e.lb * wb * Math.abs(wb) * e.la ** 4) / 32;
+          T.x += ax.x * ta + bx.x * tb;
+          T.y += ax.y * ta + bx.y * tb;
+          T.z += ax.z * ta + bx.z * tb;
+        }
+      }
+      const rel = (a: number, b: number, scale: number) => Math.abs(a - b) / scale;
+      const fs = Math.hypot(F.x, F.y, F.z);
+      const ts = Math.hypot(T.x, T.y, T.z);
+      expect(fs).toBeGreaterThan(100);
+      for (const c of ["x", "y", "z"] as const) {
+        expect(rel(got.force[c], F[c], fs)).toBeLessThan(1e-9);
+        expect(rel(got.torque[c], T[c], ts)).toBeLessThan(1e-9);
+      }
+    }
+  });
+
+  test("STR-26: still pieces become fixed rubble where they lie; wind and a touching piece waking wake them", () => {
+    const lab = new StructureLab(house());
+    const h = lab.house;
+    const world = lab.sw.world;
+    for (let mph = 60; mph <= 150; mph += 3) {
+      lab.setWind(mph, 30);
+      for (let i = 0; i < 30; i++) lab.step();
+    }
+    lab.setWind(0, 30);
+    // Each step: a group that turns into rubble keeps its exact pose.
+    let retired = 0;
+    for (let i = 0; i < 60 * 15; i++) {
+      const before = new Map<number, ReturnType<typeof lab.memberPose>[]>();
+      for (const [handle, group] of h.groupBodies) before.set(handle, group.map((id) => lab.memberPose(id)));
+      lab.step();
+      for (const [handle, poses] of before) {
+        if (!h.rubble.has(handle)) continue;
+        retired++;
+        const group = h.rubble.get(handle)!;
+        group.forEach((id, k) => {
+          const p = lab.memberPose(id);
+          expect(Math.hypot(p.pos.x - poses[k]!.pos.x, p.pos.y - poses[k]!.pos.y, p.pos.z - poses[k]!.pos.z)).toBeLessThan(1e-9);
+        });
+      }
+    }
+    expect(retired).toBeGreaterThan(10);
+    // Rubble is fixed and touches only fixed things.
+    for (const [handle] of h.rubble) expect(world.getRigidBody(handle).isFixed()).toBe(true);
+    // A pile wakes together: waking one piece wakes the rubble touching it.
+    let pair: [number, number] | null = null;
+    for (const [handle] of h.rubble) {
+      const body = world.getRigidBody(handle);
+      const touching = lab.sw.rubbleTouching(Array.from({ length: body.numColliders() }, (_, i) => body.collider(i)));
+      if (touching.length) {
+        pair = [handle, touching[0]![1]];
+        break;
+      }
+    }
+    expect(pair).not.toBeNull();
+    const [base, top] = pair!;
+    const tb = world.getRigidBody(top);
+    h.wakeRubble(base);
+    expect(h.rubble.has(base)).toBe(false);
+    expect(h.rubble.has(top)).toBe(false);
+    expect(tb.isDynamic()).toBe(true);
+    expect(Math.hypot(tb.linvel().x, tb.linvel().y, tb.linvel().z)).toBe(0);
+    // Strong wind brings rubble back to life.
+    const n = h.rubble.size;
+    lab.setWind(150, 30);
+    for (let i = 0; i < 30; i++) lab.step();
+    expect(h.rubble.size).toBeLessThan(n);
+    lab.dispose();
+  }, 240000);
+
+  test("STR-28: entering houses are built over several steps; an incomplete house carries no loads", async () => {
+    const { StructureWorld } = await import("../../src/sim/structureWorld");
+    const { DETAIL } = await import("../../src/config/structure");
+    const bs = [house(), { ...house(), id: 7, x: 30 }, { ...house(), id: 8, x: 60 }];
+    const storm = { at: () => ({ x: 120, y: 0, z: 0 }), deficit: () => 8000 };
+    const sw = new StructureWorld();
+    const hs = bs.map((b) => sw.addHouse(b, undefined, true));
+    const count = () => sw.world.colliders.len();
+    let prev = count();
+    let steps = 0;
+    while (!hs.every((h) => h.complete)) {
+      sw.step(storm);
+      steps++;
+      expect(count() - prev).toBeLessThanOrEqual(DETAIL.buildCollidersPerStep);
+      prev = count();
+      // Until complete, a house carries no loads: nothing fails, however strong the wind.
+      for (const h of hs) if (!h.complete) expect(h.failures.length).toBe(0);
+    }
+    expect(steps).toBeGreaterThan(3);
+    // The completed houses have the same colliders as houses built at once.
+    const ref = new StructureWorld();
+    bs.forEach((b) => ref.addHouse(b));
+    const boxes = (w: InstanceType<typeof StructureWorld>) => {
+      const out: string[] = [];
+      w.world.forEachCollider((c) => {
+        const t = c.translation();
+        out.push(`${t.x.toFixed(6)},${t.y.toFixed(6)},${t.z.toFixed(6)},${c.mass().toFixed(6)}`);
+      });
+      return out.sort();
+    };
+    // (Compare before the storm moves anything: rebuild the gradual world in calm air.)
+    const calm = { at: () => ({ x: 0, y: 0, z: 0 }), deficit: () => 0 };
+    const sw2 = new StructureWorld();
+    const hs2 = bs.map((b) => sw2.addHouse(b, undefined, true));
+    while (!hs2.every((h) => h.complete)) sw2.step(calm);
+    expect(boxes(sw2)).toEqual(boxes(ref));
+    expect(hs2.map((h) => h.framing.members.length)).toEqual(ref.houses.map((h) => h.framing.members.length));
+    sw.dispose();
+    sw2.dispose();
+    ref.dispose();
+  });
+});

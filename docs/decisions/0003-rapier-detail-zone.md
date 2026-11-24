@@ -17,7 +17,7 @@ member-level house is ~300–600 bodies, so only ~20–40 houses can be breaking
 
 ## Decision
 
-- Use Rapier (WebAssembly) in a Web Worker for a **detail zone**: the ~100–200 houses nearest
+- Use Rapier (WebAssembly, SIMD build since the Phase 5 performance work) in Web Workers for a **detail zone**: the ~100–200 houses nearest
   the camera and the tornado path, simulated at member level with breakable joints.
 - Keep the Phase 4 calibrated component model for every other building, and as the reference
   the detail-zone houses are validated against (same DI 2 table, same loads).
@@ -33,3 +33,10 @@ member-level house is ~300–600 bodies, so only ~20–40 houses can be breaking
 - Determinism needs Rapier's deterministic build and a fixed step; replay (Phase 11) must allow
   for it.
 - Two building models to keep consistent; validation tests compare them.
+
+## Update (Phase 5 performance follow-up)
+
+The SIMD build (`@dimforge/rapier3d-simd-compat`, same version) replaced the plain build: ~40%
+faster solver at the same behaviour. A world of intact houses still costs ~3.5 ms per step for
+~35,000 fixed colliders (Rapier keeps broad-phase pairs between colliders of the same fixed
+body); one world per street row on several workers keeps that, and everything else, parallel.

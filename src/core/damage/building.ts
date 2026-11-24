@@ -403,6 +403,8 @@ export interface BuildingReport {
   peakMph: number;
   /** Failures grouped by part type, in order of first failure. */
   failures: FailureGroup[];
+  /** Connection failures after the house entered the detail zone (Spec 09), by type. */
+  detailFailures: readonly import("./types").DetailFailureGroup[];
 }
 
 export function partTotal(b: Building, part: Part): number {
@@ -441,5 +443,6 @@ export function buildingReport(b: Building): BuildingReport {
     estimate: efFromDamage(b.dod, b.cls),
     peakMph: b.peakMph,
     failures: [...groups.values()].sort((a, c) => a.time - c.time),
+    detailFailures: b.detailFailures ?? [],
   };
 }

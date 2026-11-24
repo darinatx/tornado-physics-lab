@@ -1,6 +1,6 @@
 # Spec 09 — Structural Physics (Detail Zone)
 
-Status: Approved (v0.10) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
+Status: Approved (v0.11) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
 
 ## Purpose
 
@@ -209,9 +209,10 @@ Decisions:
 
 ### Detail zone in town (slice B)
 
-**One shared physics world.** All detailed houses live in one Rapier world (ground, each
-house's slab and fixed body, and every loose piece), so debris from one house hits the
-next house and those impacts load its connections like any other contact.
+**One physics world per street row.** The detailed houses of a street row share one Rapier
+world (ground, each house's slab and fixed body, and every loose piece), so debris from one
+house hits the next house and those impacts load its connections like any other contact.
+Rows are separate worlds (see Detail zone performance).
 
 **Which houses.** The user picks a spot in town; until they do, there is no detail zone (the
 whole town runs on the component model at full speed). The N_max = 30 houses nearest that spot are the detail houses
@@ -301,6 +302,53 @@ them); intact houses' members are placed once, and only moving members are updat
 frame. With damage colors on, their outer finish (siding, shingles) takes the house's DOD
 color, as the component houses do; bare sheathing and framing keep their materials.
 
+### Detail zone performance (Phase 5 follow-up)
+
+Goal: the 30-house core passage at or near real time, without fewer houses or coarser
+members. Measured before (one worker, per 1/60 s detail step at the core): ~95 ms, of which
+Rapier ~38 (1,600 awake bodies, ~1,000 of them barely moving on the ground), wind on rigid
+pieces ~20, load checks ~15, light pieces ~7, bookkeeping ~15. After: ~50 ms of work per step
+in all (awake bodies ~700–900), spread over 8 street-row groups; the costliest group averages
+~11 ms (STR-30), and in the browser with 6 workers the sim holds 0.8–1.0× real time through
+the core passage (it was 0.2–0.3×).
+
+**Bookkeeping.** Member poses sent to the screen are computed from each body's (or light
+piece's) pose read once, and lost members are reported only when the count changes.
+
+**Rapier SIMD build.** The same engine version built with WebAssembly SIMD (ADR 0003): ~40%
+faster solver, same behaviour; runs are deterministic within the build.
+
+**Wind on rigid pieces.** Each member's plate normal, area and offset are fixed in its body's
+frame, so they're computed once when the body is made, not from the member's world pose every
+step. Results are the same as before.
+
+**Resting rubble.** A rigid piece that has been still (speed under 0.1 m/s, spin under
+0.1 rad/s) for 0.5 s while touching only the ground, a slab, other rubble or other still
+pieces becomes fixed in place, exactly where it lies (a light piece at rest moves to the
+debris model instead, as one Rapier put to sleep does): real debris at rest doesn't tremble,
+and Rapier no longer solves it. A piece leaning on a standing house stays a body, so its
+weight keeps loading the structure (Rapier has no contact between two fixed bodies). It comes back to life, with zero velocity, when
+- the wind on it could move it (lift above its weight, or sideways force above friction),
+  checked 4 times a second, as for resting light pieces;
+- a moving piece hits it (a contact force event above the impact threshold); or
+- a piece it touches comes back to life (a pile wakes together: a piece resting or leaning
+  on another may lose its support).
+Moving pieces still hit and pile onto rubble, and impacts on it are reported as before.
+
+**Entry without a stall.** Building a house's colliders (~1,150) takes ~30 ms. Entering
+houses are built over several steps, at most 400 colliders per step in total, in entry order
+(a count, not a time budget, so runs stay deterministic). A house is loaded and can fail only
+once complete; it enters ~20 s before the tornado's damaging winds reach it, so this delay is
+never visible.
+
+**Physics groups and workers.** Each street row (the houses on one side of one street within
+a block, up to 8) is its own physics group with its own Rapier world. Groups step
+independently with the same tornado state, so they run in parallel on several workers
+(as many as the CPU allows, up to 6; at least 1), and the results don't depend on how many
+workers there are. Pieces from one house still hit its side neighbours (10 m apart); they
+don't hit houses in other rows (41 m across the street, 69 m back to back) until Phase 6
+(debris impacts). The sim waits for the slowest worker under the same 0.25 s lead rule.
+
 ## Interface
 
 ```ts
@@ -355,7 +403,7 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   as it vents); loose members feel the wind at their own position.
 - **STR-16**: The survey DOD of a detailed house follows the table above.
 - **STR-17**: Shared world: a loose member from one detailed house can hit another detailed
-  house, and the impact is added to the hit member's load.
+  house in its street row, and the impact is added to the hit member's load.
 - **STR-18**: The sim never runs more than 0.25 s ahead of the detail physics, and two runs
   with the same seed but different frame timing give identical detail failures.
 - **STR-20**: A light loose piece hands off to the debris model without a jump (except a piece
@@ -364,9 +412,23 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   spin), and once the wind has passed a torn-apart house keeps under 60 rigid bodies.
 - **STR-19**: Calm skip: below 55 mph with no impacts and small APC, skipping the solve gives
   the same result as solving (no failures), for every construction class.
+- **STR-26**: Resting rubble: a still rigid piece touching only the ground, a slab, rubble or
+  still pieces (not a standing house) becomes fixed
+  exactly where it lies after 0.5 s; wind that could move it, an impact, or a piece it touches
+  waking brings it back to life with zero velocity.
+- **STR-27**: Wind on rigid pieces from body-frame plates equals the per-member world-pose
+  computation (relative difference under 1e-9).
+- **STR-28**: Entering houses are built over several steps (at most 400 colliders per step);
+  an incomplete house carries no loads and doesn't fail; the completed house has the same
+  members and colliders as one built at once.
+- **STR-29**: Each street row is its own physics group; the same run with the groups spread
+  over 1 or 3 workers gives identical results.
+- **STR-30** *(validation)*: Over a 30-house core passage, the costliest physics group's
+  detail step averages under 16 ms (real time when groups run in parallel).
 - **STR-24** *(validation)*: Standard detailed houses passed through simulated strong
   tornadoes (the Spec 03 calibration cases) reach each DOD at a Kaplan–Meier median peak wind
-  within ±10% of the DI 2 expected value (DOD 5, not represented, is reached with DOD 6).
+  within ±10% of the DI 2 expected value (DOD 5, not represented, is reached with DOD 6), on a
+  sample of 128 houses.
 - **STR-25**: Load-path mechanics: a braced wall sends half its out-of-plane load to the
   diaphragm and an unbraced one fails by overturning at the base-moment capacity (more with a
   standing neighbor); rafter hold-downs fail by their neighborhood's mean demand; the roof
@@ -392,11 +454,19 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
 - Wall frames are one group per panel; studs don't break individually.
 - DOD 5 (house shifted off its foundation) isn't represented: the wall frames aren't tied into
   one box that could slide.
+- Rigid pieces don't hit houses or pieces in other street rows (separate physics groups)
+  until Phase 6.
 - Light pieces fly without turbulence; they land on their own house's slab or the ground (not
   on other pieces or other slabs).
 
 ## Changelog
 
+- v0.11: detail zone performance at the user's request (keep the detail, make it faster):
+  Rapier SIMD build, body-frame wind on rigid pieces, resting rubble, entry spread over steps,
+  a physics world per street row run on several workers (STR-26–30). Pieces no longer hit
+  houses in other street rows until Phase 6. STR-24 now uses 128 houses: with 64 a DOD's median
+  moved ~±5% between runs that differ only in rounding (chaotic tumbling), enough to cross the
+  limit (DOD 7: +5% → +11% from rounding alone; +6% on 128).
 - v0.10: no detail spot by default; the user picks one. With the default spot on the town
   center, every run tore 30 detailed houses apart at the start and played in slow motion.
 - v0.9: slice C, validation against DI 2 in tornado passes (STR-24, STR-25). Physics added

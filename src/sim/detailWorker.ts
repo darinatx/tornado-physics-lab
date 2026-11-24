@@ -25,7 +25,7 @@ function handle(m: ToWorker & { epoch: number }): void {
     const result = engine.step(m.step);
     post({ type: "result", result, epoch: m.epoch }, [result.poses.buffer, result.dods.buffer, result.failures.buffer]);
   } catch (e) {
-    post({ type: "error", message: `${(e as Error).message} (phase ${engine.sw.phase})` });
+    post({ type: "error", message: `${(e as Error).message} (phase ${engine.phase})` });
   }
 }
 

@@ -41,6 +41,7 @@ function fmt(r: ProbeReading): string {
 }
 
 const efText = (e: number | null) => (e === null ? "—" : `EF${e}`);
+const kn = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} kN` : `${Math.round(n)} N`);
 const kpa = (pa: number) => (pa >= 1000 ? `${(pa / 1000).toFixed(2)} kPa` : `${Math.round(pa)} Pa`);
 
 function fmtBuilding(r: BuildingReport, hereMph: number): string {
@@ -48,12 +49,13 @@ function fmtBuilding(r: BuildingReport, hereMph: number): string {
   const est = r.estimate.ef === null
     ? "No damage"
     : `${efText(r.estimate.ef)} · ${r.estimate.mph} mph <span class="p-dim">(DOD range ${efText(r.estimate.low)}–${efText(r.estimate.high)}; ${r.estimate.basis})</span>`;
-  const fails = r.failures
-    .map((f) => {
-      const n = f.total > 1 ? `: ${f.count} of ${f.total} ${f.unit}` : "";
-      return `<li>${f.label}${n} <span class="p-dim">first at ${Math.round(f.mph)} mph · ${kpa(f.load)} &gt; ${kpa(f.capacity)}</span></li>`;
-    })
-    .join("");
+  // Town-model failures (before the house went into full detail) and connection failures in
+  // the detail zone, in order of first failure.
+  const rows = [
+    ...r.failures.map((f) => ({ time: f.time, html: `${f.label}${f.total > 1 ? `: ${f.count} of ${f.total} ${f.unit}` : ""} <span class="p-dim">first at ${Math.round(f.mph)} mph · ${kpa(f.load)} &gt; ${kpa(f.capacity)}</span>` })),
+    ...r.detailFailures.map((f) => ({ time: f.time, html: `${f.label}: ${f.count} of ${f.total} ${f.unit} <span class="p-dim">first at ${Math.round(f.mph)} mph · ${kn(f.load)} &gt; ${kn(f.capacity)}</span>` })),
+  ].sort((a, b) => a.time - b.time);
+  const fails = rows.map((x) => `<li>${x.html}</li>`).join("");
   return `
     <div class="p-ef" style="color:${col}">${r.dod > 0 ? `DOD ${r.dod}` : "Intact"} <span>${r.description}</span></div>
     <div class="p-row"><b>Survey estimate</b> ${est}</div>

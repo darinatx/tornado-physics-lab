@@ -3,8 +3,9 @@
  *
  * - `ZoneSelector` (runs in the sim, deterministic): which houses enter and leave the zone,
  *   from the tornado state alone.
- * - `DetailEngine` (runs in a worker in the app, in-process in tests): the shared structure
- *   world stepping the detailed houses in the tornado's wind, returning what changed.
+ * - `DetailEngine` (runs in workers in the app, in-process in tests): one structure world per
+ *   street row (Spec 09 performance), stepping the detailed houses in the tornado's wind and
+ *   returning what changed.
  * - Message types between them.
  */
 import { DETAIL } from "../config/structure";
@@ -15,6 +16,7 @@ import { qconj, qrot } from "../core/structure/framing";
 import { pressureDeficit } from "../core/wind/pressure";
 import type { TerrainClass, TornadoState } from "../core/wind/types";
 import { windAt } from "../core/wind/windField";
+import { streetRowOf } from "./city";
 import { DetailHouse, StructureWorld } from "./structureWorld";
 import type { WindSource } from "./structureWorld";
 
@@ -114,20 +116,30 @@ export interface DetailResult {
   frozen: { index: number; undamaged: boolean }[];
   /** New connection failures this step (count per house: [house, n] × k). */
   failures: Int32Array;
+  /** The new failures themselves (for the inspector). */
+  failLog: { house: number; label: string; load: number; capacity: number; mph: number }[];
   /** Wall-clock time the step took (ms), for the status line (not part of the results). */
   ms: number;
+  /** Wall-clock time of the costliest physics group's step (ms; not part of the results). */
+  groupMs: number;
 }
 
-/** Steps the shared structure world for the zone's houses. */
+/** Steps the zone's houses: one structure world per street row (physics group). */
 export class DetailEngine {
-  readonly sw = new StructureWorld();
+  /** Physics groups by street row, in the order they were created. */
+  readonly worlds = new Map<string, StructureWorld>();
+  private readonly worldOf = new Map<number, StructureWorld>();
   readonly houses = new Map<number, DetailHouse>();
   private dod = new Map<number, number>();
   private failCount = new Map<number, number>();
   /** Bodies seen last step per house (to report members of newly created bodies). */
   private seen = new Map<number, Set<number>>();
+  /** Lost members already reported per house. */
+  private lostReported = new Map<number, number>();
   private tornado: TornadoState | null = null;
   private terrain: TerrainClass = "suburban";
+  /** Debug: the phase of the group that ran last (for crash reports). */
+  phase = "";
   private readonly wind: WindSource = {
     at: (p: Vec3) => (this.tornado ? windAt(p, this.tornado, this.terrain) : { x: 0, y: 0, z: 0 }),
     deficit: (x: number, z: number) =>
@@ -146,7 +158,15 @@ export class DetailEngine {
       poses.push(i, id, p.pos.x, p.pos.y, p.pos.z, p.q[0], p.q[1], p.q[2], p.q[3]);
     };
     for (const e of msg.enter) {
-      const h = this.sw.addHouse(this.buildings[e.index]!, removedFlags(e.removed, []));
+      const b = this.buildings[e.index]!;
+      const key = streetRowOf(b);
+      let sw = this.worlds.get(key);
+      if (!sw) {
+        sw = new StructureWorld();
+        this.worlds.set(key, sw);
+      }
+      this.worldOf.set(e.index, sw);
+      const h = sw.addHouse(b, removedFlags(e.removed, []), true);
       this.houses.set(e.index, h);
       this.seen.set(e.index, new Set());
       this.dod.set(e.index, 0);
@@ -156,32 +176,50 @@ export class DetailEngine {
     }
     for (const i of msg.exit) {
       const h = this.houses.get(i);
-      if (h) h.releasedAt = this.sw.time;
+      if (h) h.releasedAt = this.worldOf.get(i)!.time;
     }
-    this.sw.step(this.wind);
+    let groupMs = 0;
+    for (const sw of this.worlds.values()) {
+      const t = performance.now();
+      try {
+        sw.step(this.wind);
+      } finally {
+        this.phase = sw.phase;
+      }
+      groupMs = Math.max(groupMs, performance.now() - t);
+    }
 
     const dods: number[] = [];
     const failures: number[] = [];
     const frozen: { index: number; undamaged: boolean }[] = [];
+    const failLog: DetailResult["failLog"] = [];
     for (const [i, h] of this.houses) {
       if (h.frozen) continue;
+      const sw = this.worldOf.get(i)!;
       // Poses of everything moving, newly loose or newly lost.
       const seen = this.seen.get(i)!;
       const now = new Set<number>();
       for (const [handle, group] of h.groupBodies) {
         now.add(handle);
-        const body = this.sw.world.getRigidBody(handle);
-        if (!seen.has(handle) || !body.isSleeping()) for (const id of group) push(i, h, id);
+        const body = sw.world.getRigidBody(handle);
+        if (!seen.has(handle) || !body.isSleeping()) h.bodyPoses(body, group, i, poses);
       }
-      for (const handle of seen) if (!now.has(handle)) for (const m of h.framing.members) if (h.lost[m.id]) push(i, h, m.id);
-      for (const id of h.lightChanged) push(i, h, id);
+      // Members lost since last reported (a body left the area or went invalid).
+      if (h.lostMembers !== (this.lostReported.get(i) ?? 0)) {
+        this.lostReported.set(i, h.lostMembers);
+        for (const m of h.framing.members) if (h.lost[m.id]) push(i, h, m.id);
+      }
+      h.lightPoses(i, poses);
       this.seen.set(i, now);
       // Survey when anything changed.
       const nf = h.failures.length;
       const moved = h.movingGroups > 0;
       // (Survey at 10 Hz while pieces move; at once on new failures.)
-      if (nf !== this.failCount.get(i) || (moved && this.sw.stepCount % 6 === 0)) {
-        if (nf !== this.failCount.get(i)) failures.push(i, nf - this.failCount.get(i)!);
+      if (nf !== this.failCount.get(i) || (moved && sw.stepCount % 6 === 0)) {
+        if (nf !== this.failCount.get(i)) {
+          failures.push(i, nf - this.failCount.get(i)!);
+          for (const f of h.failures.slice(this.failCount.get(i)!)) failLog.push({ house: i, label: f.label, load: f.load, capacity: f.capacity, mph: f.mph });
+        }
         this.failCount.set(i, nf);
         const inv = qconj(houseQ(h.building));
         const d = surveyDetail(
@@ -201,16 +239,23 @@ export class DetailEngine {
         }
       }
       // Freeze once released and settled (or after the timeout).
-      if (h.releasedAt !== null && (!moved || this.sw.time - h.releasedAt > DETAIL.settleTimeout)) {
+      if (h.releasedAt !== null && (!moved || sw.time - h.releasedAt > DETAIL.settleTimeout)) {
         h.freeze();
         frozen.push({ index: i, undamaged: h.failures.length === 0 && !h.lost.some(Boolean) });
       }
     }
-    return { n: msg.n, poses: new Float32Array(poses), dods: new Int32Array(dods), frozen, failures: new Int32Array(failures), ms: performance.now() - t0 };
+    // A group whose houses have all frozen has nothing left to simulate.
+    for (const [key, sw] of this.worlds)
+      if (sw.houses.every((h) => h.frozen)) {
+        sw.dispose();
+        this.worlds.delete(key);
+      }
+    return { n: msg.n, poses: new Float32Array(poses), dods: new Int32Array(dods), frozen, failures: new Int32Array(failures), failLog, ms: performance.now() - t0, groupMs };
   }
 
   dispose(): void {
-    this.sw.dispose();
+    for (const sw of this.worlds.values()) sw.dispose();
+    this.worlds.clear();
   }
 }
 

@@ -1,10 +1,13 @@
 /**
- * Where the detail engine runs (Spec 09 slice B): in a Web Worker in the app, or in-process
+ * Where the detail engine runs (Spec 09 slice B): in Web Workers in the app, or in-process
  * (tests, or as a fallback). Both process steps strictly in order with their own inputs, so
- * results don't depend on timing.
+ * results don't depend on timing. Street rows (physics groups) are spread over several
+ * engines (Spec 09 performance); each row is its own world, so results don't depend on how
+ * many engines there are either.
  */
 import type { Building } from "../core/damage/types";
 import type { Framing } from "../core/structure/framing";
+import { streetRowOf } from "./city";
 import { DetailEngine } from "./detailZone";
 import type { DetailResult, DetailStep } from "./detailZone";
 
@@ -20,17 +23,79 @@ export interface DetailBackend {
   dispose(): void;
 }
 
-/** Runs the engine in-process, right away (needs `initRapier()` first). */
-export function createLocalBackend(buildings: readonly Building[]): DetailBackend & { engine: DetailEngine } {
-  let engine = new DetailEngine(buildings);
+/** Spreads street rows over k engines: a row goes to the engine with the fewest houses when
+ *  its first house enters; its houses stay there. */
+export class DetailSplit {
+  private readonly engineOfRow = new Map<string, number>();
+  private readonly engineOfHouse = new Map<number, number>();
+  private readonly count: number[];
+
+  constructor(
+    private readonly buildings: readonly Building[],
+    readonly k: number,
+  ) {
+    this.count = new Array<number>(k).fill(0);
+  }
+
+  /** The step as each engine sees it (same tornado, its own houses entering and leaving). */
+  split(step: DetailStep): DetailStep[] {
+    const parts = Array.from({ length: this.k }, () => ({ ...step, enter: [] as DetailStep["enter"], exit: [] as number[] }));
+    for (const e of step.enter) {
+      const row = streetRowOf(this.buildings[e.index]!);
+      let k = this.engineOfRow.get(row);
+      if (k === undefined) {
+        k = this.count.indexOf(Math.min(...this.count));
+        this.engineOfRow.set(row, k);
+      }
+      this.count[k]!++;
+      this.engineOfHouse.set(e.index, k);
+      parts[k]!.enter.push(e);
+    }
+    for (const i of step.exit) {
+      const k = this.engineOfHouse.get(i);
+      if (k !== undefined) parts[k]!.exit.push(i);
+    }
+    return parts;
+  }
+}
+
+/** One step's results from every engine, as one result. */
+export function mergeResults(rs: readonly DetailResult[]): DetailResult {
+  if (rs.length === 1) return rs[0]!;
+  const cat = <T extends Float32Array | Int32Array>(make: new (n: number) => T, get: (r: DetailResult) => T): T => {
+    const out = new make(rs.reduce((a, r) => a + get(r).length, 0));
+    let o = 0;
+    for (const r of rs) {
+      out.set(get(r), o);
+      o += get(r).length;
+    }
+    return out;
+  };
+  return {
+    n: rs[0]!.n,
+    poses: cat(Float32Array, (r) => r.poses),
+    dods: cat(Int32Array, (r) => r.dods),
+    failures: cat(Int32Array, (r) => r.failures),
+    frozen: rs.flatMap((r) => r.frozen),
+    failLog: rs.flatMap((r) => r.failLog),
+    ms: Math.max(...rs.map((r) => r.ms)),
+    groupMs: Math.max(...rs.map((r) => r.groupMs)),
+  };
+}
+
+/** Runs k engines in-process, right away (needs `initRapier()` first). */
+export function createLocalBackend(buildings: readonly Building[], k = 1): DetailBackend & { engines: DetailEngine[] } {
+  let engines = Array.from({ length: k }, () => new DetailEngine(buildings));
+  let split = new DetailSplit(buildings, k);
   let out: DetailResult[] = [];
   let done = -1;
   return {
-    get engine() {
-      return engine;
+    get engines() {
+      return engines;
     },
     post(step) {
-      out.push(engine.step(step));
+      const parts = split.split(step);
+      out.push(mergeResults(engines.map((e, i) => e.step(parts[i]!))));
       done = step.n;
     },
     drain() {
@@ -42,13 +107,14 @@ export function createLocalBackend(buildings: readonly Building[]): DetailBacken
       return done;
     },
     reset(_seed, b) {
-      engine.dispose();
-      engine = new DetailEngine(b);
+      for (const e of engines) e.dispose();
+      engines = Array.from({ length: k }, () => new DetailEngine(b));
+      split = new DetailSplit(b, k);
       out = [];
       done = -1;
     },
     dispose() {
-      engine.dispose();
+      for (const e of engines) e.dispose();
     },
   };
 }
@@ -87,27 +153,45 @@ export type ToWorker = { type: "reset"; seed: number } | { type: "step"; step: D
 /** Messages from the worker. */
 export type FromWorker = { type: "ready" } | { type: "result"; result: DetailResult } | { type: "error"; message: string };
 
-/** Runs the engine in a Web Worker (browser only). */
-export function createWorkerBackend(seed: number): DetailBackend {
-  const worker = new Worker(new URL("./detailWorker.ts", import.meta.url), { type: "module" });
+/** Workers to use: as many as the CPU allows, leaving two cores for the page, up to 6. */
+export function detailWorkerCount(cores = typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 4): number {
+  return Math.max(1, Math.min(6, (cores || 4) - 2));
+}
+
+/** Runs the engines in Web Workers (browser only), one per worker. */
+export function createWorkerBackend(seed: number, buildings: readonly Building[], k = detailWorkerCount()): DetailBackend {
+  const workers = Array.from({ length: k }, () => new Worker(new URL("./detailWorker.ts", import.meta.url), { type: "module" }));
+  let split = new DetailSplit(buildings, k);
   let out: DetailResult[] = [];
   let done = -1;
   let epoch = 0;
   let resultEpoch = 0;
-  worker.onmessage = (e: MessageEvent<FromWorker & { epoch?: number }>) => {
-    const m = e.data;
-    if (m.type === "result" && m.epoch === resultEpoch) {
-      out.push(m.result);
-      done = m.result.n;
-    } else if (m.type === "error") {
-      console.error("detail worker:", m.message);
-    }
-  };
-  const send = (m: ToWorker) => worker.postMessage({ ...m, epoch });
-  send({ type: "reset", seed });
+  /** Results per step number until every worker has delivered it. */
+  let pending = new Map<number, (DetailResult | undefined)[]>();
+  workers.forEach((worker, w) => {
+    worker.onmessage = (e: MessageEvent<FromWorker & { epoch?: number }>) => {
+      const m = e.data;
+      if (m.type === "result" && m.epoch === resultEpoch) {
+        const n = m.result.n;
+        const got = pending.get(n) ?? new Array<DetailResult | undefined>(k).fill(undefined);
+        got[w] = m.result;
+        pending.set(n, got);
+        // Steps complete in order (each worker processes its queue in order).
+        while (pending.get(done + 1)?.every(Boolean)) {
+          out.push(mergeResults(pending.get(done + 1) as DetailResult[]));
+          pending.delete(done + 1);
+          done++;
+        }
+      } else if (m.type === "error") {
+        console.error("detail worker:", m.message);
+      }
+    };
+  });
+  const send = (w: number, m: ToWorker) => workers[w]!.postMessage({ ...m, epoch });
+  for (let w = 0; w < k; w++) send(w, { type: "reset", seed });
   return {
     post(step) {
-      send({ type: "step", step });
+      split.split(step).forEach((part, w) => send(w, { type: "step", step: part }));
     },
     drain() {
       const r = out;
@@ -117,15 +201,17 @@ export function createWorkerBackend(seed: number): DetailBackend {
     get done() {
       return done;
     },
-    reset(s) {
+    reset(s, b) {
       epoch++;
       resultEpoch = epoch;
       out = [];
       done = -1;
-      send({ type: "reset", seed: s });
+      pending = new Map();
+      split = new DetailSplit(b, k);
+      for (let w = 0; w < k; w++) send(w, { type: "reset", seed: s });
     },
     dispose() {
-      worker.terminate();
+      for (const w of workers) w.terminate();
     },
   };
 }

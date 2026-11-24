@@ -172,6 +172,17 @@ export const DETAIL_FRAGILITY = {
 
 /** Detail zone in town (Spec 09 slice B). */
 export const DETAIL = {
+  /** Entering houses' colliders built per detail step, in entry order (a house has ~1,150;
+   *  ~7 ms each in Node, so 400 ≈ 2–3 ms a step instead of a ~30 ms spike per house). */
+  buildCollidersPerStep: 400,
+  /** Resting rubble (Spec 09 performance): a rigid piece still below these speeds (m/s, rad/s)
+   *  for rubbleAfterS (s), touching only fixed things, becomes fixed in place; its wind is
+   *  checked every rubbleWindEvery steps (4 Hz, as for resting light pieces). Rapier's own
+   *  sleep (0.4 m/s for 2 s) never triggers for pieces the wind keeps nudging. */
+  rubbleSpeed: 0.1,
+  rubbleSpin: 0.1,
+  rubbleAfterS: 0.5,
+  rubbleWindEvery: 15,
   /** Houses enter within enterRmax·R_max + enterLeadS × translation speed of the center (m). */
   enterRmax: 4,
   enterLeadS: 20,

@@ -8,7 +8,7 @@ import "./style.css";
 
 const app = document.getElementById("app")!;
 // Member-level detail zone in a worker (Spec 09 slice B).
-const sim = createSim({}, undefined, {}, (seed) => createWorkerBackend(seed));
+const sim = createSim({}, undefined, {}, (seed, buildings) => createWorkerBackend(seed, buildings));
 const view = createRenderer(
   app,
   () => sim.world.buildings,

@@ -194,4 +194,33 @@ describe("Spec 07 — instruments", () => {
       expect(r.swirl).toBeCloseTo(vPeak / updraftMax, 9);
     }
   });
+
+  test("INST-12: a detailed house's report lists its detail-zone connection failures and current peak wind", async () => {
+    const { initRapier } = await import("../../src/sim/structureWorld");
+    const { createLocalBackend } = await import("../../src/sim/detailBackend");
+    await initRapier();
+    let be: ReturnType<typeof createLocalBackend> | null = null;
+    const sim = createSim({}, 3, { tUp: 5, tMature: 40, tRope: 5, translationSpeed: 20 }, (_s, b) => (be = createLocalBackend(b)));
+    sim.setDetailFocus({ x: 0, z: 0 });
+    for (let n = 0; n < 8 * 60; n++) sim.advance(1 / 60);
+    const engine = be!.engines[0]!;
+    let checked = 0;
+    for (const [i, h] of engine.houses) {
+      if (!h.failures.length) continue;
+      const b = sim.world.buildings[i]!;
+      const r = buildingReport(b);
+      expect(r.detailFailures.reduce((a, g) => a + g.count, 0)).toBe(h.failures.length);
+      for (const g of r.detailFailures) {
+        const mine = h.failures.filter((f) => f.label === g.label);
+        expect(g.count).toBe(mine.length);
+        const cons = h.framing.connections.filter((c) => c.label === g.label);
+        const panes = new Set(cons.map((c) => h.framing.members[c.from]!.pane));
+        expect(g.total).toBe(panes.has(undefined) ? cons.length : panes.size);
+        expect(g.mph).toBe(mine[0]!.mph);
+      }
+      expect(r.peakMph).toBeGreaterThanOrEqual(Math.max(...h.failures.map((f) => f.mph)) - 1);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(3);
+  }, 120000);
 });

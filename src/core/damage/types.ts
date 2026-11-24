@@ -23,6 +23,20 @@ export interface HouseSpec {
   roofColor: number;
 }
 
+/** Connection failures of one type in a detailed house (Spec 09; loads in newtons). */
+export interface DetailFailureGroup {
+  label: string;
+  count: number;
+  /** Connections of this type in the house (windows for glazing: a pane breaks as one). */
+  total: number;
+  unit: "connections" | "windows";
+  /** First failure: sim time (s), load and capacity (N), roof-height wind (mph). */
+  time: number;
+  load: number;
+  capacity: number;
+  mph: number;
+}
+
 export interface FailureRecord {
   part: Part;
   /** Index of the component within its list (panel, pane, section, bay, partition, face). */
@@ -124,4 +138,6 @@ export interface Building extends HouseSpec {
   minCap: number;
   /** In the structural detail zone (Spec 09): the component model leaves it alone. */
   detail?: boolean;
+  /** Connection failures in the detail zone, grouped by connection type (Spec 09), in order. */
+  detailFailures?: DetailFailureGroup[];
 }

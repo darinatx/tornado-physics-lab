@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.7) — Phases 1–4
+Status: Approved (v1.8) — Phases 1–4
 
 ## Purpose
 
@@ -34,7 +34,10 @@ Phase 1 scope:
   current DOD with its description, estimated EF with the assigned speed, the DOD's range and
   the reason for the rating (construction quality), peak wind it experienced, and each part
   type that failed: how many of how many (e.g. "Roof covering: 6 of 16 sections"), with the
-  first failure's wind speed, load and capacity, so every failure is explainable.
+  first failure's wind speed, load and capacity, so every failure is explainable. A house in
+  the structural detail zone (Spec 09) also lists its connection failures there, by connection
+  type (e.g. "Rafter to wall: 12 of 30 connections", loads in kN), in the same order, after
+  whatever its components lost before it entered; its peak wind keeps updating.
 
   Clicking pins a probe (up to 4). Pinned probes stay fixed on the ground and show live
   readings plus a 60-second speed history, so you can watch a tornado pass over a spot.
@@ -89,6 +92,9 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
   range and default, and changing it changes the next `windAt` result.
 - **INST-02**: The EF readout matches `efRating(peak speed)` for the current state, and
   shows speed in both mph and m/s.
+- **INST-12**: For a detailed house, the report lists every connection failure from the detail
+  engine, grouped by connection type with correct counts and totals, and its peak wind is at
+  least the wind at each of those failures.
 - **INST-11**: The readout and probe flag any wind above 135 m/s (≈302 mph, the strongest ever
   measured) as hypothetical, and only then.
 - **INST-10**: Debris stats match the debris pool: airborne and resting counts, maximum
@@ -117,6 +123,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.8: the inspector shows a detailed house's connection failures and keeps its peak wind
+  current (INST-12); before, both froze when the house entered the detail zone.
 - v1.7: inspector groups component failures by part type (INST-08 updated).
 - v1.6: hypothetical-wind flag and a ~400 mph what-if preset (INST-11).
 - v1.5: debris stats in the readout (INST-10).

@@ -61,6 +61,16 @@ export interface Neighborhood {
   buildingAt(x: number, z: number): Building | null;
 }
 
+/**
+ * The street row a house is in: the houses on one side of one street within a block (up to
+ * 8, all at the same setback). Detail-zone physics groups (Spec 09). Deterministic from the
+ * house's position alone.
+ */
+export function streetRowOf(b: Pick<Building, "x" | "z">): string {
+  const block = Math.floor((b.x + CITY.extent / 2) / CITY.blockX);
+  return `${block}:${b.z.toFixed(2)}`;
+}
+
 export function containsPoint(b: Building, x: number, z: number): boolean {
   const ox = b.shift?.x ?? 0;
   const oz = b.shift?.z ?? 0;

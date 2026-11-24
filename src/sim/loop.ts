@@ -125,6 +125,21 @@ export function createSim(
       stepMs += (r.ms - stepMs) * 0.05;
       detailView.apply(r.poses);
       for (let k = 0; k < r.dods.length; k += 2) world.setDod(world.buildings[r.dods[k]!]!, r.dods[k + 1]!);
+      // The inspector's failure list: connection failures by type, in order.
+      for (const f of r.failLog) {
+        const b = world.buildings[f.house]!;
+        const list = (b.detailFailures ??= []);
+        const g = list.find((x) => x.label === f.label);
+        if (g) g.count++;
+        else {
+          // Glass breaks a whole pane at once (one failure for all its shards): count windows.
+          const framing = detailView.houses.get(f.house)?.framing;
+          const cons = framing ? framing.connections.filter((c) => c.label === f.label) : [];
+          const panes = new Set(cons.map((c) => framing!.members[c.from]!.pane));
+          const glass = cons.length > 0 && !panes.has(undefined);
+          list.push({ label: f.label, count: 1, total: glass ? panes.size : cons.length, unit: glass ? "windows" : "connections", time: curr.time, load: f.load, capacity: f.capacity, mph: f.mph });
+        }
+      }
       for (const f of r.frozen)
         if (f.undamaged) {
           // Untouched: back to the component model, which draws it the same.

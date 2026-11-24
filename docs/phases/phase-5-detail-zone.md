@@ -113,3 +113,22 @@ tune. Examples:
 - Open houses were missing free-standing wall loads, and bare framing was missing drag.
 
 Calibrating only after those were in kept the tuned values inside published ranges.
+
+## Follow-up: detail zone performance (after sign-off, at the user's request)
+
+Keep the detail, make it faster (Spec 09 v0.11, STR-26–30). Core passage of 30 houses, per
+1/60 s detail step: ~95 ms in one worker before → ~50 ms of work spread over 8 street-row
+physics groups on 6 workers; the costliest group ~11 ms. In the browser the sim holds
+0.8–1.0× real time through the core (was 0.2–0.3×).
+
+| Change | Effect at the core |
+|---|---|
+| Rapier SIMD build | solver ~40% faster |
+| Body-frame wind on rigid pieces, one force and torque per body | wind ~20 → ~6 ms |
+| Resting rubble (and still light pieces to the debris model) | awake bodies ~1,600 → ~800 |
+| Entry spread over steps (400 colliders per step) | no ~30 ms spike per house |
+| One world per street row, rows spread over workers | ~4× in parallel |
+| Pose bookkeeping | ~9 → ~3 ms |
+
+Simplification added: pieces don't hit houses in other street rows (41 m across the street,
+69 m back to back) until Phase 6. Profile: `npx tsx scripts/profile-detail.ts [x,z] [engines]`.
