@@ -1,6 +1,6 @@
 # Spec 08 — Simulation Loop
 
-Status: Approved (v1.3)
+Status: Approved (v1.5)
 
 ## Purpose
 
@@ -32,11 +32,21 @@ and provide deterministic, replayable runs.
 - **Snapshots:** after each step, an immutable `SimSnapshot` (time, tornado state) is made
   available to the renderer and UI.
 
+- **Test area (validation):** a sim can be limited to the houses within a radius of a point
+  (`area`), and the tornado can start at a given point (`start`) instead of halfway back along
+  its path. With `tUp = 0` it is mature from the first step. Validation runs use this to pass a
+  mature tornado over a small patch of houses without building or simulating the whole town.
+
 ## Interface
 
 ```ts
 // src/sim/loop.ts
 function createSim(config: SimConfig, seed: number): Sim;
+interface SimConfig {
+  dt: number; maxFrameDt: number; buildings: boolean;
+  area?: { x: number; z: number; radius: number };   // only houses within (validation)
+  start?: { x: number; z: number };                  // tornado start (default: path centered on the origin)
+}
 interface Sim {
   advance(realDtSeconds: number): { prev: SimSnapshot; curr: SimSnapshot; alpha: number };
   setParams(p: Partial<TornadoParams>): void;   // applied at the next step
@@ -73,6 +83,9 @@ function createRng(seed: number): () => number;   // uniform in [0, 1)
   snapshot debris stats match the pool.
 - **SIM-08**: Reset restores the neighborhood to undamaged; the damage version increases
   whenever any house's damage changes; the histogram always sums to the number of houses.
+- **SIM-10**: With an `area`, the world holds exactly the town's houses whose centers lie within
+  it (same houses, same ids and properties as in the full town); with a `start`, the tornado
+  starts there; with tUp = 0 it is at full strength from the first step.
 - **SIM-07**: Time scale 0 pauses (state unchanged); time scale 2 advances twice as far as 1.
 
 ## Simplifications / out of scope
@@ -80,6 +93,14 @@ function createRng(seed: number): () => number;   // uniform in [0, 1)
 - Path is a simple straight line or arc. Steering by the parent storm is out of scope.
 
 ## Changelog
+
+- v1.5: for the wind tunnel (Spec 12): an explicit house layout (`houses`) instead of the generated
+  town, a tunnel flow schedule (`tunnel`) that replaces the tornado, the houses the detail zone takes
+  (`detailSet`: with each one's physics group and whether it enters stripped), read-only
+  observers (`taps`: impacts on houses, detailed failures) and launch injection (`inject`: called
+  at each debris step and each detail step).
+- v1.4: test area and start point for fast validation runs (SIM-10), at the user's request
+  (paired detail/component checks without a whole town or a forming tornado).
 
 - v1.3: debris in the loop (SIM-09).
 - v1.2: world, damage version and DOD histogram (SIM-08).

@@ -146,4 +146,15 @@ describe("Spec 08 — simulation loop", () => {
     two.advance(0.1);
     expect(two.time).toBeCloseTo(2 * one.time, 9);
   });
+  test("SIM-10: a test area holds exactly the town's houses within it; start point; mature from the first step", async () => {
+    const { generateNeighborhood } = await import("../../src/sim/city");
+    const area = { x: 0, z: 20, radius: 60 };
+    const town = generateNeighborhood(1).buildings.filter((b) => Math.hypot(b.x - area.x, b.z - area.z) <= area.radius);
+    const sim = createSim({ area, start: { x: -500, z: 30 } }, 1, { tUp: 0 });
+    expect(sim.world.buildings.map((b) => b.id)).toEqual(town.map((b) => b.id));
+    sim.world.buildings.forEach((b, i) => expect({ ...b, normals: null }).toEqual({ ...town[i]!, normals: null }));
+    expect(sim.snapshot.tornado.center).toEqual({ x: -500, z: 30 });
+    sim.advance(1 / 60);
+    expect(sim.snapshot.tornado.vMax).toBe(sim.params.vPeak);
+  });
 });

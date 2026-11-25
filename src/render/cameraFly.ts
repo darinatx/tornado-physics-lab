@@ -17,6 +17,61 @@ export interface FlyKeys {
 
 export const NO_KEYS: FlyKeys = { forward: false, back: false, left: false, right: false, up: false, down: false, fast: false };
 
+/** Arrow keys held for turning in place. */
+export interface TurnKeys {
+  left: boolean;
+  right: boolean;
+  up: boolean;
+  down: boolean;
+}
+
+export const FLY_KEY_MAP: Readonly<Record<string, keyof FlyKeys>> = {
+  KeyW: "forward", KeyS: "back", KeyA: "left", KeyD: "right",
+  KeyE: "up", PageUp: "up", KeyQ: "down", PageDown: "down",
+};
+export const TURN_KEY_MAP: Readonly<Record<string, keyof TurnKeys>> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
+
+export interface KeyLike {
+  code: string;
+  key: string;
+  shiftKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+}
+
+/** Release every flying and turning key. */
+export function releaseAll(keys: FlyKeys, turn: TurnKeys): void {
+  Object.assign(keys, NO_KEYS);
+  Object.assign(turn, { left: false, right: false, up: false, down: false });
+}
+
+/**
+ * Update the held keys for a key event (REND-16). A key-up always releases its key, whatever has
+ * focus or modifiers. ⌘, Ctrl or Alt pressed releases everything: macOS sends no key-up for keys
+ * released while ⌘ is held, so they would otherwise stay held. Key-downs while typing in a field
+ * are ignored. Returns true when the event was used (the page shouldn't also act on it).
+ */
+export function keyEvent(keys: FlyKeys, turn: TurnKeys, e: KeyLike, down: boolean, typing: boolean): boolean {
+  keys.fast = e.shiftKey;
+  if (down && (e.metaKey || e.ctrlKey || e.altKey || e.key === "Meta")) {
+    releaseAll(keys, turn);
+    return false;
+  }
+  const tk = TURN_KEY_MAP[e.code];
+  const k = FLY_KEY_MAP[e.code];
+  if (!tk && !k) return false;
+  if (!down) {
+    if (tk) turn[tk] = false;
+    else keys[k!] = false;
+    return false;
+  }
+  if (typing) return false;
+  if (tk) turn[tk] = true;
+  else keys[k!] = true;
+  return true;
+}
+
 /** Flying speed (m/s) at a camera height (m): ~1.2 m/s per metre, clamped; ×4 with Shift. */
 export function flySpeed(height: number, fast: boolean): number {
   const v = Math.min(CAMERA.flyMaxSpeed, Math.max(CAMERA.flyMinSpeed, CAMERA.flySpeedPerMetre * Math.max(height, 0)));
@@ -82,4 +137,27 @@ export function lookStep(camera: Vec3, target: Vec3, yaw: number, pitch: number)
   // pan and zoom scale).
   L = Math.max(L, CAMERA.minDistance);
   return { x: camera.x + dx * L, y: Math.max(0, camera.y + dy * L), z: camera.z + dz * L };
+}
+
+/**
+ * Starting view (REND-17): over the town on the side the tornado is coming toward, looking
+ * back at it. `center` is the tornado's position, `dir` its heading (unit, horizontal),
+ * `townHalf` half the town's square extent (m).
+ */
+export function startView(center: { x: number; z: number }, dir: { x: number; z: number }, townHalf: number, cloudBase: number): { camera: Vec3; target: Vec3 } {
+  // Where the track enters the town square (slab method); 0 if it starts inside.
+  let tIn = 0;
+  for (const [c, d] of [[center.x, dir.x], [center.z, dir.z]] as const) {
+    if (Math.abs(d) < 1e-9) continue;
+    const t1 = (-townHalf - c) / d;
+    const t2 = (townHalf - c) / d;
+    tIn = Math.max(tIn, Math.min(t1, t2));
+  }
+  const ahead = Math.max(CAMERA.startMinAhead, tIn + CAMERA.startInsideTown);
+  const right = { x: -dir.z, z: dir.x };
+  const side = CAMERA.startSide * ahead;
+  return {
+    camera: { x: center.x + dir.x * ahead + right.x * side, y: CAMERA.startHeight, z: center.z + dir.z * ahead + right.z * side },
+    target: { x: center.x, y: cloudBase * CAMERA.startLookUp, z: center.z },
+  };
 }

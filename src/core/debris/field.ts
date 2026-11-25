@@ -8,10 +8,16 @@ import type { DebrisKind, DebrisKindDef } from "../../config/debris";
 import { createRng } from "../math/rng";
 import type { Vec3 } from "../math/vec";
 import { faceTangent, LOCAL_NORMALS, panelCenter, sectionGeometry, toWorld } from "../damage/layout";
-import type { Building, FailureRecord } from "../damage/types";
+import type { Building, FailureRecord, QueuedImpact } from "../damage/types";
 import type { TerrainClass, TornadoState } from "../wind/types";
 import { windAt } from "../wind/windField";
-import { isSliding, restingForces, snag, stepPiece, wakeIfForced } from "./piece";
+import { bumpKick, isSliding, restingForces, snag, stepPiece, supportHeight, wakeIfForced } from "./piece";
+import { IMPACT } from "../../config/impacts";
+import { clipEnvelope, clipSlab, hasEnvelope, insideLocal, overSlab, planesOf, slabHalf, surfaceAt } from "../impact/envelope";
+import type { EnvelopeHit, Extent, ImpactTargets, Surface } from "../impact/envelope";
+import { resolveImpact } from "../impact/impact";
+import { bounce, floorUnder, halfExtentAlong, unbury } from "../impact/contact";
+import type { Missile } from "../impact/impact";
 import type { Piece } from "./piece";
 
 export interface DebrisStats {
@@ -26,6 +32,11 @@ export interface DebrisStats {
   maxSpeed: number;
   /** Highest live piece (m). */
   maxHeight: number;
+  /** Impacts on houses so far, counting representative copies (Spec 10). */
+  impacts: number;
+  /** Pieces stuck through a house surface now, and lodgings over the whole run. */
+  lodged: number;
+  lodgedTotal: number;
 }
 
 type Q = [number, number, number, number];
@@ -52,6 +63,13 @@ export function quatFromBasis(x: Vec3, y: Vec3, z: Vec3): Q {
   return [(m02 + m20) / S, (m12 + m21) / S, 0.25 * S, (m10 - m01) / S];
 }
 
+
+/** Slab top: houses stand on it (Spec 10). */
+const SLAB = IMPACT.slabTop;
+/** Torn-off cladding starts this far outside its surface, plus its own thickness (m): the
+ *  drawn wall is 0.15 m thick, centered on the component's face. */
+const SPAWN_OFFSET = 0.08;
+
 /** House-local horizontal direction → world. */
 function dirWorld(b: Building, lx: number, ly: number, lz: number): Vec3 {
   const c = Math.cos(b.yaw);
@@ -75,7 +93,7 @@ function realCount(b: Building, rec: FailureRecord, kind: DebrisKind): number {
 
 export class DebrisField {
   readonly pieces: Piece[] = [];
-  readonly stats: DebrisStats = { airborne: 0, resting: 0, skipped: 0, lofted: 0, settled: 0, maxSpeed: 0, maxHeight: 0 };
+  readonly stats: DebrisStats = { airborne: 0, resting: 0, skipped: 0, lofted: 0, settled: 0, maxSpeed: 0, maxHeight: 0, impacts: 0, lodged: 0, lodgedTotal: 0 };
   /** Permanent debris field: resting pieces the tornado has left behind (append-only). */
   readonly settled: Piece[] = [];
   /** Pieces dropped from the front of `settled` when it overflows. */
@@ -90,6 +108,9 @@ export class DebrisField {
   massLeftMap = 0;
   readonly massBySource = new Map<number, number>();
   private nextId = 0;
+  private lastTime = 0;
+  /** Houses for hit tests, from the last step (rubble placed between steps uses them too). */
+  private targets: ImpactTargets | null = null;
   private readonly rng: () => number;
   private readonly rubbleOf = new Map<number, Piece[]>();
 
@@ -132,41 +153,77 @@ export class DebrisField {
       liftOn: true,
       liftRoll: (rng() * 2 - 1) * TURBULENCE.maxLiftRoll,
       gust: { x: 0, y: 0, z: 0 },
+      origin: { x: b.x, z: b.z },
     };
+  }
+
+  /** Read-only observer of every impact on a house, counting representative copies (Spec 04
+   *  v1.9; the wind tunnel's record). `b` is the house hit (a detailed house's stand-in). */
+  onImpact: ((b: Building, q: QueuedImpact, p: Piece) => void) | null = null;
+
+  /**
+   * Add one piece of `kind` at `pos` with velocity `vel` and orientation `q` (Spec 04 v1.9, the
+   * wind tunnel's launcher). It counts as spawned by `source` (a house id, or −1) and spreads its
+   * representative copies from where it started.
+   */
+  launch(kind: DebrisKind, pos: Vec3, vel: Vec3, q: Q, time: number, represents = 1, source = -1): Piece {
+    const def = DEBRIS_KINDS[kind];
+    const p = this.makePiece({ id: source, x: pos.x, z: pos.z } as Building, kind, def, { ...pos }, q, 0x8a7f6a, represents, time);
+    p.vel = { ...vel };
+    const m = def.mass * represents;
+    this.massSpawned += m;
+    this.massBySource.set(source, (this.massBySource.get(source) ?? 0) + m);
+    this.add(p);
+    return p;
   }
 
   /** Release the pieces for one component failure (Spec 04 v1.4). */
   spawnFrom(b: Building, rec: FailureRecord, time = rec.time): void {
     const rng = this.rng;
-    const out: { p: Piece; rubble?: () => void; launched?: boolean }[] = [];
+    const out: { p: Piece; rubble?: () => boolean | void; launched?: boolean }[] = [];
     const H = b.wallHeight;
     const up: Vec3 = { x: 0, y: 1, z: 0 };
+    this.releaseLodged(b, rec);
 
     // Representative pieces (shingles, siding, glass, studs, chunks).
     for (const [kind, count] of SPAWN_TABLE[rec.part]) {
       const represents = Math.max(realCount(b, rec, kind) / count, 1);
       for (let i = 0; i < count; i++) {
+        // Where it tears off, and how it lies there (Spec 10 v0.5): siding and glass in the
+        // wall's plane, shingles along the roof slope, just outside the surface. Heights are
+        // above the slab top, as the house is drawn.
         let l: Vec3;
-        if (rec.part === "siding") {
-          // Strips tear off the face of the panel that lost its siding.
-          const panel = b.panels[rec.index]!;
+        let q: Q | null = null;
+        if (rec.part === "siding" || rec.part === "window") {
+          const panel = b.panels[rec.part === "siding" ? rec.index : b.panes[rec.index]!.panel]!;
           const n = LOCAL_NORMALS[panel.face]!;
-          const c = panelCenter(b, { ...panel, u: panel.u + (rng() - 0.5) * panel.len * 0.8 }, 0.3 + rng() * (H - 0.6));
-          l = { x: c.x + n.x * 0.12, y: c.y, z: c.z + n.z * 0.12 };
+          const t = faceTangent(panel.face);
+          const c =
+            rec.part === "siding"
+              ? panelCenter(b, { ...panel, u: panel.u + (rng() - 0.5) * panel.len * 0.8 }, SLAB + 0.3 + rng() * (H - 0.6))
+              : panelCenter(b, { ...panel, u: panel.u + (rng() - 0.5) * LAYOUT.paneSize * 0.8 }, SLAB + LAYOUT.paneSill + LAYOUT.paneSize / 2 + (rng() - 0.5) * LAYOUT.paneSize * 0.8);
+          const off = SPAWN_OFFSET + DEBRIS_KINDS[kind].dims[2];
+          l = { x: c.x + n.x * off, y: c.y, z: c.z + n.z * off };
+          const xw = dirWorld(b, t.x, 0, t.z);
+          const nw = dirWorld(b, n.x, 0, n.z);
+          q = quatFromBasis(xw, nw, cross(xw, nw));
         } else if (rec.part === "roofCover") {
-          const g = sectionGeometry(b, b.nx, b.sections[rec.index]!);
-          l = { x: g.center.x + (rng() - 0.5) * g.width * 0.8, y: g.center.y, z: g.center.z };
-        } else if (rec.part === "window") {
-          const panel = b.panels[b.panes[rec.index]!.panel]!;
-          const n = LOCAL_NORMALS[panel.face]!;
-          const c = panelCenter(b, panel, LAYOUT.paneSill + LAYOUT.paneSize / 2);
-          l = { x: c.x + n.x * 0.1, y: c.y + (rng() - 0.5), z: c.z + n.z * 0.1 };
+          const sec = b.sections[rec.index]!;
+          const g = sectionGeometry(b, b.nx, sec);
+          const pitch = Math.atan2(b.roofRise, b.depth / 2);
+          // Outward roof normal (local): up and toward the slope's eave.
+          const nl = { x: 0, y: Math.cos(pitch), z: sec.slope * Math.sin(pitch) };
+          const off = SPAWN_OFFSET + DEBRIS_KINDS[kind].dims[2];
+          l = { x: g.center.x + (rng() - 0.5) * g.width * 0.8, y: SLAB + g.center.y + nl.y * off, z: g.center.z + nl.z * off };
+          const xw = dirWorld(b, 1, 0, 0);
+          const nw = dirWorld(b, nl.x, nl.y, nl.z);
+          q = quatFromBasis(xw, nw, cross(xw, nw));
         } else {
-          l = { x: (rng() - 0.5) * b.width, y: 0.3 + rng() * (H - 0.3) * (rec.part === "sweep" ? 0.2 : 1), z: (rng() - 0.5) * b.depth };
+          l = { x: (rng() - 0.5) * b.width, y: SLAB + 0.3 + rng() * (H - 0.3) * (rec.part === "sweep" ? 0.2 : 1), z: (rng() - 0.5) * b.depth };
         }
         const pos = toWorld(b, l.x, l.y, l.z);
         const color = kind === "shingle" ? b.roofColor : kind === "siding" ? b.wallColor : DEBRIS_COLORS[kind] ?? 0x999999;
-        out.push({ p: this.makePiece(b, kind, DEBRIS_KINDS[kind], pos, null, color, represents, time) });
+        out.push({ p: this.makePiece(b, kind, DEBRIS_KINDS[kind], pos, q, color, represents, time) });
       }
     }
 
@@ -175,7 +232,7 @@ export class DebrisField {
       const panel = b.panels[rec.index]!;
       const n = LOCAL_NORMALS[panel.face]!;
       const t = faceTangent(panel.face);
-      const c = panelCenter(b, panel, H / 2);
+      const c = panelCenter(b, panel, SLAB + H / 2);
       const xw = dirWorld(b, t.x, 0, t.z);
       const nw = dirWorld(b, n.x, 0, n.z);
       const mass = AREAL_MASS.wallPanel * panel.len * H;
@@ -187,9 +244,29 @@ export class DebrisField {
       out.push({
         p,
         rubble: () => {
-          // Lies flat beside its base, in the direction it fell.
-          p.pos = toWorld(b, c.x + fall * n.x * (H / 2), 0, c.z + fall * n.z * (H / 2));
-          p.q = quatFromBasis(xw, up, cross(xw, up));
+          if (fall < 0) {
+            // Fell inward: flat on the slab.
+            p.pos = toWorld(b, c.x + fall * n.x * (H / 2), 0, c.z + fall * n.z * (H / 2));
+            p.q = quatFromBasis(xw, up, cross(xw, up));
+            return false;
+          }
+          // Fell outward: it pivots on its sill at the slab edge and comes to rest leaning, its
+          // base on the slab top and its top on the ground (Spec 10 v0.4).
+          const top = IMPACT.slabTop;
+          const T = p.def.dims[2];
+          const run = Math.sqrt(H * H - top * top);
+          const zAxis = { x: (nw.x * run) / H, y: -top / H, z: (nw.z * run) / H };
+          let yAxis = cross(zAxis, xw);
+          if (yAxis.y < 0) yAxis = { x: -yAxis.x, y: -yAxis.y, z: -yAxis.z };
+          // Pivot on the slab's outer edge.
+          const base = toWorld(b, c.x + n.x * IMPACT.slabMargin, top, c.z + n.z * IMPACT.slabMargin);
+          p.pos = {
+            x: base.x + zAxis.x * (H / 2) + yAxis.x * (T / 2),
+            y: base.y + zAxis.y * (H / 2) + yAxis.y * (T / 2),
+            z: base.z + zAxis.z * (H / 2) + yAxis.z * (T / 2),
+          };
+          p.q = quatFromBasis(xw, yAxis, cross(xw, yAxis));
+          return true;
         },
       });
     } else if (rec.part === "roofDeck" || rec.part === "roofBay") {
@@ -220,7 +297,7 @@ export class DebrisField {
           b,
           rec.part === "roofBay" ? "roofPanel" : "deckSheet",
           def,
-          toWorld(b, cx, cy, cz),
+          toWorld(b, cx, SLAB + cy, cz),
           quatFromBasis(xw, yAxis, zAxis),
           covered ? b.roofColor : DEBRIS_COLORS.osb!,
           1,
@@ -257,7 +334,7 @@ export class DebrisField {
       const panel = b.panels[b.garage.panel]!;
       const n = LOCAL_NORMALS[panel.face]!;
       const t = faceTangent(panel.face);
-      const c = panelCenter(b, panel, LAYOUT.garageHeight / 2);
+      const c = panelCenter(b, panel, SLAB + LAYOUT.garageHeight / 2);
       const xw = dirWorld(b, t.x, 0, t.z);
       const nw = dirWorld(b, n.x, 0, n.z);
       const def = sheet("Garage door", LAYOUT.garageWidth, LAYOUT.garageHeight, 0.05, AREAL_MASS.garageDoor * LAYOUT.garageWidth * LAYOUT.garageHeight);
@@ -285,8 +362,10 @@ export class DebrisField {
       // can't move them, or if the active pool is completely full of flying pieces.
       const poolFull = this.pieces.length >= this.cap && !this.pieces.some((q) => q.resting);
       if (rubble && ((!launched && !this.canMove(p, rec.wind)) || poolFull)) {
-        rubble();
-        p.pos.y = p.def.dims[2] / 2; // lying flat on the ground
+        // Lying flat on the ground, or on the slab where it fell onto it (unless placed leaning).
+        if (!rubble()) p.pos.y = (overSlab(b, p.pos) ? IMPACT.slabTop : 0) + p.def.dims[2] / 2;
+        // Not half inside a slab's edge either (its own, or a close neighbor's).
+        unbury(p, this.targets ?? { near: () => [b] });
         p.grounded = true;
         p.vel = { x: 0, y: 0, z: 0 };
         p.resting = true;
@@ -331,9 +410,11 @@ export class DebrisField {
   }
 
   /** Advance all airborne pieces; re-check resting ones near the tornado when asked. */
-  step(dt: number, s: TornadoState, terrain: TerrainClass, checkResting: boolean, time = 0, cloudBase = Infinity): void {
+  step(dt: number, s: TornadoState, terrain: TerrainClass, checkResting: boolean, time = 0, cloudBase = Infinity, targets?: ImpactTargets): void {
+    this.lastTime = time;
+    if (targets) this.targets = targets;
     const range = DEBRIS.settleRangeRmax * s.rMax;
-    const probe = { x: 0, y: DEBRIS.restSampleHeight, z: 0 };
+    const probe = { x: 0, y: DEBRIS.restSampleHeight as number, z: 0 };
     let airborne = 0;
     let resting = 0;
     let maxSpeed = 0;
@@ -352,26 +433,53 @@ export class DebrisField {
           continue;
         }
         if (checkResting) {
+          const floor = targets ? floorUnder(p, targets) : 0;
           probe.x = p.pos.x;
+          probe.y = floor + DEBRIS.restSampleHeight;
           probe.z = p.pos.z;
+          p.pos.y -= floor;
           wakeIfForced(p, windAt(probe, s, terrain));
+          p.pos.y += floor;
         }
         if (p.resting) {
           resting++;
           continue;
         }
       }
-      const w = windAt(p.pos, s, terrain);
+      // The ground under it: a slab top or the ground (Spec 10 v0.2).
+      const floor = targets ? floorUnder(p, targets) : 0;
+      // A piece lying on the ground feels the wind just above it, as resting pieces do (Spec 04 v1.6).
+      const w = windAt(p.grounded ? { x: p.pos.x, y: Math.max(p.pos.y, floor + DEBRIS.restSampleHeight), z: p.pos.z } : p.pos, s, terrain);
       this.updateGust(p, w, dt, terrain);
       w.x += p.gust.x;
       w.y += p.gust.y;
       w.z += p.gust.z;
+      const fx = p.pos.x, fy = p.pos.y, fz = p.pos.z;
+      p.pos.y -= floor;
       stepPiece(p, w, dt);
-      if (isSliding(p)) {
-        // Chance to catch on an obstacle grows with distance slid (mean free path by terrain).
-        const d = Math.hypot(p.vel.x, p.vel.z) * dt;
-        if (this.rng() < 1 - Math.exp(-d / DEBRIS.snagDistance[terrain])) snag(p);
+      p.pos.y += floor;
+      // Houses in the way (Spec 10): bounce, break through a window, or lodge.
+      if (targets && this.collide(p, { x: fx, y: fy, z: fz }, targets)) {
+        this.pieces[i] = null as unknown as Piece;
+        removed = true;
+        continue;
       }
+      if (isSliding(p)) {
+        const d = Math.hypot(p.vel.x, p.vel.z) * dt;
+        // Chance to catch on an obstacle grows with distance slid (mean free path by terrain).
+        if (this.rng() < 1 - Math.exp(-d / DEBRIS.snagDistance[terrain])) {
+          // Laid flat on whatever it was sliding on: the slab top or the ground.
+          const base = targets ? floorUnder(p, targets) : 0;
+          p.pos.y -= base;
+          snag(p);
+          p.pos.y += base;
+        } else {
+          // Rough ground: a bump may hop it into the wind (Spec 04 v1.7).
+          bumpKick(p, d, DEBRIS.bumpSpacing[terrain], this.rng);
+        }
+      }
+      // Nothing stays buried in a slab (a bounce at a wall's base, tumbling, snagging, spawning).
+      if (targets) unbury(p, targets);
       const lofted = p.pos.y > cloudBase;
       if (lofted || Math.abs(p.pos.x) > DEBRIS.mapHalf || Math.abs(p.pos.z) > DEBRIS.mapHalf) {
         if (lofted) {
@@ -400,6 +508,169 @@ export class DebrisField {
     }
     Object.assign(this.stats, { airborne, resting, maxSpeed, maxHeight, settled: this.settled.length });
   }
+
+  /** Pieces stuck through house surfaces, by surface key (Spec 10). */
+  private readonly lodged = new Map<string, Piece[]>();
+
+  /** Key of the surface a piece lodges in: wall panels (and their garage door), gables, roof sections. */
+  private static lodgeKey(b: Building, s: Surface): string {
+    return s.kind === "gable" ? `${b.id}:g:${s.face}` : s.kind === "roof" ? `${b.id}:r:${s.index}` : `${b.id}:w:${s.index}`;
+  }
+
+  /** A component of a detailed house's stand-in is gone (Spec 10 v0.12): what was stuck in it
+   *  falls free, as when a component house's part fails. */
+  releaseSurface(b: Building, part: FailureRecord["part"], index: number): void {
+    this.releaseLodged(b, { part, index });
+  }
+
+  /** A failed component lets the pieces stuck in it fall free. */
+  private releaseLodged(b: Building, rec: Pick<FailureRecord, "part" | "index">): void {
+    if (!this.lodged.size) return;
+    const keys: string[] = [];
+    const endFace = (col: number) => (col === 0 ? 2 : col === b.nx - 1 ? 0 : -1);
+    if (rec.part === "wallPanel") keys.push(`${b.id}:w:${rec.index}`, `${b.id}:g:${b.panels[rec.index]!.face}`);
+    else if (rec.part === "garage" && b.garage) keys.push(`${b.id}:w:${b.garage.panel}`);
+    else if (rec.part === "roofDeck") keys.push(`${b.id}:r:${rec.index}`);
+    else if (rec.part === "roofBay") {
+      b.sections.forEach((s, i) => s.col === rec.index && keys.push(`${b.id}:r:${i}`));
+      const f = endFace(rec.index);
+      if (f >= 0) keys.push(`${b.id}:g:${f}`);
+    } else if (rec.part === "sweep") for (const k of this.lodged.keys()) if (k.startsWith(`${b.id}:`)) keys.push(k);
+    for (const k of keys) {
+      const list = this.lodged.get(k);
+      if (!list) continue;
+      this.lodged.delete(k);
+      for (const p of list) {
+        if (p.hidden) continue;
+        p.hidden = true;
+        this.settledVersion++;
+        this.stats.lodged--;
+        this.add({
+          ...p, id: this.nextId++, pos: { ...p.pos }, vel: { x: 0, y: 0, z: 0 }, q: [...p.q] as Q, gust: { x: 0, y: 0, z: 0 },
+          resting: false, grounded: false, hidden: false, lodgedIn: undefined, restedAt: Infinity,
+        });
+      }
+    }
+  }
+
+  /**
+   * Test a piece's step against the houses near it (Spec 10). Returns true if it lodged (it
+   * has moved to the debris field).
+   */
+  private collide(p: Piece, from: Vec3, targets: ImpactTargets): boolean {
+    const seg = Math.hypot(p.pos.x - from.x, p.pos.z - from.z);
+    const reach = p.def.dims[0] / 2 + seg + 0.5;
+    const ext: Extent = (n) => halfExtentAlong(p, n);
+    let best: EnvelopeHit | null = null;
+    let house: Building | null = null;
+    for (const site of targets.near(p.pos.x, p.pos.z)) {
+      const b = site;
+      if (Math.hypot(p.pos.x - b.x, p.pos.z - b.z) > Math.hypot(b.width, b.depth) / 2 + 2.5 + reach) continue;
+      // Every house keeps its slab: its sides stop pieces low on the ground like a curb.
+      if (Math.min(p.pos.y, from.y) < IMPACT.slabTop + p.def.dims[0]) {
+        const sh = clipSlab(b, from, p.pos, ext);
+        if (sh && !sh.top) {
+          const vn = -(p.vel.x * sh.normal.x + p.vel.y * sh.normal.y + p.vel.z * sh.normal.z);
+          if (vn > 0) {
+            bounce(p, sh.point, sh.normal, vn);
+            return false;
+          }
+        }
+      }
+      // A detailed house: its stand-in (Spec 10 v0.7), what stands in the detail physics.
+      const e = site.detail ? site.standIn : site;
+      if (!e || !hasEnvelope(e)) continue;
+      if (p.pos.y > e.wallHeight + e.roofRise + reach && from.y > e.wallHeight + e.roofRise + reach) continue;
+      const h = clipEnvelope(e, from, p.pos, ext);
+      if (h && (!best || h.t < best.t)) {
+        best = h;
+        house = e;
+      }
+    }
+    if (!best || !house || best.surface.kind === "opening") return false;
+    const b = house;
+    // The surface's normal toward the piece's side.
+    const n = best.entering ? best.normal : { x: -best.normal.x, y: -best.normal.y, z: -best.normal.z };
+    const vn = -(p.vel.x * n.x + p.vel.y * n.y + p.vel.z * n.z);
+    if (vn <= 0) return false;
+    if (!best.entering) {
+      // From inside: the standing envelope keeps it in, no damage.
+      bounce(p, best.point, n, vn);
+      return false;
+    }
+    const m: Missile = { label: p.def.label, family: p.def.family, mass: p.def.mass, dims: p.def.dims };
+    const own = resolveImpact(b, best.surface, m, vn, this.rng, true);
+    if (own) {
+      b.impacts.push(own.impact);
+      this.stats.impacts++;
+      this.onImpact?.(b, own.impact, p);
+    }
+    // Representative copies hit around the same point (Spec 10).
+    const copies = Math.min(Math.round(p.represents), IMPACT.maxCopies) - 1;
+    if (copies > 0) {
+      const o = p.origin ?? { x: best.point.x, z: best.point.z };
+      const sigma = Math.min(Math.max(IMPACT.copyScatter * Math.hypot(best.point.x - o.x, best.point.z - o.z), IMPACT.copyScatterMin), IMPACT.copyScatterMax);
+      const pn = planesOf(b)[best.plane]!.n;
+      // In-plane basis: t1 = n × up (or x), t2 = n × t1.
+      let t1 = { x: -pn.z, y: 0, z: pn.x };
+      const l1 = Math.hypot(t1.x, t1.z);
+      t1 = l1 > 1e-6 ? { x: t1.x / l1, y: 0, z: t1.z / l1 } : { x: 1, y: 0, z: 0 };
+      const t2 = { x: pn.y * t1.z - pn.z * t1.y, y: pn.z * t1.x - pn.x * t1.z, z: pn.x * t1.y - pn.y * t1.x };
+      for (let k = 0; k < copies; k++) {
+        const a = this.normal() * sigma;
+        const c = this.normal() * sigma;
+        const l = { x: best.local.x + a * t1.x + c * t2.x, y: best.local.y + a * t1.y + c * t2.y, z: best.local.z + a * t1.z + c * t2.z };
+        if (!insideLocal(b, l, 1e-6, best.plane)) continue; // off the envelope: a miss
+        const r = resolveImpact(b, surfaceAt(b, best.plane, l), m, vn, this.rng, false);
+        if (r) {
+          b.impacts.push(r.impact);
+          this.stats.impacts++;
+          this.onImpact?.(b, r.impact, p);
+        }
+      }
+    }
+    // A detailed house's stand-in takes lodged pieces like any house (Spec 10 v0.12); they fall
+    // free when the stand-in shows that surface gone (releaseSurface).
+    const response = own?.response ?? "bounce";
+    const speed = Math.hypot(p.vel.x, p.vel.y, p.vel.z);
+    const dir = speed > 1e-9 ? { x: p.vel.x / speed, y: p.vel.y / speed, z: p.vel.z / speed } : { x: -n.x, y: -n.y, z: -n.z };
+    if (response === "through") {
+      p.pos = { x: best.point.x + dir.x * 0.05, y: best.point.y + dir.y * 0.05, z: best.point.z + dir.z * 0.05 };
+      p.vel = { x: p.vel.x * IMPACT.throughGlassKeep, y: p.vel.y * IMPACT.throughGlassKeep, z: p.vel.z * IMPACT.throughGlassKeep };
+      p.grounded = false;
+      return false;
+    }
+    if (response === "lodge") {
+      // Stuck through the surface along its flight, the tip just inside.
+      const back = p.def.dims[0] / 2 - IMPACT.lodgeDepth;
+      p.pos = { x: best.point.x - dir.x * back, y: best.point.y - dir.y * back, z: best.point.z - dir.z * back };
+      const ref = Math.abs(dir.y) < 0.95 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+      const d = ref.x * dir.x + ref.y * dir.y + ref.z * dir.z;
+      let yv = { x: ref.x - d * dir.x, y: ref.y - d * dir.y, z: ref.z - d * dir.z };
+      const yl = Math.hypot(yv.x, yv.y, yv.z);
+      yv = { x: yv.x / yl, y: yv.y / yl, z: yv.z / yl };
+      p.q = quatFromBasis(dir, yv, cross(dir, yv));
+      p.grounded = false;
+      p.restedAt = this.lastTime;
+      const key = DebrisField.lodgeKey(b, best.surface);
+      p.lodgedIn = key;
+      const list = this.lodged.get(key);
+      if (list) list.push(p);
+      else this.lodged.set(key, [p]);
+      this.stats.lodged++;
+      this.stats.lodgedTotal++;
+      this.settle(p);
+      return true;
+    }
+    bounce(p, best.point, n, vn);
+    return false;
+  }
+
+
+
+
+
+
 
   /** Exact discrete Ornstein–Uhlenbeck update of a piece's gust, scaled to the local wind. */
   private updateGust(p: Piece, w: { x: number; y: number; z: number }, dt: number, terrain: TerrainClass): void {

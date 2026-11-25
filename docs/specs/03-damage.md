@@ -1,6 +1,6 @@
 # Spec 03 — Damage Model
 
-Status: Approved (v2.0) — component houses (EF Damage Indicator 2)
+Status: Approved (v2.1) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
 
 ## Purpose
 
@@ -99,10 +99,10 @@ A house's DOD is the highest of these that holds, judged the way a surveyor woul
 
 | DOD | Condition |
 |---|---|
-| 1 | any panel's siding lost |
-| 2 | any roof covering section lost |
+| 1 | any panel's siding lost, or any siding stripped by debris |
+| 2 | any roof covering section lost, or any shingles torn off by debris |
 | 3 | any window pane broken |
-| 4 | ≥ 20% of covering sections lost, any deck section lost, or the garage door failed |
+| 4 | ≥ 20% of covering lost (sections, plus debris-torn area), any deck section lost, or the garage door failed |
 | 5 | the house has shifted off its foundation |
 | 6 | ≥ 1/3 of roof bays removed |
 | 7 | ≥ 50% of exterior wall panels down |
@@ -186,11 +186,16 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
 ## Simplifications / out of scope
 
 - One-story gable houses only (hip roofs and two stories later).
-- Windows fail from pressure only until Phase 5 adds debris impacts.
+- Debris impacts (Spec 10) break windows, perforate walls and roofs, strip siding and shingles
+  and push on walls and the garage door; impact failures are recorded with cause "debris".
 - Quasi-static: no dynamic shaking or fatigue.
 - Components are rigid; a failing panel detaches whole.
 
 ## Changelog
+
+- v2.1: debris impacts (Spec 10): queued impacts are applied at the start of each evaluation
+  (even when calm), impulse pressure adds inward to wall panels and the garage door, holes
+  are openings, DOD 1/2/4 count debris-stripped area. Calibration (isolated houses) unchanged.
 
 - v2.0: component houses (Phase 4). Bearing-wall collapse (DMG-13) added after the user saw
   roofs standing on missing walls. Parts became individual components (panels, panes,

@@ -1,6 +1,6 @@
 # Spec 01 — Wind Field
 
-Status: Approved (v1.8)
+Status: Approved (v1.9)
 
 ## Purpose
 
@@ -247,7 +247,7 @@ All values live in `src/config/wind.ts`.
   real near-surface outflow from the eye is not modeled); inflow is unchanged.
 - The swirl ratio uses the core radius as the updraft radius; lab definitions vary, so the
   thresholds are calibrated to observed tornado behavior rather than lab values.
-- No suction vortices yet. Multi-vortex mode is planned as a later spec version (WIND-2x).
+- No suction vortices yet. Multi-vortex mode is planned as a later spec version (WIND-2x), in Phase 7.
 - The core pressure deficit is defined in Spec 02 (loads), not here.
 
 ## Decisions
@@ -272,6 +272,9 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
 
 ## Changelog
 
+- v1.9: optional tunnel flow on the wind state (`TornadoState.tunnel`, Spec 12): when set, `windAt` and
+  `pressureDeficit` return the wind tunnel's power-law wind and uniform deficit instead of the vortex's.
+  The tornado field is unchanged.
 - v1.8: the translation velocity is carried with the vortex and blends to a ≤ 10 m/s
   environmental surface wind far away (WIND-22, WIND-20 reworded). Found by the user: with a
   30 m/s forward speed, 67 mph of wind blew across the whole map and damaged houses far from

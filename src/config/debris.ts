@@ -93,6 +93,19 @@ export const DEBRIS = {
    */
   snagDistance: { open: 30, suburban: 15, urban: 8 },
   /**
+   * Rough ground (Spec 04 v1.7): mean distance a sliding piece travels between bumps (clods,
+   * furrows, tufts, ruts, curbs, other debris), and the steepest bump (ramp slope tan θ).
+   */
+  bumpSpacing: { open: 1, suburban: 1.5, urban: 2 },
+  bumpMaxSlope: 0.4,
+  /**
+   * A piece starts tumbling (autorotating) only when its lowest point is this many of its own
+   * lengths above the ground; lower down it keeps its attitude (Spec 04 v1.7).
+   */
+  tumbleClearance: 0.5,
+  /** Pieces longer than a bump (m) pivot over it on their trailing edge. */
+  bumpLength: 1,
+  /**
    * Resting pieces farther than this many R_max from the tornado move to the permanent
    * debris field; ground-level wind out there can no longer move them.
    */
@@ -109,6 +122,12 @@ export const DEBRIS = {
   /** Height at which resting pieces sample the wind (m). */
   restSampleHeight: 0.2,
 } as const;
+
+/**
+ * Drag on a piece lying or sliding on the ground (Spec 04 v1.8): blunt-body C_D on the area its
+ * box shows the flow, plus skin friction on its top face (flat plate along the flow).
+ */
+export const GROUND_DRAG = { cd: 1.2, skin: 0.05 } as const;
 
 /**
  * Turbulent dispersion (Spec 04 v1.3). The wind field is a smooth mean flow; real near-ground

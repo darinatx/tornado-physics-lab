@@ -54,4 +54,12 @@ export const CAMERA = {
   turnPerPixel: 0.004,
   turnRate: Math.PI / 2,
   maxPitch: (85 * Math.PI) / 180,
+  /** Starting view (REND-17): on the track this far inside the town from where it enters, at
+   *  least this far ahead of the tornado, this share of that distance to the right, this high. */
+  startInsideTown: 1000,
+  startMinAhead: 1500,
+  startSide: 0.3,
+  startHeight: 150,
+  /** It looks at the tornado this far up, as a share of the cloud base (the town below). */
+  startLookUp: 0.15,
 } as const;

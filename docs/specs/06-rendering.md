@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.7) — Phases 1–4
+Status: Approved (v1.10) — Phases 1–4
 
 ## Purpose
 
@@ -13,8 +13,11 @@ Phase 1 scope:
 - **Scene:** a 6 km × 6 km ground plane with a faint 100 m grid for scale (Y-up, meters), sky-colored background, a sun light
   and an ambient light.
 - **Camera:** a perspective camera that can go anywhere above the ground, from street level
-  (eye height, 1.7 m) to the whole map. It starts as a storm-chaser view ~1.8 km from the
-  tornado. Mouse, as in map apps: drag (one finger) to slide over the ground, right-drag (or
+  (eye height, 1.7 m) to the whole map. It starts over the city on the side the tornado is
+  coming toward: on the track 1 km inside the town from where the track enters it (at least
+  1.5 km ahead of the tornado), 30% of that distance off to the right of the track, 150 m up,
+  looking back at the approaching tornado (aimed at 15% of the cloud-base height on its
+  axis, so the town fills the foreground). Mouse, as in map apps: drag (one finger) to slide over the ground, right-drag (or
   Ctrl/⌘/Shift + drag) to turn the camera in place, like turning your head (left/right, and
   up/down to 85° from level), scroll to zoom toward the cursor (down to 2 m from the point
   you look at). Keyboard: W/A/S/D fly forward, left, back and right along the ground in the
@@ -157,6 +160,12 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
   look direction rotates by the yaw about the vertical and by the pitch about the camera's
   right axis, pitch stays within ±85° of level, and the look point never goes below the
   ground (looking down, it lands where the view meets the ground).
+- **REND-17**: The starting view is ahead of the tornado on its track (the track's entry into
+  town plus 1 km, at least 1.5 km), 30% of that distance to the right, 150 m up, and looks at
+  the tornado's axis at 15% of the cloud-base height.
+- **REND-16**: Held keys never stick: a key-up always releases its key (whatever has focus or
+  modifiers), pressing ⌘, Ctrl or Alt releases every flying and turning key (macOS sends no
+  key-up for keys released while ⌘ is held), and so does the page losing focus or visibility.
 - **REND-13**: The tracer count follows the total emission, within [2,000, 40,000]: a larger
   or stronger tornado gets more tracers, a tornado lifting no dust none, and the count drops as
   the tornado weakens.
@@ -170,6 +179,18 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 - Visual checks (does it look right, frame rate) are demo checklist items, not unit tests.
 
 ## Changelog
+
+- v1.10: the camera starts over the city ahead of the tornado, facing it (REND-17), at the
+  user's request (it started behind the tornado).
+
+- v1.9: held camera keys can't stick (REND-16). Found by the user: the camera sometimes kept
+  flying forward or back. Key-ups that came with ⌘/Ctrl/Alt were ignored, macOS sends none
+  for keys released while ⌘ is held, and focus could leave without a window blur.
+
+- v1.8: logarithmic depth buffer in the main view (the lab already had one). Found by the user:
+  debris lying on the ground flickered in and out as the camera moved. A shingle's top is
+  2.5 mm above the ground, and with the camera's 1 m–30 km range a linear depth buffer can't
+  separate the two a few hundred metres away.
 
 - v1.7: free camera at the user's request: keyboard flying with height-scaled speed, map-style
   panning (left-drag pans, right-drag turns: with orbit on the left button the view kept

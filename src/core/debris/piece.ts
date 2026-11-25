@@ -2,7 +2,7 @@
  * One debris piece: tumble-averaged drag and lift, gravity, ground contact (Spec 04).
  */
 import { AIR_DENSITY, GRAVITY } from "../../config/atmosphere";
-import { DEBRIS, DEBRIS_KINDS } from "../../config/debris";
+import { DEBRIS, DEBRIS_KINDS, GROUND_DRAG } from "../../config/debris";
 import type { DebrisKind, DebrisKindDef } from "../../config/debris";
 import type { Vec3 } from "../math/vec";
 
@@ -41,6 +41,14 @@ export interface Piece {
   gust: Vec3;
   /** Hidden from the debris field (rubble carried off when its slab was swept). */
   hidden?: boolean;
+  /** Where its source house stands (m), for spreading representative copies (Spec 10). */
+  origin?: { x: number; z: number };
+  /** Stuck through a house surface (Spec 10): its key in the field's lodged list. */
+  lodgedIn?: string;
+  /** Detail zone: has been clear of the house it tore off (Spec 10 v0.6). */
+  clearOfHouse?: boolean;
+  /** Detail zone: its last step ended against something fixed (it was stopped there). */
+  blocked?: boolean;
 }
 
 export function terminalSpeed(kindOrPiece: DebrisKind | Piece): number {
@@ -79,17 +87,38 @@ export function liftForce(p: Piece, rel: Vec3): Vec3 {
   return { x: m * ox, y: m * oy, z: m * oz };
 }
 
+/**
+ * Drag area (C_D·A, m²) of a piece on the ground for flow along unit direction d (Spec 04
+ * v1.8): the area its box actually shows that flow (C_D 1.2), plus skin friction on its top
+ * face (C_f 0.05). Not its tumbling average: a wall panel lying flat shows the wind only its
+ * edge. Box axes: X length, Y thickness, Z width.
+ */
+export function groundCda(p: Piece, d: Vec3): number {
+  const [x, y, z, w] = p.q;
+  const [L, W, T] = p.def.dims;
+  const ax = { x: 1 - 2 * (y * y + z * z), y: 2 * (x * y + w * z), z: 2 * (x * z - w * y) };
+  const ay = { x: 2 * (x * y - w * z), y: 1 - 2 * (x * x + z * z), z: 2 * (y * z + w * x) };
+  const az = { x: 2 * (x * z + w * y), y: 2 * (y * z - w * x), z: 1 - 2 * (x * x + y * y) };
+  const dot = (a: Vec3) => Math.abs(a.x * d.x + a.y * d.y + a.z * d.z);
+  // Projected area: each face pair's area times how squarely it faces the flow.
+  const projected = dot(ax) * W * T + dot(ay) * L * W + dot(az) * L * T;
+  return Math.min(GROUND_DRAG.cd * projected + GROUND_DRAG.skin * L * W, p.def.cda);
+}
+
 /** Forces on a piece lying on the ground in wind w (N): horizontal drag, upward force, weight. */
 export function restingForces(p: Piece, w: Vec3): { drag: number; up: number; weight: number } {
   const k = p.def;
   const mag = Math.hypot(w.x, w.y, w.z);
   const wh = Math.hypot(w.x, w.z);
-  const drag = 0.5 * AIR_DENSITY * k.cda * mag * wh;
+  const dragArea = wh > 1e-9 ? groundCda(p, { x: w.x / wh, y: 0, z: w.z / wh }) : 0;
+  const drag = 0.5 * AIR_DENSITY * dragArea * mag * wh;
   // A flat sheet on the ground gets suction lift regardless of spin sense.
   const lift = k.cla > 0 && p.liftOn ? 0.5 * AIR_DENSITY * k.cla * wh * wh : 0;
-  const up = 0.5 * AIR_DENSITY * k.cda * mag * w.y + lift;
+  const up = 0.5 * AIR_DENSITY * groundCda(p, UP) * mag * w.y + lift;
   return { drag, up, weight: k.mass * GRAVITY };
 }
+
+const UP: Vec3 = { x: 0, y: 1, z: 0 };
 
 function quatMul(a: readonly number[], b: readonly number[]): [number, number, number, number] {
   const [ax, ay, az, aw] = a as [number, number, number, number];
@@ -179,8 +208,13 @@ export function stepPiece(p: Piece, w: Vec3, dt: number): void {
   const wMag = Math.hypot(w.x, w.y, w.z);
   if (wMag > p.maxWindMet) p.maxWindMet = wMag;
 
-  const kd = (0.5 * AIR_DENSITY * k.cda * relMag) / k.mass;
-  const L = liftForce(p, rel);
+  const wasGrounded = !!p.grounded;
+  // On the ground, the area it shows the relative wind (Spec 04 v1.8); aloft, tumble-averaged.
+  const cda = wasGrounded && relMag > 1e-9 ? groundCda(p, { x: rel.x / relMag, y: rel.y / relMag, z: rel.z / relMag }) : k.cda;
+  const kd = (0.5 * AIR_DENSITY * cda * relMag) / k.mass;
+  // Lying on the ground, a sheet's lift is suction over its top face: always upward, whichever
+  // way it would tumble (Spec 04 v1.6), as in restingForces.
+  const L = wasGrounded && k.cla > 0 && p.liftOn ? { x: 0, y: 0.5 * AIR_DENSITY * k.cla * (rel.x * rel.x + rel.z * rel.z), z: 0 } : liftForce(p, rel);
   const ax = L.x / k.mass;
   const ay = L.y / k.mass - GRAVITY;
   const az = L.z / k.mass;
@@ -193,8 +227,9 @@ export function stepPiece(p: Piece, w: Vec3, dt: number): void {
   p.pos.y += v.y * dt;
   p.pos.z += v.z * dt;
 
-  // Tumbling about the horizontal axis perpendicular to the relative wind (not while sliding).
-  if (relMag > 1e-6 && !p.grounded) {
+  // Tumbling about the horizontal axis perpendicular to the relative wind: only once clear of
+  // the ground by half its length (autorotation needs room; a hop over a bump just rides low).
+  if (relMag > 1e-6 && !p.grounded && p.pos.y - supportHeight(p) > DEBRIS.tumbleClearance * k.dims[0]) {
     let axx = -rel.z;
     let axz = rel.x;
     const am = Math.hypot(axx, axz);
@@ -211,6 +246,9 @@ export function stepPiece(p: Piece, w: Vec3, dt: number): void {
   // Ground contact at the piece's lowest corner, not its center.
   const floor = supportHeight(p);
   p.grounded = p.pos.y <= floor;
+  // Lifted off the ground: the wind got under its leading edge, which pitches it nose-up, so it
+  // starts tumbling in the sense that gives upward lift (Tachikawa 1983).
+  if (wasGrounded && !p.grounded) p.spin = 1;
   if (p.grounded) {
     p.pos.y = floor;
     if (v.y < 0) {
@@ -244,4 +282,25 @@ export function stepPiece(p: Piece, w: Vec3, dt: number): void {
       }
     }
   }
+}
+
+/**
+ * Rough ground (Spec 04 v1.7): a sliding piece crossing a slide of `d` metres may run over a
+ * bump, a ramp of slope tan θ ~ U(0, max). It keeps its speed along the ramp and loses the part
+ * into it: v_up = v_h·cos θ·sin θ, v_h → v_h·cos²θ; leading edge first, so it leaves nose-up
+ * (spin +1). Returns true if it hit one.
+ */
+export function bumpKick(p: Piece, d: number, spacing: number, rng: () => number): boolean {
+  if (rng() >= 1 - Math.exp(-d / spacing)) return false;
+  const th = Math.atan(rng() * DEBRIS.bumpMaxSlope);
+  const c = Math.cos(th);
+  // A piece longer than a bump pivots on its trailing edge: its center rises at half the rate.
+  const pivot = p.def.dims[0] > DEBRIS.bumpLength ? 0.5 : 1;
+  p.vel.y = Math.hypot(p.vel.x, p.vel.z) * c * Math.sin(th) * pivot;
+  p.vel.x *= c * c;
+  p.vel.z *= c * c;
+  p.pos.y += 1e-4; // just off the ground
+  p.grounded = false;
+  p.spin = 1;
+  return true;
 }

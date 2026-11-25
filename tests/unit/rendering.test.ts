@@ -327,4 +327,42 @@ describe("Spec 06 — rendering", () => {
     const e = lookStep(cam, u, 1, 0);
     expect(Math.atan2(e.y - cam.y, Math.hypot(e.x - cam.x, e.z - cam.z))).toBeCloseTo(Math.PI / 6, 9);
   });
+  test("REND-16: held camera keys never stick", async () => {
+    const { keyEvent, NO_KEYS } = await import("../../src/render/cameraFly");
+    const keys = { ...NO_KEYS };
+    const turn = { left: false, right: false, up: false, down: false };
+    const ev = (code: string, o: Partial<{ key: string; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; altKey: boolean }> = {}) => ({
+      code, key: o.key ?? code, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, ...o,
+    });
+    // A key-up with ⌘ held, or while typing, still releases.
+    expect(keyEvent(keys, turn, ev("KeyW"), true, false)).toBe(true);
+    expect(keys.forward).toBe(true);
+    keyEvent(keys, turn, ev("KeyW", { metaKey: true }), false, true);
+    expect(keys.forward).toBe(false);
+    // ⌘ pressed while flying and turning: everything released (macOS won't send the key-ups).
+    keyEvent(keys, turn, ev("KeyS"), true, false);
+    keyEvent(keys, turn, ev("ArrowLeft"), true, false);
+    keyEvent(keys, turn, ev("MetaLeft", { key: "Meta", metaKey: true }), true, false);
+    expect(keys.back).toBe(false);
+    expect(turn.left).toBe(false);
+    // Ctrl/Alt shortcuts too; key-downs while typing in a field are ignored.
+    keyEvent(keys, turn, ev("KeyA"), true, false);
+    keyEvent(keys, turn, ev("KeyC", { ctrlKey: true }), true, false);
+    expect(keys.left).toBe(false);
+    expect(keyEvent(keys, turn, ev("KeyD"), true, true)).toBe(false);
+    expect(keys.right).toBe(false);
+  });
+  test("REND-17: the camera starts over the town ahead of the tornado, facing it", async () => {
+    const { startView } = await import("../../src/render/cameraFly");
+    // Tornado 2.8 km west of the center of a 2.6 km town, heading east.
+    const v = startView({ x: -2800, z: 0 }, { x: 1, z: 0 }, 1300, 1000);
+    const ahead = 2800 - 1300 + 1000; // track enters at x = −1300, then 1 km inside
+    expect(v.camera.x).toBeCloseTo(-2800 + ahead, 9);
+    expect(v.camera.z).toBeCloseTo(0.3 * ahead, 9); // right of an eastward track is +z (y up)
+    expect(v.camera.y).toBe(150);
+    expect(v.target).toMatchObject({ x: -2800, y: 150, z: 0 });
+    // Starting inside town: at least 1.5 km ahead.
+    const w = startView({ x: 0, z: 0 }, { x: 0, z: 1 }, 1300, 1000);
+    expect(Math.hypot(w.camera.x, w.camera.z) / Math.hypot(1, 0.3)).toBeCloseTo(1500, 6);
+  });
 });

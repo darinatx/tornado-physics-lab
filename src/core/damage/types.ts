@@ -54,6 +54,42 @@ export interface FailureRecord {
   sign: number;
   /** Ground-relative wind at roof height when it failed (m/s). */
   wind: Vec3;
+  /** What caused it: the wind (default) or a debris impact (Spec 10). For debris, `load` and
+   *  `capacity` are the impact measure and threshold (momentum kg·m/s, energy J, or for an
+   *  impulse-loaded panel the net pressure in Pa). */
+  cause?: "debris";
+  missile?: MissileInfo;
+}
+
+/** The piece that caused an impact failure (Spec 10). */
+export interface MissileInfo {
+  label: string;
+  mass: number;
+  /** Normal impact speed (m/s). */
+  speed: number;
+  measure: "momentum" | "energy" | "pressure";
+}
+
+/** Surface of a component house hit by debris (Spec 10). */
+export type SurfaceKind = "pane" | "garage" | "wall" | "gable" | "roof";
+
+/** One impact waiting for the house's next damage evaluation (Spec 10). */
+export interface QueuedImpact {
+  surface: SurfaceKind;
+  /** Pane, panel (walls, gables, garage: its panel) or roof section index. */
+  index: number;
+  /** Face 0–3, or 4 for the roof. */
+  face: number;
+  broke: boolean;
+  perforated: boolean;
+  sidingTorn: boolean;
+  coverTorn: boolean;
+  /** Impulse force on the struck component (N); 0 for copies and roof hits. */
+  force: number;
+  /** The measure and threshold that decided the outcome (for the record). */
+  measure: number;
+  threshold: number;
+  missile: MissileInfo;
 }
 
 /** Faces: 0 = +X (end), 1 = +Z (back eave), 2 = −X (end), 3 = −Z (front eave), local. */
@@ -136,6 +172,23 @@ export interface Building extends HouseSpec {
   breached: boolean;
   /** Smallest capacity among intact components (Pa), for skipping calm evaluations. */
   minCap: number;
+  /** Debris impacts waiting for the next damage evaluation (Spec 10). */
+  impacts: QueuedImpact[];
+  /** Siding stripped by debris per wall panel (m²), and shingles torn off per roof section. */
+  sidingLost: number[];
+  coverLost: number[];
+  /** Perforation holes (m²) per face 0–3, and the roof at index 4 (Spec 10). */
+  holes: number[];
+  /** Inward impulse pressure on each wall panel, and on the garage door, this evaluation (Pa). */
+  impactPa: number[];
+  garageImpactPa: number;
+  /** Largest impact on each panel this evaluation (for the record), or null. */
+  impactBy: (MissileInfo | null)[];
+  /** A detailed house's stand-in for town debris (Spec 10 v0.7): its standing walls and roof
+   *  as of a fixed lag behind the detail physics. */
+  standIn?: Building;
+  /** Set on a stand-in: the detailed house it stands for (its id). */
+  standInFor?: number;
   /** In the structural detail zone (Spec 09): the component model leaves it alone. */
   detail?: boolean;
   /** Connection failures in the detail zone, grouped by connection type (Spec 09), in order. */

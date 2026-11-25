@@ -59,6 +59,8 @@ export function randomHouseSpec(
 export interface Neighborhood {
   readonly buildings: Building[];
   buildingAt(x: number, z: number): Building | null;
+  /** Houses whose footprint (plus 3 m) reaches the grid cell at (x, z): debris hit tests (Spec 10). */
+  near(x: number, z: number): readonly Building[];
 }
 
 /**
@@ -84,7 +86,10 @@ export function containsPoint(b: Building, x: number, z: number): boolean {
   return Math.abs(lx) <= b.width / 2 && Math.abs(lz) <= b.depth / 2;
 }
 
-export function generateNeighborhood(seed: number): Neighborhood {
+const NONE: readonly Building[] = [];
+
+/** The town's houses (optionally only those `keep` accepts: same houses, ids and properties). */
+export function generateNeighborhood(seed: number, keep?: (b: Building) => boolean): Neighborhood {
   const rng = createRng(seed ^ 0x9e3779b9);
   const half = CITY.extent / 2;
   const buildings: Building[] = [];
@@ -112,6 +117,16 @@ export function generateNeighborhood(seed: number): Neighborhood {
     }
   }
 
+  if (keep) {
+    const kept = buildings.filter(keep);
+    buildings.length = 0;
+    buildings.push(...kept);
+  }
+  return neighborhoodOf(buildings);
+}
+
+/** Lookups over a given list of houses (the town's, or an explicit layout: Spec 08 v1.5). */
+export function neighborhoodOf(buildings: Building[]): Neighborhood {
   // Spatial grid for lookups.
   const grid = new Map<string, Building[]>();
   const key = (i: number, j: number) => `${i},${j}`;
@@ -131,6 +146,9 @@ export function generateNeighborhood(seed: number): Neighborhood {
     buildingAt(x, z) {
       const list = grid.get(key(Math.floor(x / CITY.cell), Math.floor(z / CITY.cell)));
       return list?.find((b) => containsPoint(b, x, z)) ?? null;
+    },
+    near(x, z) {
+      return grid.get(key(Math.floor(x / CITY.cell), Math.floor(z / CITY.cell))) ?? NONE;
     },
   };
 }

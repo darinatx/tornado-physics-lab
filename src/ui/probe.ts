@@ -56,6 +56,7 @@ function fmtBuilding(r: BuildingReport, hereMph: number): string {
       const why = [
         f.windTime < Infinity ? `${kpa(f.load)} &gt; ${kpa(f.capacity)}` : "",
         f.fellWithWall ? `${f.fellWithWall === f.count ? (f.count > 1 ? "all fell" : "fell") : `${f.fellWithWall} fell`} with a bearing wall` : "",
+        f.byDebris ? `${f.byDebris === f.count ? (f.count > 1 ? "all" : "") : f.byDebris} by debris${f.debrisMissile ? ` (first: ${f.debrisMissile.label.toLowerCase()}, ${f.debrisMissile.mass < 1 ? f.debrisMissile.mass.toFixed(2) : Math.round(f.debrisMissile.mass)} kg at ${Math.round(f.debrisMissile.speed)} m/s)` : ""}`.trim() : "",
       ].filter(Boolean).join(" · ");
       return { time: f.time, html: `${f.label}${f.total > 1 ? `: ${f.count} of ${f.total} ${f.unit}` : ""} <span class="p-dim">first at ${Math.round(f.mph)} mph · ${why}</span>` };
     }),

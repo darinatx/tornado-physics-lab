@@ -11,7 +11,10 @@
     "test:watch": "vitest",
     "trace": "tsx scripts/check-trace.ts",
     "verify": "npm run typecheck && npm run test && npm run trace",
-    "test:fast": "vitest run tests/unit"
+    "test:fast": "vitest run tests/unit",
+    "check:passthrough": "tsx scripts/check-passthrough.ts",
+    "check:alignment": "tsx scripts/check-alignment.ts",
+    "tunnel": "tsx scripts/tunnel.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-simd-compat": "^0.19.3",

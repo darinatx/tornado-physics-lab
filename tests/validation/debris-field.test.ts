@@ -1,17 +1,18 @@
 import { describe, expect, test } from "vitest";
+import { advanceUntil } from "../helpers";
 import { PRESETS } from "../../src/config/presets";
 import { createSim } from "../../src/sim/loop";
 import { median } from "../houseHelpers";
 
 describe("validation — debris field", () => {
-  test("DEB-12 / DEB-16 (validation): debris field spread and mass bookkeeping after an EF4", () => {
+  test("DEB-12 / DEB-16 (validation): debris field spread and mass bookkeeping after an EF4", async () => {
     const ef4 = PRESETS.find((p) => p.id === "ef4-wedge")!;
     const sim = createSim({}, 1, ef4.params);
     const v0 = sim.snapshot.tornado.velocity;
     const sp = Math.hypot(v0.x, v0.z);
     const right = { x: -v0.z / sp, z: v0.x / sp };
     const lat = (x: number, z: number) => x * right.x + z * right.z;
-    while (sim.snapshot.phase !== "dissipated" || sim.snapshot.debris.airborne > 50) sim.advance(0.25);
+    await advanceUntil(sim, () => sim.snapshot.phase === "dissipated" && sim.snapshot.debris.airborne <= 50);
     sim.advance(0.25);
     const ground = [...sim.debris.settled, ...sim.debris.pieces.filter((p) => p.resting)];
     const iqr = (a: number[]) => {

@@ -10,12 +10,13 @@ signs off, and the commit is tagged `phase-N-done`. See [CLAUDE.md](../../CLAUDE
 | 3 | Flying debris from failed parts: drag, lift, tumbling, landing, snagging, debris field | 01, 03, 04, 06, 07, 08 | Done |
 | 4 | Component houses: walls, windows, roof sections and rafters fail one by one and become the debris; bearing walls; rubble and a dense debris field. Also the calibrated far-field model and reference for Phase 5 | 02, 03, 04, 06, 07 | Done |
 | 5 | **Structural physics detail zone:** member-level framing (studs, plates, rafters, sheathing, siding, windows) with breakable connections (nails, toe-nails, straps, anchor bolts) in a rigid-body engine (Rapier, in a worker) for the 30 houses around a spot the user picks; real toppling, hinging, stacking and collisions; seamless hand-off with the Phase 4 model elsewhere; validated against the DI 2 table | 09, 03, 04, 06 | Done |
-| 6 | Debris impacts: momentum/energy-based damage to windows, panels and members (full physics in the detail zone, statistical elsewhere) | 03, 04, 09 | Not started |
-| 7 | Building types from the EF scale's damage indicators: apartments, mobile homes, schools, strip malls, big-box stores, shopping malls, low/mid/high-rise offices and skyscrapers, hospitals, churches, warehouses, metal buildings; plus trees, power poles and vehicles | 02, 03, 04, 09 | Not started |
-| 8 | Performance: level of detail for distant buildings, profiling, 60 fps check (deferred from Phase 1), detail-zone core passage at real time (deferred from Phase 5) | all | Not started |
-| 9 | City generation by settlement type (rural, small town, medium city, large metro, major metro): road networks, zoning, building mix and density, per-zone terrain roughness | 05 | Not started |
-| 10 | Visual polish: camera modes (chase, street level), rain and hail, damage-path map, more instruments | 06, 07 | Not started |
-| 11 | Saved runs and replay, scenario presets | 07, 08 | Not started |
+| 6 | Debris impacts: momentum/energy-based damage to windows, panels and members (full physics in the detail zone, statistical elsewhere) | 03, 04, 09, 10 | In progress |
+| 7 | **Storm structure:** a kinematic model of the parent supercell (tilted rotating updraft and mesocyclone, rear- and forward-flank downdrafts, inflow, precipitation field) that drives the visuals: volumetric wall cloud, tail cloud, inflow bands, updraft tower, anvil and overshooting top, rain and hail curtains, clear slot and rain-wrapping; a radar view (reflectivity with the hook echo, velocity couplet); supercell presets (low-precipitation, classic, high-precipitation); RFD winds near the ground; storm-driven tornado track and lifecycle (formation, mature, rope-out on occlusion); multi-vortex mode (suction vortices orbiting the core at high swirl ratio) | 01, 06, 07, 11 | Not started |
+| 8 | Building types from the EF scale's damage indicators: apartments, mobile homes, schools, strip malls, big-box stores, shopping malls, low/mid/high-rise offices and skyscrapers, hospitals, churches, warehouses, metal buildings; plus trees, power poles and vehicles | 02, 03, 04, 09 | Not started |
+| 9 | Performance: level of detail for distant buildings, volumetric-cloud cost, profiling, 60 fps check (deferred from Phase 1), detail-zone core passage at real time (deferred from Phase 5) | all | Not started |
+| 10 | City generation by settlement type (rural, small town, medium city, large metro, major metro): road networks, zoning, building mix and density, per-zone terrain roughness | 05 | Not started |
+| 11 | Visual polish: camera modes (chase, street level), damage-path map, more instruments | 06, 07 | Not started |
+| 12 | Saved runs and replay, scenario presets | 07, 08 | Not started |
 
 Status values: Not started → Spec review → Ready to build → In progress → Gate review → Done.
 
@@ -23,3 +24,11 @@ Roadmap revised 2026-11-23 at the user's request (twice): structural-physics det
 Phase 5 (hybrid: full physics near the camera and path, calibrated component model elsewhere); component houses added before impacts;
 building types and settlement-type city generation split into their own phases; performance
 moved ahead of large cities.
+
+Roadmap revised 2026-11-24 at the user's request: storm structure (parent supercell, clouds,
+hook echo, supercell types) added as Phase 7, after impacts and ahead of performance so the
+Phase 9 pass profiles the volumetric clouds. Rain and hail moved there from visual polish,
+since precipitation is what separates the supercell types. Later phases renumbered.
+
+Roadmap revised 2026-11-25 at the user's request: multi-vortex mode (suction vortices, planned
+in Spec 01 as WIND-2x) added to Phase 7, alongside the tornado lifecycle.

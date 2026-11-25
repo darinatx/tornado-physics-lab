@@ -703,7 +703,8 @@ describe("Spec 09 — detail zone performance", () => {
         });
       }
     }
-    expect(retired).toBeGreaterThan(10);
+    // (A sample of pieces turning into rubble: ~4–8 with Spec 09 v0.12's sill nailing.)
+    expect(retired).toBeGreaterThan(3);
     // Rubble is fixed and touches only fixed things.
     for (const [handle] of h.rubble) expect(world.getRigidBody(handle).isFixed()).toBe(true);
     // A pile wakes together: waking one piece wakes the rubble touching it.
@@ -724,9 +725,10 @@ describe("Spec 09 — detail zone performance", () => {
     expect(h.rubble.has(top)).toBe(false);
     expect(tb.isDynamic()).toBe(true);
     expect(Math.hypot(tb.linvel().x, tb.linvel().y, tb.linvel().z)).toBe(0);
-    // Strong wind brings rubble back to life.
+    // Wind that can move it brings rubble back to life. (What's left after the 150 mph ramp
+    // is what 150 mph couldn't move, so the test wind has to be clearly stronger.)
     const n = h.rubble.size;
-    lab.setWind(150, 30);
+    lab.setWind(250, 30);
     for (let i = 0; i < 30; i++) lab.step();
     expect(h.rubble.size).toBeLessThan(n);
     lab.dispose();
@@ -772,5 +774,44 @@ describe("Spec 09 — detail zone performance", () => {
     sw.dispose();
     sw2.dispose();
     ref.dispose();
+  });
+  test("STR-31: once part of a roof is gone, the rest follows: suction is measured from the standing roof's windward edge", async () => {
+    const { windwardEdgeDistance } = await import("../../src/sim/structureWorld");
+    // Rafters every 0.6 m on a 12 m roof, wind toward +x: the windward end is x = −6.
+    const xs = Array.from({ length: 21 }, (_, i) => -6 + i * 0.6);
+    expect(windwardEdgeDistance(0, xs, 1, 12, 0.9)).toBeCloseTo(6, 9); // whole roof: from the gable
+    // The windward third gone: the edge moves to where the roof now starts (half a bay beyond).
+    const rest = xs.filter((x) => x > -2);
+    expect(windwardEdgeDistance(0, rest, 1, 12, 0.9)).toBeCloseTo(0 - rest[0]! + 0.3, 9);
+    // A gap in the middle: points behind it see an edge at the gap.
+    const holed = xs.filter((x) => x < -1 || x > 1);
+    expect(windwardEdgeDistance(3, holed, 1, 12, 0.9)).toBeCloseTo(3 - holed.find((x) => x > 1)! + 0.3, 9);
+    // Wind the other way: measured from the +x end.
+    expect(windwardEdgeDistance(0, xs, -1, 12, 0.9)).toBeCloseTo(6, 9);
+
+    // A lab house in a rising wind: from a third of the rafters gone to two thirds, and half the
+    // walls down, within ~15 mph (DI 2: roof structure 122 → exterior walls 132 mph), from any
+    // direction. (A ramp, stopped as soon as both happen: about a second.)
+    for (const dir of [0, 30, 90]) {
+      const lab = new StructureLab(house());
+      const h = lab.house;
+      const raf = h.framing.members.filter((m) => m.kind === "rafterPair");
+      const frames = h.framing.members.filter((m) => m.kind === "wallFrame");
+      let third = 0;
+      let twoThirds = 0;
+      let walls = 0;
+      for (let mph = 90; mph <= 220 && !(twoThirds && walls); mph += 2) {
+        lab.setWind(mph, dir);
+        for (let i = 0; i < 15; i++) lab.step();
+        const gone = raf.filter((m) => !h.isAttached(m.id)).length / raf.length;
+        if (gone >= 1 / 3) third ||= mph;
+        if (gone >= 2 / 3) twoThirds ||= mph;
+        if (frames.filter((m) => !h.isAttached(m.id)).length >= frames.length / 2) walls ||= mph;
+      }
+      expect(third, `wind ${dir}°`).toBeGreaterThan(0);
+      expect(twoThirds - third, `wind ${dir}°: roof follow-through`).toBeLessThanOrEqual(16);
+      expect(walls - twoThirds, `wind ${dir}°: walls after the roof`).toBeLessThanOrEqual(16);
+      lab.dispose();
+    }
   });
 });

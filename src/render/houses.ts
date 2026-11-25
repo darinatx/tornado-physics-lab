@@ -5,6 +5,7 @@ import { LUMBER } from "../config/structure";
  * by that component's state.
  */
 import * as THREE from "three";
+import { IMPACT } from "../config/impacts";
 import { LAYOUT } from "../config/buildings";
 import { faceTangent, LOCAL_NORMALS, panelCenter, sectionGeometry, toWorld } from "../core/damage/layout";
 import type { Building } from "../core/damage/types";
@@ -37,7 +38,8 @@ export const MESHES = ["panels", "panes", "garage", "roof", "rafters", "gables",
 export type MeshName = (typeof MESHES)[number];
 export type HouseDraw = Record<MeshName, Inst[]>;
 
-const SLAB = 0.3;
+/** Slab top (m): shared with the impact envelope (Spec 10). */
+const SLAB = IMPACT.slabTop;
 const BOLTS = 8;
 
 /** Slots each house needs per mesh (fixed by its layout). */

@@ -25,7 +25,8 @@ import { efRating, mphToMs } from "../wind/efScale";
 import type { EFRating } from "../wind/efScale";
 import { layoutPanels } from "./layout";
 import { bayLoad, computeHouseLoads, coverLoad, deckLoad, faceNormal, sidingLoad, updateApc, velocityPressure, wallSigned } from "./loads";
-import type { Building, FailureRecord, HouseSpec, Simple } from "./types";
+import type { Building, FailureRecord, HouseSpec, MissileInfo, Simple } from "./types";
+import { applyImpacts } from "../impact/impact";
 
 /** Standard normal via Box–Muller from a seeded uniform RNG. */
 function normal(rng: () => number): number {
@@ -104,6 +105,13 @@ export function createHouse(spec: HouseSpec, rng: () => number, base: Record<Par
     normals: [0, 1, 2, 3].map((k) => faceNormal(spec.yaw, k)),
     breached: false,
     minCap: 0,
+    impacts: [],
+    sidingLost: panels.map(() => 0),
+    coverLost: sections.map(() => 0),
+    holes: [0, 0, 0, 0, 0],
+    impactPa: panels.map(() => 0),
+    garageImpactPa: 0,
+    impactBy: panels.map(() => null),
   };
 }
 
@@ -148,14 +156,25 @@ const countFailed = (list: readonly { failed: FailureRecord | null }[]) => list.
 export function degreeOfDamage(b: Building): number {
   if (b.sweep.failed) return 10;
   const nS = b.sections.length;
-  const coverLost = b.sections.filter((s) => s.cover || s.deck || b.bays[s.col]!.failed).length;
+  // Shingles torn off by debris count by area (Spec 10).
+  let coverLost = 0;
+  let coverDamaged = false;
+  b.sections.forEach((s, i) => {
+    if (s.cover || s.deck || b.bays[s.col]!.failed) {
+      coverLost++;
+      coverDamaged = true;
+    } else if (b.coverLost[i]! > 0) {
+      coverLost += b.coverLost[i]! / s.area;
+      coverDamaged = true;
+    }
+  });
   const deckLost = b.sections.some((s) => s.deck);
   const bayFrac = countFailed(b.bays) / b.bays.length;
   const panelFrac = countFailed(b.panels) / b.panels.length;
   const partsDown = countFailed(b.partitions);
   let dod = 0;
-  if (b.siding.some((s) => s.failed)) dod = 1;
-  if (coverLost > 0) dod = 2;
+  if (b.siding.some((s) => s.failed) || b.sidingLost.some((a) => a > 0)) dod = 1;
+  if (coverDamaged) dod = 2;
   if (b.panes.some((p) => p.failed)) dod = 3;
   if (coverLost / nS >= 0.2 || deckLost || b.garage?.failed) dod = 4;
   if (b.anchorage.failed) dod = 5;
@@ -184,16 +203,23 @@ export function updateBuilding(
   const pApc = updateApc(b, deficitOut, dt);
   // Calm for this house: nothing intact can fail at this wind and pressure change.
   if (b.minCap === 0) b.minCap = minIntactCap(b);
-  // Gravity doesn't wait for wind: an unsupported roof bay still has to come down.
-  const calm = velocityPressure(wind) * MAX_LOAD_COEFF + Math.abs(pApc) < b.minCap;
-  if (calm && !(b.breached && b.bays.some((bay, i) => !bay.failed && bayUnsupported(b, i)))) return false;
   const w = { x: wind.x, y: wind.y, z: wind.z };
-  const record = (part: Part, index: number, load: number, capacity: number, sign = 0): FailureRecord => {
+  const record = (part: Part, index: number, load: number, capacity: number, sign = 0, debris?: MissileInfo): FailureRecord => {
     const rec: FailureRecord = { part, index, time, load, capacity, mph, sign, wind: w };
+    if (debris) {
+      rec.cause = "debris";
+      rec.missile = debris;
+    }
     if (part === "window" || part === "garage" || part === "wallPanel" || part === "roofDeck" || part === "roofBay") b.breached = true;
     onFail?.(rec);
     return rec;
   };
+  // Debris impacts queued since the last evaluation go first (Spec 10), calm or not.
+  const hadImpacts = b.impacts.length > 0;
+  const impactFailed = applyImpacts(b, record);
+  // Gravity doesn't wait for wind: an unsupported roof bay still has to come down.
+  const calm = velocityPressure(wind) * MAX_LOAD_COEFF + Math.abs(pApc) < b.minCap;
+  if (calm && !hadImpacts && !(b.breached && b.bays.some((bay, i) => !bay.failed && bayUnsupported(b, i)))) return false;
 
   // Structural support (bracing, neighbors, open house) is judged from the state at the start
   // of this evaluation: load redistribution and toppling take time. Pressure effects (new
@@ -201,7 +227,7 @@ export function updateBuilding(
   const bayDown0 = b.bays.map((x) => !!x.failed);
   const panelDown0 = b.panels.map((x) => !!x.failed);
   const open0 = panelDown0.filter(Boolean).length >= b.panels.length / 2 || bayDown0.every(Boolean);
-  let changed = false;
+  let changed = impactFailed;
   for (let pass = 0; pass < 8; pass++) {
     const L = computeHouseLoads(b, wind);
     let any = false;
@@ -253,9 +279,12 @@ export function updateBuilding(
       }
     });
     if (b.garage && !b.garage.failed && !b.panels[b.garage.panel]!.failed) {
-      const load = Math.abs(wallSigned(L, 3, pApc));
+      const windLoad = wallSigned(L, 3, pApc);
+      // A debris push adds inward (Spec 10 impulse load).
+      const load = Math.abs(windLoad + b.garageImpactPa);
       if (load > b.garage.cap) {
-        b.garage.failed = record("garage", 0, load, b.garage.cap);
+        const byDebris = Math.abs(windLoad) <= b.garage.cap;
+        b.garage.failed = record("garage", 0, load, b.garage.cap, 0, byDebris ? { label: "debris", mass: 0, speed: 0, measure: "pressure" } : undefined);
         any = true;
       }
     }
@@ -279,8 +308,12 @@ export function updateBuilding(
         const fs = L.q * CP_FREESTANDING * Math.abs(c);
         if (fs > Math.abs(signed)) signed = c >= 0 ? fs : -fs;
       }
+      // A debris impact pushes inward on top of the wind (Spec 10 impulse load).
+      const windOnly = signed;
+      signed += b.impactPa[i]!;
       if (Math.abs(signed) > capEff) {
-        p.failed = record("wallPanel", i, Math.abs(signed), capEff, signed >= 0 ? 1 : -1);
+        const byDebris = b.impactPa[i]! > 0 && Math.abs(windOnly) <= capEff ? b.impactBy[i] ?? undefined : undefined;
+        p.failed = record("wallPanel", i, Math.abs(signed), capEff, signed >= 0 ? 1 : -1, byDebris);
         any = true;
       }
     });
@@ -397,6 +430,9 @@ export interface FailureGroup {
   windTime: number;
   /** Roof bays that came down because a bearing wall under them fell (no wind load). */
   fellWithWall: number;
+  /** Failures caused by debris impacts (Spec 10), and the first one's missile. */
+  byDebris: number;
+  debrisMissile: MissileInfo | null;
 }
 
 export interface BuildingReport {
@@ -434,14 +470,17 @@ export function buildingReport(b: Building): BuildingReport {
     if (!g) {
       g = {
         part: r.part, label: PART_LABEL[r.part], count: 0, total: partTotal(b, r.part), unit: PART_UNIT[r.part],
-        time: r.time, load: 0, capacity: 0, mph: r.mph, fellWithWall: 0, windTime: Infinity,
+        time: r.time, load: 0, capacity: 0, mph: r.mph, fellWithWall: 0, windTime: Infinity, byDebris: 0, debrisMissile: null,
       };
       groups.set(r.part, g);
     }
     g.count++;
     if (r.time < g.time) Object.assign(g, { time: r.time, mph: r.mph });
     if (fell) g.fellWithWall++;
-    else if (r.time < g.windTime) Object.assign(g, { windTime: r.time, load: r.load, capacity: r.capacity });
+    else if (r.cause === "debris") {
+      g.byDebris++;
+      if (!g.debrisMissile && r.missile && r.missile.mass > 0) g.debrisMissile = r.missile;
+    } else if (r.time < g.windTime) Object.assign(g, { windTime: r.time, load: r.load, capacity: r.capacity });
   }
   const row = DI2_DODS.find((r) => r.dod === b.dod);
   return {

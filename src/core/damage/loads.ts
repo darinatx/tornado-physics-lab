@@ -56,6 +56,9 @@ export function internalCp(b: Building, cpFace: readonly number[]): number {
   if (b.garage?.failed && !b.panels[b.garage.panel]!.failed) add(LAYOUT.garageWidth * LAYOUT.garageHeight, cpFace[3]!);
   for (const p of b.panels) if (p.failed) add(p.len * b.wallHeight, cpFace[p.face]!);
   for (const s of b.sections) if (sectionGone(b, s)) add(s.area, CP.roofAverage);
+  // Debris perforations (Spec 10): faces 0–3, roof at 4.
+  for (let f = 0; f < 4; f++) if (b.holes[f]! > 0) add(b.holes[f]!, cpFace[f]!);
+  if (b.holes[4]! > 0) add(b.holes[4]!, CP.roofAverage);
   if (area <= 0) return CPI.enclosed;
   return CPI.dominantOpeningFactor * (sum / area);
 }

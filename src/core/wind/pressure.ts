@@ -7,6 +7,7 @@ import type { TornadoState } from "./types";
 
 /** Pressure drop below the far-field value at radius r (Pa, ≥ 0). */
 export function pressureDeficit(r: number, s: TornadoState): number {
+  if (s.tunnel) return s.tunnel.deficit;
   const R = Math.max(s.rMax, 1e-6);
   const q = AIR_DENSITY * s.vMax * s.vMax;
   const edge = q / (2 * s.alpha);

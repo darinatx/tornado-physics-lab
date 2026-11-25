@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v1.4) — Phase 3 scope: flight, landing and re-lofting. Impacts on buildings arrive in Phase 4.
+Status: Approved (v1.9) — flight, landing, re-lofting; hits on houses per Spec 10
 
 ## Purpose
 
@@ -73,6 +73,33 @@ fan a house's debris out downwind instead of leaving a thin streak.
   moving than to keep it moving: a resting piece holds unless drag beats μ_s·(m·g − F_up)
   with μ_s = 1.2. It lifts off again when the upward aerodynamic force F_up beats its weight.
   A sliding piece comes to rest once it's slow and the holding force can keep it.
+- **Drag on the ground.** A piece lying or sliding on the ground is pushed by the area its box
+  actually shows the wind (its projection across the flow, C_D 1.2), plus skin friction on its
+  top face (C_f 0.05 × length × width); never more than its tumbling average. A wall panel or
+  sheet lying flat shows the wind only its edge; a 2×4 lying end-on, only its end. (Airborne
+  pieces keep the tumble-averaged drag.)
+- **Lift on the ground.** A sheet lying or sliding on the ground gets suction lift over its
+  top face, ½ρ·(C_L·A)·|v_rel,h|², always upward (as in the resting rule), whichever way it
+  would tumble in the air. When that lifts it clear, the wind has got under its leading edge,
+  which pitches it nose-up: it leaves the ground tumbling in the sense that gives upward lift
+  (spin +1; the initial angle of attack sets an autorotating plate's spin, Tachikawa 1983). A
+  piece on the ground feels the wind 0.2 m above the ground (above a slab top on a slab), like
+  resting pieces; the wind at its own few-millimetre height would be the profile's floor value.
+- **Rough ground.** Real ground isn't flat: clods, furrows, grass tufts, ruts, curbs and other
+  debris. A sliding piece runs over a bump with probability 1 − e^(−d/λ_b) over a slide of
+  distance d (bump spacing λ_b = 1 m open, 1.5 m suburban, 2 m urban). Each bump is a ramp of
+  slope tan θ drawn uniformly from 0 to 0.4 (up to ~22°). The piece is deflected along it: it
+  keeps the speed along the ramp and loses the part into it (no rebound), so
+  v_up = v_h·cos θ·sin θ and v_h → v_h·cos²θ; a piece longer than a bump (1 m) pivots over it
+  on its trailing edge, so its center rises at half that rate. Its leading edge rides up first, so it leaves
+  nose-up, tumbling in the upward-lift sense (spin +1), as on any lift-off from the ground.
+  Bumps both slow sliding debris (like extra friction) and hop it into the wind: if the wind
+  can carry it, it flies on; otherwise it lands again. The same applies to light pieces from
+  detailed houses (Spec 09), with a per-house seeded RNG.
+- **Tumbling starts clear of the ground.** A piece only autorotates once its lowest point is
+  half its own length above the ground: rotation needs room, and close to the ground a plate
+  rides on the air under it. A short hop over a bump keeps the piece's attitude instead of
+  spinning it through a big angle and snapping it flat on landing ("flapping").
 - **Snagging:** light pieces (shingles, siding) can be pushed along by even moderate
   ground-level wind, and in reality they travel until they catch on a fence, crop row, shrub
   or other debris. A sliding piece snags with probability 1 − e^(−d/λ) over a slide of
@@ -218,17 +245,50 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
   houses also leave floors and contents, most of which stay put.
 - **DEB-17**: A roof section or deck panel leaves its house moving upward and downwind, with
   the upward speed set by its net uplift force.
+- **DEB-18**: A sheet on the ground lifts off when its suction lift beats its weight, whatever
+  its tumble sense, and leaves the ground tumbling with upward lift; below that it stays down.
+- **DEB-19**: Rough ground: sliding pieces hit bumps at the terrain's spacing (within 10% over
+  many trials); each bump keeps the speed along its ramp (v_up = v_h·cos θ·sin θ,
+  v_h → v_h·cos²θ, θ up to atan 0.4; half the rise for pieces over 1 m) and leaves the piece
+  tumbling nose-up; in a strong wind a light sheet that would only slide on flat ground gets
+  airborne and carried off, while a heavy panel only hops and stays near where it was.
+- **DEB-20**: A piece within half its length of the ground doesn't tumble (its orientation is
+  unchanged by a low hop); higher up it tumbles at the specified rate.
+- **DEB-21**: On the ground, drag uses the piece's projected area across the wind (C_D 1.2) plus
+  skin friction on its top face: a flat-lying sheet gets far less drag than its tumbling
+  average, a 2×4 end-on less than side-on, and a fallen 290 kg wall panel in a 60 m/s wind
+  shuffles but stays near where it fell.
 - **DEB-08**: Same seed and same failures → identical debris trajectories.
 
 ## Simplifications / out of scope
 
-- Pieces don't collide with each other or (until Phase 4) with buildings.
+- Pieces don't collide with each other. They hit component houses (Spec 10); detailed houses
+  not until Phase 6 slice B.
 - Orientation doesn't feed back into the aerodynamics: drag and lift use tumble-averaged
   coefficients (standard for debris-flight models).
 - Pieces are rigid and don't break further.
 - Only a representative sample of real pieces is simulated (see `represents`).
 
 ## Changelog
+
+- v1.9: `DebrisField.launch` (a piece of a given kind, point, velocity and orientation joins the field,
+  counted as spawned) and an impact observer (`onImpact`, read-only), for the wind tunnel (Spec 12).
+- v1.8: drag on the ground from the piece's projected area (DEB-21). Found in the paired detail
+  vs component comparison: fallen wall panels were pushed like sails (tumble-averaged area on a
+  panel lying flat), slid, hopped, flew into neighbors and knocked their walls down, so town
+  houses lost all their walls and material at 110–150 mph.
+- v1.7: rough ground (DEB-19); tumbling starts only half a length clear of the ground (DEB-20). Found by the user: small pieces such as siding and drywall
+  kept sliding along the ground instead of hopping and getting airborne again, as they do on
+  real rough ground.
+- v1.6: lift on the ground is upward suction, and lift-off sets the nose-up tumble sense
+  (DEB-18); pieces on the ground feel the wind at 0.2 m; slabs are ground (Spec 10). Found by
+  the user: debris on the ground kept sliding and almost never got airborne again. Half the
+  sheets tumbled in the down-lift sense, so on the ground their lift pressed them down, and
+  sliding pieces read the wind at a few millimetres. In an EF4 pass, re-lofting rose from 10% of
+  grounded pieces to 29%, and half as many pieces ended up on the ground at all.
+- v1.5: pieces hit component houses (Spec 10): bounce, go through broken windows, or lodge in
+  walls and roofs; lodged pieces fall free when their surface fails. Each piece records its
+  source house's position for spreading representative copies.
 
 - Pieces settling flat keep their heading (was a yaw derived from the piece id), so a piece
   that lands doesn't twist (Phase 5 slice B).

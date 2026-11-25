@@ -3,8 +3,9 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { flyStep, lookStep, NO_KEYS } from "./cameraFly";
-import type { FlyKeys } from "./cameraFly";
+import { flyStep, keyEvent, lookStep, NO_KEYS, releaseAll, startView } from "./cameraFly";
+import { CITY } from "../sim/city";
+import type { FlyKeys, TurnKeys } from "./cameraFly";
 import { CAMERA, RENDER } from "../config/render";
 import type { Building } from "../core/damage/types";
 import type { Piece } from "../core/debris/piece";
@@ -73,7 +74,9 @@ export function createRenderer(
   /** Detailed houses (Spec 09 slice B) and the detail spot, if any. */
   getDetail: () => { view: DetailView; spot: { x: number; z: number; r: number } | null } | null = () => null,
 ): SimRenderer {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // Logarithmic depth: debris lies millimetres above the ground hundreds of metres away, which a
+  // linear 1 m–30 km depth buffer can't separate (pieces flickered in and out as the camera moved).
+  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(host.clientWidth, host.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -176,8 +179,7 @@ export function createRenderer(
   controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
   controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
   controls.enableRotate = false;
-  const turnKeys = { left: false, right: false, up: false, down: false };
-  const turnMap: Record<string, keyof typeof turnKeys> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
+  const turnKeys: TurnKeys = { left: false, right: false, up: false, down: false };
   let turnFrom: { x: number; y: number } | null = null;
   const turn = (yaw: number, pitch: number) => {
     const t = lookStep(camera.position, controls.target, yaw, pitch);
@@ -185,36 +187,29 @@ export function createRenderer(
     camera.lookAt(controls.target);
   };
   const keys: FlyKeys = { ...NO_KEYS };
-  const keyMap: Record<string, keyof FlyKeys> = {
-    KeyW: "forward", KeyS: "back", KeyA: "left", KeyD: "right",
-    KeyE: "up", PageUp: "up", KeyQ: "down", PageDown: "down",
-  };
   const typing = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
     return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
   };
+  const clearKeys = () => releaseAll(keys, turnKeys);
   const onKey = (down: boolean) => (e: KeyboardEvent) => {
-    keys.fast = e.shiftKey;
-    const tk = turnMap[e.code];
-    if (tk && !(down && typing(e))) {
-      turnKeys[tk] = down;
-      if (down) e.preventDefault();
-      return;
-    }
-    const k = keyMap[e.code];
-    if (!k || (down && typing(e)) || e.metaKey || e.ctrlKey || e.altKey) return;
-    keys[k] = down;
-    if (down) e.preventDefault();
+    if (keyEvent(keys, turnKeys, e, down, typing(e))) e.preventDefault();
   };
   const keyDown = onKey(true);
   const keyUp = onKey(false);
-  const clearKeys = () => {
-    Object.assign(keys, NO_KEYS);
-    Object.assign(turnKeys, { left: false, right: false, up: false, down: false });
+  // Focus leaving the page doesn't always blur the window (tab switch, an embedding app):
+  // stop flying then too, since the key-ups go elsewhere.
+  const onVisibility = () => {
+    if (document.visibilityState !== "visible") clearKeys();
   };
   window.addEventListener("keydown", keyDown);
   window.addEventListener("keyup", keyUp);
   window.addEventListener("blur", clearKeys);
+  document.addEventListener("visibilitychange", onVisibility);
+  const onFocusOut = (e: FocusEvent) => {
+    if (!e.relatedTarget) clearKeys();
+  };
+  document.addEventListener("focusout", onFocusOut);
   let movedCb: (() => void) | null = null;
   const leaveFollow = () => {
     if (!follow) return;
@@ -321,11 +316,13 @@ export function createRenderer(
 
       // Camera.
       if (!placed) {
-        // Storm-chaser view: ~1.8 km away, below the cloud base, looking slightly up.
-        const d = 1800;
-        const h = Math.min(120, curr.cloudBase * 0.3);
-        controls.target.set(s.center.x, curr.cloudBase * 0.45, s.center.z);
-        camera.position.set(s.center.x - d * 0.5, h, s.center.z + d * 0.87);
+        // Over the town ahead of the tornado, looking back at it as it approaches (REND-17).
+        const sp = Math.hypot(s.velocity.x, s.velocity.z);
+        const dir = sp > 1e-9 ? { x: s.velocity.x / sp, z: s.velocity.z / sp } : { x: 1, z: 0 };
+        const v = startView(s.center, dir, CITY.extent / 2, curr.cloudBase);
+        controls.target.set(v.target.x, v.target.y, v.target.z);
+        camera.position.set(v.camera.x, v.camera.y, v.camera.z);
+        camera.lookAt(controls.target);
         placed = true;
       } else if (follow && recenter) {
         const dx = s.center.x - controls.target.x;
@@ -430,6 +427,8 @@ export function createRenderer(
       window.removeEventListener("keydown", keyDown);
       window.removeEventListener("keyup", keyUp);
       window.removeEventListener("blur", clearKeys);
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("focusout", onFocusOut);
       renderer.domElement.removeEventListener("pointerdown", onPointer);
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);

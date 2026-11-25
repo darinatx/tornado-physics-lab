@@ -41,7 +41,7 @@ export class DetailSplit {
   split(step: DetailStep): DetailStep[] {
     const parts = Array.from({ length: this.k }, () => ({ ...step, enter: [] as DetailStep["enter"], exit: [] as number[] }));
     for (const e of step.enter) {
-      const row = streetRowOf(this.buildings[e.index]!);
+      const row = e.group ?? streetRowOf(this.buildings[e.index]!);
       let k = this.engineOfRow.get(row);
       if (k === undefined) {
         k = this.count.indexOf(Math.min(...this.count));
@@ -78,6 +78,7 @@ export function mergeResults(rs: readonly DetailResult[]): DetailResult {
     failures: cat(Int32Array, (r) => r.failures),
     frozen: rs.flatMap((r) => r.frozen),
     failLog: rs.flatMap((r) => r.failLog),
+    townHits: rs.flatMap((r) => r.townHits),
     ms: Math.max(...rs.map((r) => r.ms)),
     groupMs: Math.max(...rs.map((r) => r.groupMs)),
   };

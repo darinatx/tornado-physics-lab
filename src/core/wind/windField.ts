@@ -7,7 +7,8 @@
  */
 import { CELL_STRUCTURE, ENV_REFERENCE_HEIGHT, ENV_SURFACE_WIND, PROFILE_EPSILON, TERRAIN_BETA } from "../../config/wind";
 import type { Vec3 } from "../math/vec";
-import type { TerrainClass, TornadoState } from "./types";
+import type { TerrainClass, TornadoState, TunnelFlow } from "./types";
+import { TUNNEL } from "../../config/tunnel";
 
 /** Modified Rankine tangential speed aloft (no height factor). */
 export function tangentialProfile(r: number, vMax: number, rMax: number, alpha: number): number {
@@ -100,6 +101,7 @@ export function carriedFactors(r: number, s: TornadoState): number {
 
 /** Ground-relative wind velocity at world point p (m/s). Pure and deterministic. */
 export function windAt(p: Vec3, s: TornadoState, terrain: TerrainClass): Vec3 {
+  if (s.tunnel) return tunnelWind(p, s.tunnel, terrain);
   const dx = p.x - s.center.x;
   const dz = p.z - s.center.z;
   const r = Math.hypot(dx, dz);
@@ -119,4 +121,11 @@ export function windAt(p: Vec3, s: TornadoState, terrain: TerrainClass): Vec3 {
   const e = envFactor(p.y, terrain);
   const k = carriedFactors(r, s);
   return { x: hx + e * k * s.velocity.x, y: c.vertical, z: hz + e * k * s.velocity.z };
+}
+
+/** Wind tunnel wind at p (Spec 12): U10·envFactor(z) along the direction, plus the ramped vertical wind. */
+export function tunnelWind(p: Vec3, f: TunnelFlow, terrain: TerrainClass): Vec3 {
+  const u = f.u10 * envFactor(p.y, terrain);
+  const a = (f.dirDeg * Math.PI) / 180;
+  return { x: u * Math.cos(a), y: f.w * Math.min(Math.max(p.y, 0) / TUNNEL.wRampHeight, 1), z: -u * Math.sin(a) };
 }

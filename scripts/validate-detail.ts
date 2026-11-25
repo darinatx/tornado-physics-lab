@@ -27,7 +27,15 @@ function runCase(i: number) {
 if (process.env.VALIDATE_CHILD) {
   await initRapier();
   const ids = JSON.parse(process.env.VALIDATE_CHILD) as number[];
-  for (const i of ids) process.send!({ i, r: runCase(i) });
+  for (const i of ids) {
+    const t = Date.now();
+    // Only what the report needs (the full failure log made messages large enough to be cut
+    // off when the process exited).
+    const { first, peak, dod, firstFail } = runCase(i);
+    // Slow houses (over 2 minutes) are worth knowing about.
+    if (Date.now() - t > 120000) process.stderr.write(`\n[case ${i}: ${((Date.now() - t) / 1000).toFixed(0)} s]\n`);
+    await new Promise<void>((done) => process.send!({ i, r: { first, peak, dod, firstFail } }, () => done()));
+  }
   process.exit(0);
 } else {
   const results: ReturnType<typeof runCase>[] = [];

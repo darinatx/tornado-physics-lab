@@ -22,6 +22,8 @@ export interface DetailPassResult {
   dod: number;
   /** Peak wind (mph) when each kind of connection first failed. */
   firstFail: Record<string, number>;
+  /** Every connection failure, in order (for diagnosis). */
+  failures: import("./structureWorld").StructureFailure[];
 }
 
 /** Pass a tornado over a detailed house at the origin, offset sideways from the track. */
@@ -38,6 +40,7 @@ export function detailPass(b: Building, s: TornadoState, terrain: TerrainClass =
     deficit: (x, z) => pressureDeficit(Math.hypot(x - state.center.x, z - state.center.z), state),
   };
   const sw = new StructureWorld();
+  sw.terrain = terrain;
   const h = sw.addHouse(house);
   const roof = { x: house.x, y: house.roofHeight, z: house.z };
   const inv = qconj([0, Math.sin(house.yaw / 2), 0, Math.cos(house.yaw / 2)]);
@@ -71,6 +74,7 @@ export function detailPass(b: Building, s: TornadoState, terrain: TerrainClass =
     }
     if (dod >= 10) break;
   }
+  const failures = [...h.failures];
   sw.dispose();
-  return { first, peak, dod, firstFail };
+  return { first, peak, dod, firstFail, failures };
 }

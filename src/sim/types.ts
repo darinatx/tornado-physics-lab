@@ -3,7 +3,11 @@ import { SIM_DEFAULTS } from "../config/sim";
 import { LIFECYCLE_DEFAULTS, WIND_PARAMS } from "../config/wind";
 import type { DebrisStats } from "../core/debris/field";
 import type { Phase } from "../core/wind/lifecycle";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TerrainClass, TornadoState, TunnelFlow } from "../core/wind/types";
+import type { HouseSpec, QueuedImpact } from "../core/damage/types";
+import type { DebrisField } from "../core/debris/field";
+import type { Piece } from "../core/debris/piece";
+import type { DetailLaunch } from "./detailZone";
 
 /** Everything the user can tune about the tornado and its path. */
 export interface TornadoParams {
@@ -74,6 +78,36 @@ export interface SimConfig {
   maxFrameDt: number;
   /** Generate the neighborhood (default true). Tests of the wind alone can turn it off. */
   buildings: boolean;
+  /** Validation runs: only the houses within this circle (SIM-10). */
+  area?: { x: number; z: number; radius: number };
+  /** Validation runs: where the tornado starts (default: its path centered on the origin). */
+  start?: { x: number; z: number };
+  /** Validation runs: how many houses the detail zone takes (default DETAIL.maxHouses). */
+  detailHouses?: number;
+  /** Wind tunnel (Spec 12): these houses instead of the generated town. */
+  houses?: readonly HouseSpec[];
+  /** Wind tunnel: the flow at sim time t, replacing the tornado everywhere. */
+  tunnel?: (t: number) => TunnelFlow;
+  /** Wind tunnel: exactly these houses enter the detail zone (once a spot is set), each in the
+   *  named physics group (default: its street row), `stripped` = with every member removed. */
+  detailSet?: readonly { index: number; group?: string; stripped?: boolean }[];
+  /** Read-only observers (Spec 08 v1.5). */
+  taps?: SimTaps;
+  /** Launches (Spec 12): called at every debris step before the debris moves, and at every
+   *  detail step for the launches it carries. */
+  inject?: {
+    debris?(time: number, field: DebrisField): void;
+    detail?(time: number): DetailLaunch[];
+  };
+}
+
+/** Observers: they see what happens and must not change it. */
+export interface SimTaps {
+  /** An impact on a house (index into the buildings), by the town's debris field ("debris")
+   *  or a detail-zone piece's hit applied in the sim ("detail"). */
+  impact?(house: number, q: QueuedImpact, path: "debris" | "detail", piece: Piece | null, time: number): void;
+  /** A connection failure in a detailed house, as the sim receives it. */
+  detailFailure?(house: number, f: { label: string; load: number; capacity: number; mph: number }, time: number): void;
 }
 
 export interface SimFrame {

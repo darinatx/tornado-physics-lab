@@ -1,6 +1,6 @@
 # Spec 09 — Structural Physics (Detail Zone)
 
-Status: Approved (v0.11) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
+Status: Approved (v0.14) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
 
 ## Purpose
 
@@ -80,7 +80,7 @@ breaks at), not design values, which are deliberately 2–3× lower:
 | Garage door track | door → wall frame | 1.3 kPa × door area, either direction (it buckles inward or pulls out of its tracks) | standard door |
 | Drywall screws | wall drywall → wall frame | 0.6 kPa × sheet area, pulled inward only (outward it bears on the studs) | pull-through |
 | Interior door hinges | door → its wall | 1.5 kN | three hinges screwed into the jamb |
-| Wall to sill plate | wall frame → its sill plate | 1 kN per stud on the plate + 4 kN per metre | 2 × 16d end-nails per stud; sheathing nailed along the plate (8d at 6 in.) |
+| Wall to sill plate | wall frame → its sill plate | 1 kN per stud on the plate + 6.5 kN per metre | 2 × 16d end-nails per stud; sheathing nailed along the plate (8d at 6 in., ~1.0 kN mean ultimate each) |
 | Sill anchorage | sill plate → slab | 10 kN per bolt; bolts ≤ 1.83 m apart with one within 0.3 m of each plate end, ≥ 2 per plate (IRC R403.1.6) | bolt + washer pull-through |
 
 Rafter pairs are A-frames (both rafters together) bearing on the front and back walls; ridge
@@ -110,8 +110,10 @@ weakest connection.
   siding, glazing, doors), and **main-structure** pressures to check the framing. For the
   roof these are the ASCE 7 MWFRS values for a ~20° gable: wind across the ridge −0.7 on the
   windward slope and −0.6 on the leeward; wind along it −0.9 within one roof height h of the
-  windward gable, −0.5 to 2h, −0.3 beyond; blended by cos²/sin² of the wind's angle to the
-  ridge. Wind acts on the roof deck only where its shingles are gone, and on wall sheathing only
+  windward edge, −0.5 to 2h, −0.3 beyond; blended by cos²/sin² of the wind's angle to the
+  ridge. The windward edge is where the standing roof begins: the gable while the whole roof
+  stands, the leading edge of what's left once part of it is gone (the flow separates there;
+  a gap of more than 1.5 rafter bays starts a new edge), so a roof that starts to go unzips. Wind acts on the roof deck only where its shingles are gone, and on wall sheathing only
   where its siding is gone. Siding has a vented cavity behind it: it feels outside pressure
   only (no internal pressure, no APC).
 - **APC** (Spec 02): the inside deficit lags the outside one (τ 2 s sealed, 0.05 s once any
@@ -425,6 +427,10 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   over 1 or 3 workers gives identical results.
 - **STR-30** *(validation)*: Over a 30-house core passage, the costliest physics group's
   detail step averages under 16 ms (real time when groups run in parallel).
+- **STR-31**: Roof follow-through: the along-ridge roof pressure is measured from the windward
+  edge of the roof still standing (the last rafter pair before a gap of more than 1.5 bays, or
+  the gable); in a rising wind from any direction, a lab house goes from a third of its rafter
+  pairs gone to two thirds, and from there to half its wall frames down, within ~15 mph each.
 - **STR-24** *(validation)*: Standard detailed houses passed through simulated strong
   tornadoes (the Spec 03 calibration cases) reach each DOD at a Kaplan–Meier median peak wind
   within ±10% of the DI 2 expected value (DOD 5, not represented, is reached with DOD 6), on a
@@ -460,6 +466,26 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   on other pieces or other slabs).
 
 ## Changelog
+
+- v0.14: detail steps can carry launches (`DetailStep.launches`, Spec 12): the listed members of a
+  house become one free body at a point with a velocity, through the same body-making code as
+  members torn loose, with their contacts counting at once; an entering house may name its
+  physics group (default: its street row).
+- v0.13: roof follow-through (STR-31): the along-ridge roof suction zones are measured from the
+  standing roof's windward edge, not the original gable. Before, once the windward part of a
+  roof was gone the rest sat in the mild −0.3 zone and stayed up ~30 mph longer than DI 2 says
+  (DOD 6 → DOD 7: 122 → 132 mph); walls, braced by whatever roof remained, stood with it.
+
+- v0.12: wall-to-sill nailing at its mean ultimate (6.5 kN/m, was 4 kN/m, a design-level value),
+  at the user's request to make detailed and town houses look alike. Before, a wall frame tore
+  off its sill under roof uplift before the roof's toe-nails let go, and the whole house came
+  down in one step (DOD 7 at ~97 mph in some houses). Validation (STR-24, 128 houses) now:
+  DOD 1–6 within 5%, DOD 9 +3%, DOD 10 −1%, but DOD 7 +20% and DOD 8 +11% (outside ±10%):
+  walls only lose their bracing as the rest of the roof comes off, which the detail model
+  spreads over ~30 mph (DI 2: ~10 mph). Wall base moment (1.3–2.5 kN·m/m) makes no difference.
+  Open: how fast the rest of a roof follows once part of it is gone. Light pieces hit and stop
+  at the houses around the zone (Spec 10 v0.6–v0.9); glass breaks by impact (Spec 10 IMP-21);
+  soft CCD on loose pieces; fixed shapes in one collision group.
 
 - v0.11: detail zone performance at the user's request (keep the detail, make it faster):
   Rapier SIMD build, body-frame wind on rigid pieces, resting rubble, entry spread over steps,

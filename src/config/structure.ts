@@ -82,8 +82,11 @@ export const CONNECTION = {
   boltSpacing: 1.83,
   /** Each stud end-nailed into the sill plate (2 × 16d, withdrawal and shear). */
   studToPlateN: 1000,
-  /** Wall sheathing nailed along the sill plate (8d at 6 in., ~0.6 kN each in shear), per metre. */
-  sheathingToSillNPerM: 4000,
+  /** Wall sheathing nailed along the sill plate, per metre: 8d common at 6 in. (6.56 per metre),
+   *  each ~1.0 kN mean ultimate in lateral load through 7/16 in. OSB into SPF lumber (NDS design
+   *  value ~0.4 kN × the usual 2.5–3 ultimate-to-design ratio). Was 4 kN/m (a design-level
+   *  value), which let walls tear off their sills before the roof's toe-nails let go. */
+  sheathingToSillNPerM: 6500,
   /** First and last bolt within 12 in of the plate ends (IRC R403.1.6). */
   boltEndDistance: 0.3,
   /** Gable-end bottom plate to the end wall's top plate: 16d face nails at 16 in. (0.4 m),
@@ -172,6 +175,10 @@ export const DETAIL_FRAGILITY = {
 
 /** Detail zone in town (Spec 09 slice B). */
 export const DETAIL = {
+  /** Each physics group builds solid stand-ins up front for the houses within this distance of
+   *  its own houses (m), and more near moving pieces as they fly (Spec 10 v0.6). Heavy pieces
+   *  (wall frames, roof chunks) seldom go over ~100 m. */
+  townReach: 100,
   /** Entering houses' colliders built per detail step, in entry order (a house has ~1,150;
    *  ~7 ms each in Node, so 400 ≈ 2–3 ms a step instead of a ~30 ms spike per house). */
   buildCollidersPerStep: 400,

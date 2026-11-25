@@ -16,8 +16,16 @@ import { qconj, qrot } from "../core/structure/framing";
 import { pressureDeficit } from "../core/wind/pressure";
 import type { TerrainClass, TornadoState } from "../core/wind/types";
 import { windAt } from "../core/wind/windField";
-import { streetRowOf } from "./city";
+import { CITY, streetRowOf } from "./city";
+import { LOCAL_NORMALS } from "../core/damage/layout";
+import { buildTownColliders, townCopy } from "./townColliders";
+import type { TownState } from "./townColliders";
+
+/** Validation scripts only: give each detailed house its own physics world (no neighbor hits),
+ *  to measure how much a street row's shared debris adds to the damage. */
+export const detailOptions = { worldPerHouse: false };
 import { DetailHouse, StructureWorld } from "./structureWorld";
+import type { TownHit } from "./structureWorld";
 import type { WindSource } from "./structureWorld";
 
 /** Houses entering and leaving the zone this detail step (indices into the building list). */
@@ -34,15 +42,23 @@ export class ZoneSelector {
   private focusKey = "";
   private chosen: number[] = [];
 
+  /** @param maxHouses How many houses the zone takes (DETAIL.maxHouses; fewer in fast tests).
+   *  @param fixed Exactly these houses, wherever the spot is (the wind tunnel, Spec 12). */
+  constructor(
+    private readonly maxHouses: number = DETAIL.maxHouses,
+    private readonly fixed?: readonly number[],
+  ) {}
+
   /** The houses around the detail spot: the N nearest it (ties by index). */
   private around(focus: { x: number; z: number }, buildings: readonly Building[]): number[] {
+    if (this.fixed) return [...this.fixed];
     const key = `${focus.x},${focus.z},${buildings.length}`;
     if (key !== this.focusKey) {
       this.focusKey = key;
       this.chosen = buildings
         .map((b, i) => [Math.hypot(b.x - focus.x, b.z - focus.z), i] as const)
         .sort((p, q) => p[0] - q[0] || p[1] - q[1])
-        .slice(0, DETAIL.maxHouses)
+        .slice(0, this.maxHouses)
         .map(([, i]) => i);
     }
     return this.chosen;
@@ -84,7 +100,7 @@ export class ZoneSelector {
     }
     cands.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     for (const [, i] of cands) {
-      if (this.active.size >= DETAIL.maxHouses || ops.enter.length >= DETAIL.maxEnterPerStep) break;
+      if ((!this.fixed && this.active.size >= this.maxHouses) || ops.enter.length >= DETAIL.maxEnterPerStep) break;
       this.active.add(i);
       ops.enter.push(i);
     }
@@ -98,9 +114,28 @@ export interface DetailStep {
   n: number;
   tornado: TornadoState;
   terrain: TerrainClass;
-  /** Entering houses with the members their component failures already removed. */
-  enter: { index: number; removed: number[] }[];
+  /** Entering houses with the members their component failures already removed, and the
+   *  physics group to put them in (default: their street row). */
+  enter: { index: number; removed: number[]; group?: string }[];
+  /** Launches (Spec 12): members of a house sent flying as one free body. */
+  launches?: DetailLaunch[];
   exit: number[];
+  /** Houses around the zone whose state changed since last sent (Spec 10 v0.6). */
+  town?: TownState[];
+  /** The town's debris hitting detailed houses (Spec 10 slice B): pane breaks and wall pushes. */
+  debrisHits?: { index: number; surface: string; component: number; face: number; broke: boolean; perforated?: boolean; force: number }[];
+}
+
+/** A launch in the detail zone (Spec 12): house `index`'s `members` become one free body whose
+ *  center is at `center`, moving at `vel` (m/s) and spinning at `spin` (rad/s), turned so the
+ *  group's longest axis lies along `axis` if given. */
+export interface DetailLaunch {
+  index: number;
+  members: number[];
+  center: Vec3;
+  vel: Vec3;
+  spin: Vec3;
+  axis?: Vec3;
 }
 
 /** What changed in one detail step. */
@@ -118,6 +153,8 @@ export interface DetailResult {
   failures: Int32Array;
   /** The new failures themselves (for the inspector). */
   failLog: { house: number; label: string; load: number; capacity: number; mph: number }[];
+  /** Hits on houses around the zone this step (Spec 10 slice B), in order. */
+  townHits: TownHit[];
   /** Wall-clock time the step took (ms), for the status line (not part of the results). */
   ms: number;
   /** Wall-clock time of the costliest physics group's step (ms; not part of the results). */
@@ -146,12 +183,117 @@ export class DetailEngine {
       this.tornado ? pressureDeficit(Math.hypot(x - this.tornado.center.x, z - this.tornado.center.z), this.tornado) : 0,
   };
 
+  /** The engine's copies of the houses around the zone (never the sim's objects), a grid of
+   *  them for light pieces, and a version per house that increases with each new state. */
+  private readonly town = new Map<number, Building>();
+  private readonly townGrid = new Map<string, Building[]>();
+  private readonly townIndex = new Map<Building, number>();
+  private readonly townVersion = new Map<number, number>();
+  /** Per physics group: the version of each house its stand-ins were built from. */
+  private readonly builtVersion = new WeakMap<StructureWorld, Map<number, number>>();
+
   constructor(private readonly buildings: readonly Building[]) {}
+
+  private townNear = (x: number, z: number): readonly Building[] =>
+    this.townGrid.get(`${Math.floor(x / CITY.cell)},${Math.floor(z / CITY.cell)}`) ?? NONE;
+
+  /** Apply house states from the sim (Spec 10 v0.6). */
+  private applyTown(states: readonly TownState[]): void {
+    for (const st of states) {
+      const had = this.town.get(st.index);
+      const c = townCopy(this.buildings[st.index]!, st, had);
+      if (!had) {
+        this.town.set(st.index, c);
+        this.townIndex.set(c, st.index);
+        const r = Math.hypot(c.width, c.depth) / 2 + 3;
+        for (let i = Math.floor((c.x - r) / CITY.cell); i <= Math.floor((c.x + r) / CITY.cell); i++)
+          for (let j = Math.floor((c.z - r) / CITY.cell); j <= Math.floor((c.z + r) / CITY.cell); j++) {
+            const k = `${i},${j}`;
+            const list = this.townGrid.get(k);
+            if (list) list.push(c);
+            else this.townGrid.set(k, [c]);
+          }
+      }
+      this.townVersion.set(st.index, (this.townVersion.get(st.index) ?? 0) + 1);
+    }
+  }
+
+  /** Hook a new physics group up to the houses around the zone. */
+  private attachTown(sw: StructureWorld): void {
+    const built = new Map<number, number>();
+    this.builtVersion.set(sw, built);
+    sw.townNear = this.townNear;
+    const build = (i: number, c: Building) => {
+      const old = sw.townColliders.get(i);
+      if (old)
+        for (const col of old) {
+          sw.townHouseOf.delete(col.handle);
+          sw.townPlaneOf.delete(col.handle);
+          sw.world.removeCollider(col, false);
+        }
+      const cols = buildTownColliders(sw.world, c, sw.townPlaneOf);
+      for (const col of cols) sw.townHouseOf.set(col.handle, { x: c.x, z: c.z, index: i });
+      sw.townColliders.set(i, cols);
+      built.set(i, this.townVersion.get(i) ?? 0);
+    };
+    // Pieces that fly farther than the houses built up front: build what's around them.
+    sw.ensureTown = (x, z) => {
+      for (const c of this.townNear(x, z)) {
+        const i = this.townIndex.get(c)!;
+        if (sw.townColliders.has(i) || sw.houses.some((h) => h.building.id === c.id)) continue;
+        if (Math.hypot(x - c.x, z - c.z) > Math.hypot(c.width, c.depth) / 2 + 30) continue;
+        build(i, c);
+      }
+    };
+    // Changes are applied just before the physics step: Rapier's queries only see added or
+    // removed colliders after a step, so rebuilding earlier would leave a one-step gap.
+    // The houses this group watches: within reach of its own houses (found when its houses
+    // change) and any it has built stand-ins for.
+    let reachFor = -1;
+    let reach: number[] = [];
+    sw.beforePhysics = () => {
+      if (reachFor !== sw.houses.length) {
+        reachFor = sw.houses.length;
+        const set = new Set<number>();
+        for (const h of sw.houses)
+          for (let gx = -1; gx <= 1; gx++)
+            for (let gz = -1; gz <= 1; gz++)
+              for (const c of this.townNear(h.building.x + gx * CITY.cell * 2, h.building.z + gz * CITY.cell * 2)) {
+                if (Math.hypot(h.building.x - c.x, h.building.z - c.z) < DETAIL.townReach) set.add(this.townIndex.get(c)!);
+              }
+        reach = [...set].sort((a, b) => a - b);
+      }
+      const watch = new Set<number>(reach);
+      for (const i of sw.townColliders.keys()) watch.add(i);
+      for (const i of [...watch].sort((a, b) => a - b)) {
+        const c = this.town.get(i)!;
+        const own = sw.houses.find((h) => h.building.id === c.id);
+        if (own) {
+          // One of this world's own houses: its stand-ins go once its members are all built.
+          const old = own.complete ? sw.townColliders.get(i) : undefined;
+          if (old) {
+            for (const col of old) {
+              sw.townHouseOf.delete(col.handle);
+              sw.townPlaneOf.delete(col.handle);
+              sw.world.removeCollider(col, false);
+            }
+            sw.townColliders.delete(i);
+          }
+          continue;
+        }
+        const has = sw.townColliders.has(i);
+        if (has && built.get(i) === this.townVersion.get(i)) continue;
+        build(i, c);
+      }
+    };
+  }
 
   step(msg: DetailStep): DetailResult {
     const t0 = performance.now();
     this.tornado = msg.tornado;
     this.terrain = msg.terrain;
+    for (const sw of this.worlds.values()) sw.terrain = msg.terrain;
+    if (msg.town?.length) this.applyTown(msg.town);
     const poses: number[] = [];
     const push = (i: number, h: DetailHouse, id: number) => {
       const p = h.memberPose(id);
@@ -159,10 +301,12 @@ export class DetailEngine {
     };
     for (const e of msg.enter) {
       const b = this.buildings[e.index]!;
-      const key = streetRowOf(b);
+      const key = detailOptions.worldPerHouse ? `house:${e.index}` : (e.group ?? streetRowOf(b));
       let sw = this.worlds.get(key);
       if (!sw) {
         sw = new StructureWorld();
+        sw.terrain = msg.terrain;
+        this.attachTown(sw);
         this.worlds.set(key, sw);
       }
       this.worldOf.set(e.index, sw);
@@ -178,7 +322,33 @@ export class DetailEngine {
       const h = this.houses.get(i);
       if (h) h.releasedAt = this.worldOf.get(i)!.time;
     }
+    // The town's debris hitting detailed houses: a broken pane breaks; a push on a wall loads
+    // that wall's frame (as a contact force, through the load path).
+    for (const d of msg.debrisHits ?? []) {
+      const h = this.houses.get(d.index);
+      if (!h || h.frozen) continue;
+      const b = h.building;
+      // A perforation is a hole in the envelope (Spec 10 v0.12): face 0–3, or 4 for the roof.
+      if (d.perforated) h.addHole(d.face);
+      if (d.surface === "pane" && d.broke) {
+        const panel = b.panes[d.component]?.panel;
+        const shard = h.framing.members.find((m) => m.kind === "pane" && m.panel === panel && h.isAttached(m.id));
+        if (shard) h.hitGlass(shard.id, Infinity, "compact");
+      } else if (d.force > 0 && (d.surface === "wall" || d.surface === "gable" || d.surface === "garage")) {
+        const kind = d.surface === "gable" ? "gableFrame" : "wallFrame";
+        const m = h.framing.members.find((q) => q.kind === kind && (kind === "gableFrame" ? q.face === d.face : q.panel === d.component) && h.isAttached(q.id));
+        if (!m) continue;
+        // Inward, along the face's normal (house-local → world).
+        const n = LOCAL_NORMALS[d.face]!;
+        const c = Math.cos(b.yaw);
+        const sn = Math.sin(b.yaw);
+        h.addContact(m.id, -(n.x * c + n.z * sn) * d.force, 0, -(-n.x * sn + n.z * c) * d.force);
+      }
+    }
+    // Launches (Spec 12), for the houses this engine has.
+    for (const l of msg.launches ?? []) this.houses.get(l.index)?.launch(l.members, l.center, l.vel, l.spin, l.axis);
     let groupMs = 0;
+    const townHits: TownHit[] = [];
     for (const sw of this.worlds.values()) {
       const t = performance.now();
       try {
@@ -187,6 +357,8 @@ export class DetailEngine {
         this.phase = sw.phase;
       }
       groupMs = Math.max(groupMs, performance.now() - t);
+      townHits.push(...sw.townHits);
+      sw.townHits.length = 0;
     }
 
     const dods: number[] = [];
@@ -250,7 +422,12 @@ export class DetailEngine {
         sw.dispose();
         this.worlds.delete(key);
       }
-    return { n: msg.n, poses: new Float32Array(poses), dods: new Int32Array(dods), frozen, failures: new Int32Array(failures), failLog, ms: performance.now() - t0, groupMs };
+    return { n: msg.n, poses: new Float32Array(poses), dods: new Int32Array(dods), frozen, failures: new Int32Array(failures), failLog, townHits, ms: performance.now() - t0, groupMs };
+  }
+
+  /** The physics world a house is in (tests and the wind tunnel). */
+  worldFor(index: number): StructureWorld | undefined {
+    return this.worldOf.get(index);
   }
 
   dispose(): void {
@@ -258,6 +435,8 @@ export class DetailEngine {
     this.worlds.clear();
   }
 }
+
+const NONE: readonly Building[] = [];
 
 function removedFlags(ids: number[], into: boolean[]): boolean[] | undefined {
   if (!ids.length) return undefined;

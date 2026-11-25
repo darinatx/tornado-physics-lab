@@ -272,6 +272,9 @@ describe("Spec 09 slice B — detail zone", () => {
         // Just handed off: one step's motion from where it was, same orientation, same speed.
         // (Small pieces near the ground may be laid flat: barely visible, and allowed.)
         if (piece.def.dims[0] < DETAIL.smallPieceM && piece.grounded) continue;
+        // (A piece whose first step ran into something fixed was stopped there: a collision,
+        // not the hand-off — Spec 10 v0.6.)
+        if (piece.blocked) continue;
         const b = before.get(id)!;
         const a = h.memberPose(id);
         const dt = 1 / 60;
@@ -294,4 +297,51 @@ describe("Spec 09 slice B — detail zone", () => {
     expect(h.groupBodies.size).toBeLessThan(60); // once the wind has passed
     sw.dispose();
   }, 300000);
+  test("IMP-21: glass in a detailed house breaks by impact momentum above its threshold, whole pane at once", async () => {
+    const { glassThreshold } = await import("../../src/core/impact/impact");
+    const sw = new StructureWorld();
+    const b = exactHouse();
+    const h = sw.addHouse(b);
+    const shard = h.framing.members.find((m) => m.kind === "pane")!;
+    const paneIdx = b.panes.findIndex((q) => q.panel === shard.panel);
+    const th = glassThreshold(b, paneIdx, "compact");
+    const shards = h.framing.members.filter((m) => m.kind === "pane" && m.pane === shard.pane);
+    expect(h.hitGlass(shard.id, th * 0.98, "compact")).toBe(false);
+    expect(shards.every((m) => h.isAttached(m.id))).toBe(true);
+    expect(h.hitGlass(shard.id, th * 1.02, "compact")).toBe(true);
+    expect(shards.every((m) => !h.isAttached(m.id))).toBe(true);
+    // Other panes are untouched.
+    expect(h.framing.members.filter((m) => m.kind === "pane" && m.pane !== shard.pane).every((m) => h.isAttached(m.id))).toBe(true);
+    sw.dispose();
+  });
+  test("IMP-20: town debris on a detailed house reaches the engine (pane breaks); stand-in hits are forwarded", async () => {
+    const { DetailEngine } = await import("../../src/sim/detailZone");
+    const { DetailStandIns } = await import("../../src/sim/detailStandIns");
+    const { resolveImpact } = await import("../../src/core/impact/impact");
+    const { createRng } = await import("../../src/sim/rng");
+    const b = exactHouse();
+    b.detail = true;
+    // Town debris hits the detailed house's stand-in: the hit is queued there and forwarded.
+    const s = new DetailStandIns();
+    s.add(0, b, buildFraming(b));
+    const pane = 0;
+    const face = b.panels[b.panes[pane]!.panel]!.face;
+    const hit = resolveImpact(b.standIn!, { kind: "pane", index: pane, face }, { label: "Shingle", family: "sheet", mass: 1, dims: [1, 0.33, 0.005] }, 15, createRng(1))!;
+    expect(hit.impact.broke).toBe(true);
+    b.standIn!.impacts.push(hit.impact);
+    s.advance(0);
+    expect(s.forward).toHaveLength(1);
+    // The engine breaks that pane.
+    const e = new DetailEngine([b]);
+    const t = tornado(-5000);
+    e.step({ n: 0, tornado: t, terrain: "open", enter: [{ index: 0, removed: [] }], exit: [] });
+    for (let n = 1; n < 6; n++) e.step({ n, tornado: t, terrain: "open", enter: [], exit: [] });
+    const h = e.houses.get(0)!;
+    const shards = h.framing.members.filter((m) => m.kind === "pane" && m.panel === b.panes[pane]!.panel);
+    expect(shards.every((m) => h.isAttached(m.id))).toBe(true);
+    const q = s.forward[0]!.impact;
+    e.step({ n: 6, tornado: t, terrain: "open", enter: [], exit: [], debrisHits: [{ index: 0, surface: q.surface, component: q.index, face: q.face, broke: q.broke, force: q.force }] });
+    expect(shards.every((m) => !h.isAttached(m.id))).toBe(true);
+    e.dispose();
+  });
 });
