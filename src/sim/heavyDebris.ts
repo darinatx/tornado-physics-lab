@@ -15,7 +15,7 @@ import type { HeavySink } from "../core/debris/field";
 import type { Piece } from "../core/debris/piece";
 import type { Vec3 } from "../core/math/vec";
 import { rigidAero } from "../core/structure/aero";
-import { overSlab } from "../core/impact/envelope";
+import { lyingOnSlab, overSlab } from "../core/impact/envelope";
 import { IMPACT } from "../config/impacts";
 import type { BodyPlate } from "../core/structure/aero";
 import type { TerrainClass, TornadoState } from "../core/wind/types";
@@ -400,6 +400,42 @@ export class HeavyDebris implements HeavySink {
     }
     this.bodies.length = j;
     this.ms.poses += performance.now() - t0;
+  }
+
+  /**
+   * House `index`'s slab was swept (Spec 04 v2.3): bodies lying on it, at rest or creeping
+   * (below HEAVY.creepSpeed), are carried off with it, and so are its own pieces still coming
+   * down over it at any speed (what is left of the house). Other faster ones are left to the wind.
+   */
+  sweep(index: number): void {
+    const b = this.buildings[index];
+    if (!b) return;
+    const roofTop = IMPACT.slabTop + b.wallHeight + b.roofRise;
+    let j = 0;
+    for (const h of this.bodies) {
+      const t = h.body.translation();
+      const v = h.body.linvel();
+      const at = { x: t.x, y: t.y, z: t.z };
+      const lying = Math.hypot(v.x, v.y, v.z) < HEAVY.creepSpeed && lyingOnSlab(b, at);
+      const ownFalling = h.source === index && at.y < roofTop && overSlab(b, at);
+      if (lying || ownFalling) {
+        this.byCollider.delete(h.collider.handle);
+        this.world.removeRigidBody(h.body);
+        const p = h.p;
+        p.pos = at;
+        p.rigid = false;
+        p.resting = true;
+        p.grounded = true;
+        p.vel = { x: 0, y: 0, z: 0 };
+        p.restedAt = this.time;
+        p.settleNow = true;
+        p.hidden = true;
+        p.swept = true;
+        continue;
+      }
+      this.bodies[j++] = h;
+    }
+    this.bodies.length = j;
   }
 
   /**

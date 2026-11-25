@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v2.0) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
+Status: Approved (v2.3) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
 
 ## Purpose
 
@@ -131,7 +131,7 @@ house is what you saw fail:
 | Garage door | one door panel, 12 kg/m² |
 | Wall panel | one wall panel of its size, 25 kg/m², tipping in its fall direction |
 | Partition | 2 studs and 2 wall chunks |
-| Slab swept | 4 studs and 6 chunks; that house's rubble on the slab is carried off |
+| Slab swept | 4 studs and 6 chunks; everything lying on the slab is carried off (v2.3) |
 
 Pieces with house-specific sizes compute drag and lift from their own dimensions (same
 formulas as the table above).
@@ -148,6 +148,16 @@ full of flying pieces, a component piece is placed as rubble rather than dropped
 
 **Mass bookkeeping:** every component has a mass, and each house's failed mass is split into
 rubble, ground debris, flying debris and lofted debris.
+
+### Far from the core (v2.2)
+
+A flying piece more than `farStepRmax` (1.5) core radii from the tornado's center is advanced on
+every other debris step (30 Hz), by the time since it last was; on alternate steps by its id, so
+half of them are stepped each time. The wind out there changes over seconds, not tenths. A piece
+that comes nearer is stepped every step again.
+
+Decision: at the light-debris peak of an EF5 (~3,000 flying pieces, 83% of the sim's compute),
+96% of the flying pieces are beyond 1.5 core radii.
 
 ### Heavy pieces are rigid bodies (v2.0)
 
@@ -181,8 +191,39 @@ step on the sim thread, the same treatment the detail zone gives its members abo
   included (as the detail zone's loose bodies); 8 solver iterations.
 - **Bookkeeping:** it is a piece like any other (mass ledger, rendering, pass-through checks);
   the point model skips it while it is rigid.
+- **Swept slab (v2.3):** when a town house's slab is swept (DOD 10), what lies on it is carried
+  off (counted as swept mass): its own rubble, any house's pieces lying there in the permanent
+  debris field (retired heavy ones included), heavy pieces at rest or creeping on it (below
+  3 m/s) in the heavy world, and its own heavy pieces still falling or sliding over its slab
+  (any speed, below its roof's top), including those that failed in the same step as the sweep. Light pieces still in the active pool are left to the point
+  model, which re-checks resting pieces against the wind. "On it" is the slab's footprint and below 1.5 m above its top, as
+  Spec 09's DOD 10 survey. Heavy pieces moving faster are left to the wind.
+
+**Where it runs (v2.1):** the heavy-debris world runs in a Web Worker in the app (in-process in
+tests and tools), beside the sim, like the detail zone (Spec 09). Each debris step the sim
+sends it the step's tornado, the new heavy pieces (dimensions, mass, pose, velocity, house) and
+the houses whose state changed since it last sent them (Spec 10's town states; a detailed house
+as its stand-in); the engine keeps its own copies of the houses. It returns each moving piece's
+pose and velocity, which pieces came to rest, woke or were retired, and the hits on houses. The
+sim applies a step's results **8 debris steps (0.13 s) after it**, whatever the worker's timing,
+and never runs further ahead than that (it slows down instead): a new heavy piece stays where it
+appeared for 0.13 s, then moves, always 0.13 s behind; its hits damage houses 0.13 s late. Same
+seed and inputs → same results in-process, in a worker, or lagging by a varying amount.
 
 Decisions:
+- **A swept slab takes heavy pieces too (v2.3):** since v2.0 heavy rubble left the rubble list
+  the sweep clears, so EF5 slabs rated DOD 10 kept their wall panels and roof sections. A flat
+  panel on a slab shows the wind little area, and the 400-body cap retires sleepers to the
+  permanent field, so the wind alone leaves them there. The sweep's threshold is the load that
+  carries the house's last contents off (Spec 03), so it carries off what lies on the slab too.
+  The engine does it the step it learns of the sweep; pieces it retired in the lag before that
+  are caught as their results arrive, so nothing depends on timing. Its own pieces still coming
+  down over it go too: they are what is left of the house the sweep load acts on (before, 5
+  panels torn off in the last 0.2 s before a sweep landed on 3 of 25 swept slabs in an EF5).
+- **A worker, with a fixed lag:** the heavy world was up to ~65% of the sim's compute late in an
+  EF5 (≈2,000 moving bodies), all on the thread that also draws. The lag keeps the run
+  deterministic (the detail zone's mechanism); 0.13 s leaves room for 4× sim speed at 60 frames
+  a second.
 - **Same physics for heavy debris in both house models.** The paired comparison (Phase 6) showed
   destroyed town houses leaving ~1% of their material within 5 m against 20–48% for detailed
   ones: as points, 300 kg wall panels slid and skimmed with the tornado for ~1.3 km. A box with
@@ -318,6 +359,19 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 - **DEB-25**: A resting heavy piece wakes only when the wind on it could lift it or push it past
   friction, and is retired to the permanent debris field once the tornado is out of range;
   same seed and inputs → identical heavy-piece poses.
+- **DEB-26**: The heavy-debris world's results are applied 8 debris steps after their step: the
+  same run gives identical heavy-piece poses and house damage with the engine in-process, run
+  late by a varying amount, or (by the same code path) in a worker; the sim never runs more than
+  8 steps ahead of it.
+- **DEB-28**: A swept slab is clean: when a town house's slab is swept, no piece is left lying
+  on it (footprint, below 1.5 m above its top) — heavy ones at rest in the heavy world, retired
+  to the debris field before or during the 8-step lag, and any house's pieces in the permanent
+  debris field, and the house's own heavy pieces over its slab below its roof's top at any speed — and
+  their mass counts as swept; another house's heavy piece moving above 3 m/s and pieces beside
+  the slab stay.
+- **DEB-27**: Flying pieces beyond 1.5 core radii are advanced every other step by twice the
+  step: a cloud of pieces far from the core ends up where it does stepped every step (mean
+  position within 2% of the distance travelled), and each piece is stepped on half the steps.
 - **DEB-08**: Same seed and same failures → identical debris trajectories.
 
 ## Simplifications / out of scope
@@ -331,6 +385,11 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- v2.3: a swept slab carries off every piece lying on it, heavy ones included (DEB-28): since
+  v2.0 heavy rubble wasn't on the list the sweep cleared, so DOD 10 slabs kept their panels.
+- v2.2: pieces far from the core advanced at 30 Hz (DEB-27), for speed (an EF5 was very slow).
+- v2.1: the heavy-debris world runs beside the sim (a worker in the app), its results applied at a
+  fixed 8-step lag (DEB-26), at the user's request: an EF5 was very slow.
 - v2.0: heavy pieces as rigid bodies (DEB-22–25), at the user's request to make town and
   detailed houses look alike: destroyed town houses left almost no rubble (wall panels and roof
   sections skimmed off with the tornado for ~1.3 km).

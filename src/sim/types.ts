@@ -74,6 +74,8 @@ export interface SimSnapshot {
 }
 
 export interface SimConfig {
+  /** Where the heavy-debris engine runs (Spec 04 v2.1): default in-process; a worker in the app. */
+  heavy?: (seed: number, buildings: readonly import("../core/damage/types").Building[], dt: number) => import("./heavyBackend").HeavyBackend;
   dt: number;
   maxFrameDt: number;
   /** Generate the neighborhood (default true). Tests of the wind alone can turn it off. */

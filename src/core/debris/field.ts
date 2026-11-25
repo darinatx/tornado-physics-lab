@@ -13,7 +13,7 @@ import type { TerrainClass, TornadoState } from "../wind/types";
 import { windAt } from "../wind/windField";
 import { bumpKick, isSliding, restingForces, snag, stepPiece, supportHeight, wakeIfForced } from "./piece";
 import { IMPACT } from "../../config/impacts";
-import { clipEnvelope, clipSlab, hasEnvelope, insideLocal, overSlab, planesOf, slabHalf, surfaceAt } from "../impact/envelope";
+import { clipEnvelope, clipSlab, hasEnvelope, insideLocal, lyingOnSlab, overSlab, planesOf, slabHalf, surfaceAt } from "../impact/envelope";
 import type { EnvelopeHit, Extent, ImpactTargets, Surface } from "../impact/envelope";
 import { resolveImpact } from "../impact/impact";
 import { bounce, floorUnder, halfExtentAlong, unbury } from "../impact/contact";
@@ -352,11 +352,21 @@ export class DebrisField {
         p.q = quatFromBasis(xw, up, cross(xw, up));
       } });
     } else if (rec.part === "sweep") {
-      // The slab is swept: rubble lying on it goes with it.
-      for (const r of this.rubbleOf.get(b.id) ?? []) {
-        if (r.hidden) continue;
+      // The slab is swept: its rubble goes with it, and everything else lying on it in the
+      // permanent debris field, other houses' pieces and retired heavy ones included (Spec 04
+      // v2.3). Heavy pieces still in the heavy-debris world are swept there.
+      const take = (r: Piece) => {
+        if (r.hidden) return;
         r.hidden = true;
+        r.swept = true;
         this.massSwept += r.def.mass * r.represents;
+      };
+      for (const r of this.rubbleOf.get(b.id) ?? []) take(r);
+      const reach = (Math.hypot(b.width, b.depth) / 2 + IMPACT.slabMargin + 1) ** 2;
+      for (const r of this.settled) {
+        const dx = r.pos.x - b.x;
+        const dz = r.pos.z - b.z;
+        if (dx * dx + dz * dz < reach && !r.hidden && lyingOnSlab(b, r.pos)) take(r);
       }
       this.settledVersion++;
     }
@@ -429,8 +439,13 @@ export class DebrisField {
   }
 
   /** Advance all airborne pieces; re-check resting ones near the tornado when asked. */
+  /** Pieces beyond this many core radii are advanced every other step (Spec 04 v2.2). */
+  farRmax: number = DEBRIS.farStepRmax;
+  private stepNo = 0;
+
   step(dt: number, s: TornadoState, terrain: TerrainClass, checkResting: boolean, time = 0, cloudBase = Infinity, targets?: ImpactTargets): void {
     this.lastTime = time;
+    this.stepNo++;
     if (targets) this.targets = targets;
     const range = DEBRIS.settleRangeRmax * s.rMax;
     const probe = { x: 0, y: DEBRIS.restSampleHeight as number, z: 0 };
@@ -475,21 +490,31 @@ export class DebrisField {
           p.pos.y += floor;
         }
         if (p.resting) {
+          p.steppedTo = time + dt;
           resting++;
           continue;
         }
       }
+      // Far from the core the wind changes slowly: such a piece is advanced every other step,
+      // by the time since it last was (Spec 04 v2.2), on alternate steps by its id.
+      const far = Math.hypot(p.pos.x - s.center.x, p.pos.z - s.center.z) > this.farRmax * s.rMax;
+      if (far && (this.stepNo + p.id) % 2 === 1 && p.steppedTo !== undefined && p.steppedTo >= time - 1e-9) {
+        airborne++;
+        continue;
+      }
+      const pdt = p.steppedTo === undefined ? dt : Math.min(Math.max(time + dt - p.steppedTo, dt), 2 * dt);
+      p.steppedTo = time + dt;
       // The ground under it: a slab top or the ground (Spec 10 v0.2).
       const floor = targets ? floorUnder(p, targets) : 0;
       // A piece lying on the ground feels the wind just above it, as resting pieces do (Spec 04 v1.6).
       const w = windAt(p.grounded ? { x: p.pos.x, y: Math.max(p.pos.y, floor + DEBRIS.restSampleHeight), z: p.pos.z } : p.pos, s, terrain);
-      this.updateGust(p, w, dt, terrain);
+      this.updateGust(p, w, pdt, terrain);
       w.x += p.gust.x;
       w.y += p.gust.y;
       w.z += p.gust.z;
       const fx = p.pos.x, fy = p.pos.y, fz = p.pos.z;
       p.pos.y -= floor;
-      stepPiece(p, w, dt);
+      stepPiece(p, w, pdt);
       p.pos.y += floor;
       // Houses in the way (Spec 10): bounce, break through a window, or lodge.
       if (targets && this.collide(p, { x: fx, y: fy, z: fz }, targets)) {
@@ -498,7 +523,7 @@ export class DebrisField {
         continue;
       }
       if (isSliding(p)) {
-        const d = Math.hypot(p.vel.x, p.vel.z) * dt;
+        const d = Math.hypot(p.vel.x, p.vel.z) * pdt;
         // Chance to catch on an obstacle grows with distance slid (mean free path by terrain).
         if (this.rng() < 1 - Math.exp(-d / DEBRIS.snagDistance[terrain])) {
           // Laid flat on whatever it was sliding on: the slab top or the ground.

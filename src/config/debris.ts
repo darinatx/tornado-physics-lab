@@ -110,6 +110,9 @@ export const DEBRIS = {
    * debris field; ground-level wind out there can no longer move them.
    */
   settleRangeRmax: 3,
+  /** Flying pieces beyond this many core radii from the center are advanced every other
+   *  debris step (30 Hz; Spec 04 v2.2): the wind out there changes over seconds. */
+  farStepRmax: 1.5,
   /** Bounce restitution on landing (only above minBounceSpeed). */
   restitution: 0.2,
   minBounceSpeed: 2,
@@ -210,7 +213,12 @@ export const HEAVY = {
   maxBodies: 400,
   creepSpeed: 3,
   creepY: 1,
-  /** The heavy-debris world steps every this many debris steps (1: 60 Hz). At 30 Hz contacts
-   *  went soft: thin sheets landing hard sank 2–40 cm into the ground and slabs. */
-  stepEvery: 1,
+  /** Debris steps after its step that the heavy-debris engine's results are applied (Spec 04
+   *  v2.1): 0.13 s, room for 4× sim speed at 60 frames a second. (It steps at the debris
+   *  rate, 60 Hz: at 30 Hz contacts went soft and thin sheets sank 2–40 cm into the ground.) */
+  lagSteps: 8,
+  /** m: a piece lies on a slab when over its footprint and below this above its top (Spec 04
+   *  v2.3; Spec 09's DOD 10 survey uses the same height). A swept slab carries such pieces off,
+   *  heavy ones moving slower than creepSpeed included. */
+  sweptHeight: 1.5,
 } as const;

@@ -1,6 +1,7 @@
 import { createRenderer } from "./render/renderer";
 import { createSim } from "./sim/loop";
 import { createWorkerBackend } from "./sim/detailBackend";
+import { createWorkerHeavy } from "./sim/heavyBackend";
 import { initRapier } from "./sim/structureWorld";
 import { createPanel } from "./ui/params";
 import { createProbeUI } from "./ui/probe";
@@ -9,9 +10,10 @@ import "./style.css";
 
 const app = document.getElementById("app")!;
 // Member-level detail zone in a worker (Spec 09 slice B).
-// Heavy debris moves as rigid bodies on this thread (Spec 04 v2.0): Rapier loads first.
+// Rapier for anything on this thread (the structure lab); heavy debris and the detail zone run
+// in workers (Spec 04 v2.1, Spec 09).
 await initRapier();
-const sim = createSim({}, undefined, {}, (seed, buildings) => createWorkerBackend(seed, buildings));
+const sim = createSim({ heavy: (seed, _buildings, dt) => createWorkerHeavy(seed, dt) }, undefined, {}, (seed, buildings) => createWorkerBackend(seed, buildings));
 const view = createRenderer(
   app,
   () => sim.world.buildings,

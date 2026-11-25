@@ -4,6 +4,7 @@
  */
 import { LAYOUT } from "../../config/buildings";
 import { IMPACT } from "../../config/impacts";
+import { HEAVY } from "../../config/debris";
 import type { Vec3 } from "../math/vec";
 import { faceTangent } from "../damage/layout";
 import type { Building, SurfaceKind } from "../damage/types";
@@ -286,6 +287,12 @@ function toSlabLocal(b: Building, p: Vec3): Vec3 {
 }
 
 /** Is a world point over the house's slab? */
+/** Lying on a slab (Spec 04 v2.3): over its footprint and less than HEAVY.sweptHeight above its
+ *  top. A swept slab carries off what lies on it. */
+export function lyingOnSlab(b: Building, p: Vec3): boolean {
+  return p.y < IMPACT.slabTop + HEAVY.sweptHeight && overSlab(b, p);
+}
+
 export function overSlab(b: Building, p: Vec3): boolean {
   const l = toSlabLocal(b, p);
   const h = slabHalf(b);

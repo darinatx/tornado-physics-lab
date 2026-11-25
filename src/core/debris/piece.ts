@@ -46,6 +46,10 @@ export interface Piece {
   rigid?: boolean;
   /** Retired from the heavy-debris world: the field moves it to the permanent debris field. */
   settleNow?: boolean;
+  /** Carried off with a swept slab it lay on (Spec 04 v2.3): hidden, counted as swept mass. */
+  swept?: boolean;
+  /** Sim time it has been advanced to (far pieces are advanced every other step). */
+  steppedTo?: number;
   /** Where its source house stands (m), for spreading representative copies (Spec 10). */
   origin?: { x: number; z: number };
   /** Stuck through a house surface (Spec 10): its key in the field's lodged list. */

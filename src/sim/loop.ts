@@ -19,7 +19,12 @@ import { DetailView } from "./detailBackend";
 import type { DetailBackend } from "./detailBackend";
 import { ZoneSelector } from "./detailZone";
 import { DetailStandIns } from "./detailStandIns";
-import { HeavyDebris } from "./heavyDebris";
+import type { HeavyDebris } from "./heavyDebris";
+import { createLocalHeavy, LagSweeps } from "./heavyBackend";
+import type { HeavyBackend } from "./heavyBackend";
+import { HEAVY_STATE, HEAVY_STRIDE } from "./heavyEngine";
+import type { HeavyResult, HeavyTake } from "./heavyEngine";
+import type { Piece } from "../core/debris/piece";
 import type { TownHit } from "./structureWorld";
 import { surfaceAt, toLocal } from "../core/impact/envelope";
 import type { PlaneId } from "../core/impact/envelope";
@@ -84,23 +89,118 @@ export function createSim(
   const withBuildings = config.buildings ?? true;
   let world: World = createWorld(seed, withBuildings, config.area, config.houses);
   let debris = new DebrisField(seed);
-  /** Heavy pieces as rigid bodies (Spec 04 v2.0), made when the first one is (needs Rapier). */
-  let heavy: HeavyDebris | null = null;
+  /**
+   * Heavy pieces as rigid bodies (Spec 04 v2.0), in the heavy-debris engine beside the sim (a
+   * worker in the app, Spec 04 v2.1), made when the first one is. Its results are applied
+   * HEAVY.lagSteps debris steps after their step, whatever its timing.
+   */
+  let heavy: HeavyBackend | null = null;
+  const heavyDt = dt * DEBRIS.stepInterval;
+  let heavyN = 0;
+  let heavyKey = 0;
+  const heavyPieces = new Map<number, Piece>();
+  let heavyTakes: HeavyTake[] = [];
+  let heavyResults: HeavyResult[] = [];
+  /** Each house's state version as last sent to the engine. */
+  let heavySent: number[] = [];
+  /** Swept slabs the engine hasn't caught up with (Spec 04 v2.3), and houses sent as swept. */
+  const lagSweeps = new LagSweeps();
+  let heavySwept: boolean[] = [];
   const attachHeavy = () => {
     debris.heavy = {
       take: (p, b, time) => {
         if (!heavy) {
           try {
-            heavy = new HeavyDebris(world.buildings, (x, z) => world.near(x, z), dt * DEBRIS.stepInterval * HEAVY.stepEvery);
+            heavy = config.heavy ? config.heavy(currentSeed, world.buildings, heavyDt) : createLocalHeavy(world.buildings, heavyDt);
           } catch (e) {
             throw new Error(`heavy debris needs Rapier: call initRapier() before running the sim (${(e as Error).message})`);
           }
+          heavySent = world.buildings.map(() => 0);
         }
-        heavy.take(p, b, time);
+        const key = heavyKey++;
+        heavyPieces.set(key, p);
+        heavyTakes.push({ key, label: p.def.label, dims: [p.def.dims[0], p.def.dims[1], p.def.dims[2]], mass: p.def.mass, pos: { ...p.pos }, q: [p.q[0], p.q[1], p.q[2], p.q[3]], vel: { ...p.vel }, source: indexById.get(b.id) ?? -1, time });
+        p.resting = false;
+        p.grounded = false;
       },
     };
   };
   attachHeavy();
+
+  /** One heavy-debris step: the houses changed since last sent, the new pieces. */
+  function heavyStep(pre: SimSnapshot): void {
+    if (!heavy) return;
+    const town: TownState[] = [];
+    world.buildings.forEach((b, i) => {
+      const k = revKey(b);
+      if (heavySent[i] !== k) {
+        heavySent[i] = k;
+        const st = townState(i, b);
+        town.push(st);
+        if (st.sweep && !heavySwept[i]) {
+          heavySwept[i] = true;
+          lagSweeps.sent(b, heavyN);
+        }
+      }
+    });
+    heavy.post({ n: heavyN++, tornado: pre.tornado, terrain: pre.terrain, time: pre.time, takes: heavyTakes, town });
+    heavyTakes = [];
+  }
+
+  /** Apply the heavy-debris results up to step `cutoff`, in step order. */
+  function applyHeavy(cutoff: number): void {
+    if (!heavy) return;
+    heavyResults.push(...heavy.drain());
+    let k = 0;
+    while (k < heavyResults.length && heavyResults[k]!.n <= cutoff) k++;
+    if (!k) return;
+    for (const r of heavyResults.splice(0, k)) {
+      const P = r.poses;
+      for (let o = 0; o < P.length; o += HEAVY_STRIDE) {
+        const p = heavyPieces.get(P[o]!);
+        if (!p) continue;
+        p.pos.x = P[o + 1]!;
+        p.pos.y = P[o + 2]!;
+        p.pos.z = P[o + 3]!;
+        p.q[0] = P[o + 4]!;
+        p.q[1] = P[o + 5]!;
+        p.q[2] = P[o + 6]!;
+        p.q[3] = P[o + 7]!;
+        p.vel.x = P[o + 8]!;
+        p.vel.y = P[o + 9]!;
+        p.vel.z = P[o + 10]!;
+        const st = P[o + 11]!;
+        if (st === HEAVY_STATE.moving) {
+          p.resting = false;
+          p.restedAt = Infinity;
+        } else if (st === HEAVY_STATE.resting) {
+          p.resting = true;
+          p.restedAt = curr.time;
+        } else {
+          // Retired: the debris field keeps it where it lies (or drops a lost one).
+          p.rigid = false;
+          p.resting = true;
+          p.grounded = true;
+          p.vel.x = p.vel.y = p.vel.z = 0;
+          p.restedAt = curr.time;
+          p.settleNow = true;
+          if (st === HEAVY_STATE.lost) p.hidden = true;
+          // Carried off with a swept slab: by the engine, or (retired before the engine learned
+          // of the sweep) here (Spec 04 v2.3).
+          if (st === HEAVY_STATE.swept || (st === HEAVY_STATE.retired && lagSweeps.catches(p.pos, r.n))) {
+            p.hidden = true;
+            p.swept = true;
+            debris.massSwept += p.def.mass * p.represents;
+          }
+          heavyPieces.delete(P[o]!);
+        }
+      }
+      // Its hits on houses, in a fixed order.
+      const hits = r.hits.sort((a, b) => a.house - b.house || a.point.x - b.point.x || a.point.z - b.point.z || a.point.y - b.point.y || a.vn - b.vn);
+      for (const h of hits) applyTownHit(h, "heavy");
+      lagSweeps.applied(r.n);
+    }
+  }
   /** Building id → index (impacts on stand-ins name the house by id). */
   let indexById = new Map<number, number>();
   const taps = config.taps;
@@ -314,11 +414,9 @@ export function createSim(
       }
       config.inject?.debris?.(pre.time, debris);
       // Heavy pieces first, so the debris field's counts see where they are now.
-      if (heavy && (stepCount / DEBRIS.stepInterval) % HEAVY.stepEvery === 0) {
-        heavy.step(pre.tornado, pre.terrain, pre.time);
-        // Their hits on houses, in a fixed order.
-        const hits = heavy.hits.splice(0).sort((a, b) => a.house - b.house || a.point.x - b.point.x || a.point.z - b.point.z || a.point.y - b.point.y || a.vn - b.vn);
-        for (const h of hits) applyTownHit(h, "heavy");
+      if (heavy) {
+        heavyStep(pre);
+        applyHeavy(heavyN - 1 - HEAVY.lagSteps);
       }
       debris.step(dt * DEBRIS.stepInterval, pre.tornado, pre.terrain, damageStep, pre.time, pre.cloudBase, world);
     }
@@ -333,6 +431,13 @@ export function createSim(
     debris = new DebrisField(currentSeed);
     heavy?.dispose();
     heavy = null;
+    heavyN = 0;
+    heavyKey = 0;
+    heavyPieces.clear();
+    heavyTakes = [];
+    heavyResults = [];
+    heavySwept = [];
+    lagSweeps.clear();
     attachHeavy();
     indexById = new Map(world.buildings.map((b, i) => [b.id, i]));
     if (taps) debris.onImpact = (b, q, p) => taps.impact?.(indexById.get(b.standInFor ?? b.id) ?? -1, q, "debris", p, stepCount * dt);
@@ -371,6 +476,12 @@ export function createSim(
           acc = Math.min(acc, dt);
           break;
         }
+        // …nor further ahead of the heavy-debris engine than its lag (Spec 04 v2.1).
+        if (heavy && (stepCount + 1) % DEBRIS.stepInterval === 0 && heavyN - 1 - heavy.done >= HEAVY.lagSteps) {
+          lagging = true;
+          acc = Math.min(acc, dt);
+          break;
+        }
         step();
         acc -= dt;
         if (detail) applyDetail();
@@ -405,7 +516,7 @@ export function createSim(
       return world;
     },
     /** Profiling only. */
-    _heavy: () => heavy,
+    _heavy: () => (heavy as { engine?: { debris: HeavyDebris } } | null)?.engine?.debris ?? null,
     get debris() {
       return debris;
     },
