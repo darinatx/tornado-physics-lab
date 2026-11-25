@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.9) — Phases 1–4
+Status: Approved (v1.10) — Phases 1–4
 
 ## Purpose
 
@@ -17,7 +17,8 @@ Phase 1 scope:
 - **Parameter panel, in plain language:**
   - *Basic* (open): strength, size, forward speed, heading, cloud base height.
   - *Display*: wind arrows, funnel, dust, probe height.
-  - *Run*: sim speed, camera follow, repeat, restart.
+  - *Run*: sim speed, camera follow, repeat (off by default), restart.
+  - Damage colors are off by default.
   - *Advanced physics* (collapsed): every other Spec 01 parameter.
 
   Every control has a hover tooltip explaining what it does in everyday terms.
@@ -25,25 +26,37 @@ Phase 1 scope:
   at the probe height (default 10 m):
   - wind speed (mph and m/s), EF rating and direction it blows from;
   - its parts: around the tornado, inward/outward, up/down;
-  - pressure drop (hPa);
+  - air pressure (mb) and its drop below the background (see Decisions 2);
   - wind pressure on a surface, q = ½ρV² (Pa and lb/ft²), which Spec 03 will use for damage;
   - distance from the center, and whether the spot is inside the core and left or right of
     the path.
 
-  Hovering over a house switches the tooltip to a **building inspector**: construction class,
-  current DOD with its description, estimated EF with the assigned speed, the DOD's range and
-  the reason for the rating (construction quality), peak wind it experienced, and each part
-  type that failed: how many of how many (e.g. "Roof covering: 6 of 16 sections"), with the
-  first failure's wind speed, load and capacity, so every failure is explainable. Roof bays
-  that came down because a bearing wall under them fell show that instead of a load ("3 fell
-  with a bearing wall"): no wind load broke them. A house in
-  the structural detail zone (Spec 09) also lists its connection failures there, by connection
-  type (e.g. "Rafter to wall: 12 of 30 connections", loads in kN), in the same order, after
-  whatever its components lost before it entered; its peak wind keeps updating.
+  Hovering over a house switches the tooltip to a short **building summary**: current DOD
+  with its description, the survey estimate (EF with the assigned speed, the DOD's range and
+  the reason), construction class, peak and current wind at the roof, and its distance from
+  the tornado's core edge (the radius of maximum wind, R_max): now, and the closest it came
+  (Spec 03), or "inside the core".
 
   Clicking pins a probe (up to 4). Pinned probes stay fixed on the ground and show live
-  readings plus a 60-second speed history, so you can watch a tornado pass over a spot.
+  readings plus a history graph covering the whole run, from the start to dissipation (the
+  time axis is the tornado's lifetime; lines grow left to right from when the pin was placed),
+  so you can watch a tornado pass over a spot. The
+  graph overlays wind speed (solid line in the pin's color, mph scale on the left) and the
+  air pressure (thinner dashed line with a light fill hanging from the background pressure at
+  the top, mb scale on the right, falling like a barometer), with labelled scales and a legend. A pinned
+  house is the full **building inspector**: the summary, then the graph, then each part type
+  that failed, in order of first failure: how many of how many (e.g. "Roof covering: 6 of 16
+  sections"), with the first failure's wind speed, load and capacity, so every failure is
+  explainable. Roof bays that came down because a bearing wall under them fell show that
+  instead of a load ("3 fell with a bearing wall"): no wind load broke them. A house in the
+  structural detail zone (Spec 09) also lists its connection failures there, by connection
+  type (e.g. "Rafter to wall: 12 of 30 connections", loads in kN), in the same order, after
+  whatever its components lost before it entered; its peak wind keeps updating.
   Pins can be removed individually or all at once.
+- **Layout:** panels never cover each other at any window size. The EF readout and the pinned
+  probes share the left column (the pins below the readout, scrolling in the space left); the
+  camera-key hint and the detail-zone status share the bottom-center column (the status above
+  the hint).
 - **EF readout:** the current EF rating and the peak ground-relative speed (mph and m/s),
   computed with `efRating` from Spec 01, plus the vortex structure (one-cell, transitioning,
   two-cell) and swirl ratio, plus a neighborhood tally: houses damaged (DOD ≥ 1) and destroyed
@@ -71,7 +84,7 @@ function probeAt(p: Vec3, s: TornadoState, terrain: TerrainClass): ProbeReading;
 const PRESETS: Preset[];   // { id, name, ef, description, params: Partial<TornadoParams> }
 
 // src/ui/history.ts
-class History { constructor(capacity: number, interval: number); push(t: number, v: number): void; }
+class History { constructor(capacity: number, interval: number); push(t: number, v: number, v2?: number): void; }
 
 // src/ui/readout.ts
 function computeReadout(snap: SimSnapshot): Readout;   // pure
@@ -86,7 +99,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 | arrowHeight | m | 10 | sampling height |
 | probeHeight | m | 10 | range 2–200 |
 | maxPins | – | 4 | |
-| historySeconds / interval | s | 60 / 0.25 | pinned-probe history |
+| history span / interval | s | run lifetime (up to 3,600) / 0.25 | pinned-probe history (wind speed and air pressure) |
+| background pressure | Pa | 101,325 | standard sea-level pressure; shown in mb (1 mb = 100 Pa) |
 
 ## Acceptance criteria
 
@@ -113,7 +127,15 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 - **INST-05**: Every preset, run to its mature phase, produces the EF rating it's labeled with.
 - **INST-06**: Every preset only sets known parameters, with values inside their control ranges.
 - **INST-07**: Probe history records at most one sample per interval, keeps at most
-  `capacity` samples (oldest dropped), and clears when time goes backwards (restart).
+  `capacity` samples (oldest dropped), and clears when time goes backwards (restart); a second
+  value (pressure drop) is kept in step with the first.
+- **INST-13**: The building summary shows the distance from the core edge now
+  (distance to the axis − R_max) and the closest approach from Spec 03, both in m, or "inside
+  the core" when ≤ 0; it has no failure list, and the pinned inspector has the summary, then
+  the graph, then the failure list.
+- **INST-14**: The panel starts with damage colors and repeat-on-dissipation off.
+- **INST-15**: Air pressure is shown in millibars as the background pressure (1013.25 mb)
+  minus the pressure drop: `airPressureMb(Δp) = (101,325 Pa − Δp) / 100`.
 
 ## Simplifications / out of scope
 
@@ -123,8 +145,26 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 1. **Controls:** lil-gui for Phase 1 (fast and dependable). A custom panel is revisited in the
    Phase 5 polish pass.
+2. **Distance to the core edge (R_max); actual air pressure on the graph (v1.10):** R_max is
+   the standard, well-defined edge of a tornado's core (peak winds); a damaging-wind edge moves
+   with gusts and height. The graph shows air pressure, not wind pressure on a surface (½ρV²,
+   which would only repeat the wind line): pressure falls toward the axis, so the two lines
+   show the core's structure (wind peaks at the edge, pressure bottoms out at the center). The
+   sim models only the drop below the surroundings (Spec 01), so actual pressure assumes the
+   standard sea-level 1013.25 mb (the town is flat at sea level; real storm environments run
+   a few mb either side, which shifts the line but not its shape). Millibars at the user's
+   request (the unit used in US storm reports; equal to hPa). Lines, not bars: both are
+   continuous samples at 4 Hz.
 
 ## Changelog
+
+- v1.10: at the user's request: the hover summary drops the failure list (it stays in the
+  pinned inspector) and gains distance from the core edge, now and closest (INST-13); the pin
+  graph overlays pressure drop on wind speed, above the failure list; damage colors and repeat
+  start off (INST-14); panels stack in columns so pins can't cover the readout and the key
+  hint can't run into the detail status. The pin graph spans the whole run, start to
+  dissipation, not the last 60 s. Air pressure is shown in mb from a standard background
+  (INST-15).
 
 - v1.9: roof bays that fell with a bearing wall are shown as such, not as "1 Pa > 0 Pa"
   (INST-08 updated).

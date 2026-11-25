@@ -203,3 +203,13 @@ Open: in straight wind without debris a detailed house can still stall (wind-tun
 an ambient small-missile environment (gravel, branches, far-field debris that isn't modeled)
 would be the physical next step, for both models together (the town model would need
 recalibrating without the debris it now folds in).
+
+## Camera and inspector changes (2026-11-25)
+
+At the user's request: Spec 06 v1.11 (W/S along the view including tilt, A/D pan, Q/E tilt,
+arrows up/down and sideways; start view framed on the tornado, REND-14/15/17), Spec 07 v1.10
+(short hover summary with distance from the core edge now and closest; pinned graph of wind
+and pressure drop above the failure list; damage colors and repeat off by default; layout
+columns so panels can't overlap, INST-13/14), Spec 03 v2.2 (closest approach, DMG-14).
+To check at the demo: the keys feel right; the start view frames the tornado for each preset;
+no overlap with four pins and the slow-motion message at a narrow window.

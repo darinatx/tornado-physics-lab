@@ -68,8 +68,10 @@ export function createWorld(seed: number, withBuildings = true, area?: { x: numb
       const active = s.vMax > 0;
       let changed = false;
       for (const b of hood.buildings) {
-        if (b.dod >= 10 && !b.detail) continue;
         const r = Math.hypot(b.x - s.center.x, b.z - s.center.z);
+        // Closest approach to the core edge, for the inspector (DMG-14).
+        if (active && r - s.rMax < b.closestEdge) b.closestEdge = r - s.rMax;
+        if (b.dod >= 10 && !b.detail) continue;
         if (b.detail) {
           // The detail engine owns its damage; the inspector still shows its peak wind.
           if (active && r <= range) {

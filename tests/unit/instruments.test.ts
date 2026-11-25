@@ -122,6 +122,60 @@ describe("Spec 07 — instruments", () => {
     h.push(1, 42); // time went backwards: restart
     expect(h.length).toBe(1);
     expect(h.values[0]).toBe(42);
+    // A second series (pressure drop) is kept in step with the first.
+    const two = new History(5, 0.25);
+    for (let i = 0; i < 100; i++) two.push(i * 0.1, i, -i);
+    expect(two.values2.length).toBe(two.length);
+    for (let i = 0; i < two.length; i++) expect(two.values2[i]).toBe(-two.values[i]!);
+    two.push(1, 7, 8);
+    expect([two.length, two.values2.length, two.values2[0]]).toEqual([1, 1, 8]);
+  });
+
+  test("INST-13: hover summary shows core-edge distance and no failure list; the pin has summary, graph, failures", async () => {
+    const { buildingSummary, failureList, coreDistanceText, PIN_CARD_HTML } = await import("../../src/ui/probe");
+    expect(coreDistanceText(412.4, 37.6)).toBe("412 m now · closest 38 m");
+    expect(coreDistanceText(250, -20)).toBe("250 m now · closest: inside the core");
+    expect(coreDistanceText(-5, -20)).toBe("inside the core now · closest: inside the core");
+    expect(coreDistanceText(900, Infinity)).toBe("900 m now");
+    let checked = 0;
+    for (const { b, rng } of randomHouses(20, 3)) {
+      const c = samplePassCase(rng);
+      tornadoPass(b, c.state, "open", c.offset);
+      b.closestEdge = 12;
+      const r = buildingReport(b);
+      expect(r.closestEdge).toBe(12);
+      const sum = buildingSummary(r, 50, 300);
+      expect(sum).toContain(coreDistanceText(300, 12));
+      expect(sum).toContain(`DOD ${r.dod}`.replace("DOD 0", "Intact"));
+      expect(sum).not.toContain("What failed");
+      const fails = failureList(r);
+      if (r.failures.length) {
+        expect(fails).toContain("What failed, in order");
+        for (const g of r.failures) expect(fails).toContain(g.label);
+        checked++;
+      } else expect(fails).toBe("");
+    }
+    expect(checked).toBeGreaterThan(0);
+    // Pin card order: summary, then the graph, then the failure list.
+    const i = (k: string) => PIN_CARD_HTML.indexOf(k);
+    expect(i("pin-body")).toBeGreaterThan(-1);
+    expect(i("pin-body")).toBeLessThan(i("<canvas"));
+    expect(i("<canvas")).toBeLessThan(i("pin-fails"));
+  });
+
+  test("INST-15: air pressure in mb is the standard background minus the drop", async () => {
+    const { airPressureMb } = await import("../../src/ui/probe");
+    expect(airPressureMb(0)).toBeCloseTo(1013.25, 9);
+    expect(airPressureMb(5000)).toBeCloseTo(963.25, 9);
+    const s = baseState();
+    const r = probeAt({ x: 0, y: 10, z: 0 }, s, "open");
+    expect(airPressureMb(r.pressureDeficit)).toBeCloseTo(1013.25 - pressureDeficit(0, s) / 100, 9);
+  });
+
+  test("INST-14: damage colors and repeat-on-dissipation start off", async () => {
+    const { DEFAULT_PANEL_STATE } = await import("../../src/ui/panelDefaults");
+    expect(DEFAULT_PANEL_STATE.damageColors).toBe(false);
+    expect(DEFAULT_PANEL_STATE.autoRepeat).toBe(false);
   });
 
   test("INST-08: building report matches the building", () => {

@@ -257,49 +257,76 @@ describe("Spec 06 — rendering", () => {
     expect(JSON.stringify([f.prev, f.curr])).toBe(before);
   });
 
-  test("REND-14: flying moves the camera and its orbit point along the view, at height-scaled speed", async () => {
-    const { flySpeed, flyStep, NO_KEYS } = await import("../../src/render/cameraFly");
+  test("REND-14: moving goes along the view (tilt included), sideways and up, at height-scaled speed", async () => {
+    const { flySpeed, flyStep, NO_KEYS, FLY_KEY_MAP } = await import("../../src/render/cameraFly");
     const { CAMERA } = await import("../../src/config/render");
+    // Keys: W/S forward/back, arrows sideways and up/down.
+    expect(FLY_KEY_MAP).toMatchObject({ KeyW: "forward", KeyS: "back", ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", PageUp: "up", PageDown: "down" });
     const cam = { x: 0, y: 100, z: 0 };
-    const tgt = { x: 300, y: 0, z: 400 }; // looking toward +x+z (3-4-5)
+    const tgt = { x: 300, y: 100, z: 400 }; // level, toward +x+z (3-4-5), 500 m away
     const dt = 0.1;
-    // W: along the horizontal view direction, at 1.2 m/s per metre of height.
-    const w = flyStep({ ...NO_KEYS, forward: true }, dt, cam, tgt);
-    expect(w.camera).toEqual(w.target);
     const v = 1.2 * 100;
-    expect(w.camera.x).toBeCloseTo(0.6 * v * dt, 9);
-    expect(w.camera.z).toBeCloseTo(0.8 * v * dt, 9);
-    expect(Math.abs(w.camera.y)).toBe(0);
-    // D: across it (to the right of the view, on the ground).
-    const d = flyStep({ ...NO_KEYS, right: true }, dt, cam, tgt);
-    expect(d.camera.x * 0.6 + d.camera.z * 0.8).toBeCloseTo(0, 9);
-    expect(Math.hypot(d.camera.x, d.camera.z)).toBeCloseTo(v * dt, 9);
-    expect(-0.8 * d.camera.x + 0.6 * d.camera.z).toBeGreaterThan(0); // right of the view: forward × up = (−0.8, 0.6)
-    // Diagonal keeps the same speed; Shift is 4× faster.
-    const wd = flyStep({ ...NO_KEYS, forward: true, right: true }, dt, cam, tgt);
-    expect(Math.hypot(wd.camera.x, wd.camera.z)).toBeCloseTo(v * dt, 9);
-    const fast = flyStep({ ...NO_KEYS, forward: true, fast: true }, dt, cam, tgt);
-    expect(Math.hypot(fast.camera.x, fast.camera.z)).toBeCloseTo(4 * v * dt, 9);
-    // E/Q: straight up and down.
-    const e = flyStep({ ...NO_KEYS, up: true }, dt, cam, tgt);
-    expect(Math.abs(e.camera.x) + Math.abs(e.camera.z)).toBe(0);
-    expect(e.camera.y).toBeCloseTo(v * dt, 9);
+    const moved = (r: { camera: { x: number; y: number; z: number } }, from = cam) => ({ x: r.camera.x - from.x, y: r.camera.y - from.y, z: r.camera.z - from.z });
+    const off = (r: { camera: { x: number; y: number; z: number }; target: { x: number; y: number; z: number } }) => ({ x: r.target.x - r.camera.x, y: r.target.y - r.camera.y, z: r.target.z - r.camera.z });
+    // W level: along the view; the orbit point keeps its offset.
+    const w = flyStep({ ...NO_KEYS, forward: true }, dt, cam, tgt);
+    expect(moved(w).x).toBeCloseTo(0.6 * v * dt, 9);
+    expect(moved(w).z).toBeCloseTo(0.8 * v * dt, 9);
+    expect(moved(w).y).toBeCloseTo(0, 9);
+    expect(off(w).x).toBeCloseTo(300, 6);
+    expect(off(w).z).toBeCloseTo(400, 6);
+    // W tilted down 30°: along the tilted view, toward the ground.
+    const down30 = { x: 0, y: 100 - 500 * Math.sin(Math.PI / 6), z: 500 * Math.cos(Math.PI / 6) };
+    const wt = moved(flyStep({ ...NO_KEYS, forward: true }, dt, cam, down30));
+    expect(wt.y).toBeCloseTo(-Math.sin(Math.PI / 6) * v * dt, 9);
+    expect(wt.z).toBeCloseTo(Math.cos(Math.PI / 6) * v * dt, 9);
+    expect(Math.abs(wt.x)).toBeLessThan(1e-9);
+    // S: the opposite way.
+    const s = moved(flyStep({ ...NO_KEYS, back: true }, dt, cam, down30));
+    expect(s.y).toBeCloseTo(-wt.y, 9);
+    // →: sideways along the ground, to the right of the view (forward × up = (−0.8, 0.6)).
+    const d = moved(flyStep({ ...NO_KEYS, right: true }, dt, cam, tgt));
+    expect(d.x * 0.6 + d.z * 0.8).toBeCloseTo(0, 9);
+    expect(-0.8 * d.x + 0.6 * d.z).toBeCloseTo(v * dt, 9);
+    expect(d.y).toBeCloseTo(0, 9);
+    // ↑: straight up.
+    const e = moved(flyStep({ ...NO_KEYS, up: true }, dt, cam, tgt));
+    expect(Math.abs(e.x) + Math.abs(e.z)).toBeLessThan(1e-12);
+    expect(e.y).toBeCloseTo(v * dt, 9);
+    // Combined keys keep the same speed; Shift is 4× faster.
+    const wd = moved(flyStep({ ...NO_KEYS, forward: true, right: true, up: true }, dt, cam, tgt));
+    expect(Math.hypot(wd.x, wd.y, wd.z)).toBeCloseTo(v * dt, 9);
+    const fast = moved(flyStep({ ...NO_KEYS, forward: true, fast: true }, dt, cam, tgt));
+    expect(Math.hypot(fast.x, fast.y, fast.z)).toBeCloseTo(4 * v * dt, 9);
     // Speed limits.
     expect(flySpeed(1, false)).toBe(CAMERA.flyMinSpeed);
     expect(flySpeed(5000, false)).toBe(CAMERA.flyMaxSpeed);
-    // Floors: the camera never below eye height, the orbit point never below the ground.
+    // Floor: flying forward into the ground stops at eye height (no sliding along it); ↓ too.
     const low = { x: 0, y: 2, z: 0 };
+    const steep = { x: 0, y: 0, z: 1 }; // 63° down
+    const into = flyStep({ ...NO_KEYS, forward: true, fast: true }, 1, low, steep);
+    expect(into.camera.y).toBeCloseTo(CAMERA.minHeight, 9);
+    expect(Math.hypot(into.camera.x - low.x, into.camera.z - low.z)).toBeCloseTo(0.3 / 2, 6); // stopped where it met the floor
     const q = flyStep({ ...NO_KEYS, down: true, fast: true }, 1, low, { x: 10, y: 0, z: 0 });
-    expect(low.y + q.camera.y).toBeCloseTo(CAMERA.minHeight, 9);
-    expect(Math.abs(q.target.y)).toBe(0);
+    expect(q.camera.y).toBeCloseTo(CAMERA.minHeight, 9);
+    // The orbit point never goes below the ground: looking down it lands where the view meets it.
+    const ahead = flyStep({ ...NO_KEYS, forward: true }, dt, cam, down30);
+    expect(ahead.target.y).toBeGreaterThanOrEqual(0);
+    expect(ahead.target.y).toBeCloseTo(0, 6);
+    const dir = { x: down30.x - cam.x, y: down30.y - cam.y, z: down30.z - cam.z };
+    const nd = off(ahead);
+    expect(Math.atan2(nd.y, Math.hypot(nd.x, nd.z))).toBeCloseTo(Math.atan2(dir.y, Math.hypot(dir.x, dir.z)), 9);
     // No keys: no move.
-    const none = flyStep(NO_KEYS, dt, cam, tgt).camera;
-    expect(Math.abs(none.x) + Math.abs(none.y) + Math.abs(none.z)).toBe(0);
+    const none = flyStep(NO_KEYS, dt, cam, tgt);
+    expect(none.camera).toEqual(cam);
+    expect(none.target).toEqual(tgt);
   });
 
   test("REND-15: turning moves only the look point, around the camera", async () => {
-    const { lookStep } = await import("../../src/render/cameraFly");
+    const { lookStep, TURN_KEY_MAP } = await import("../../src/render/cameraFly");
     const { CAMERA } = await import("../../src/config/render");
+    // Keys: A/D pan, Q/E tilt down/up.
+    expect(TURN_KEY_MAP).toEqual({ KeyA: "left", KeyD: "right", KeyE: "up", KeyQ: "down" });
     const cam = { x: 100, y: 20, z: -50 };
     const tgt = { x: 100, y: 20, z: 950 }; // level, looking along +z, 1 km away
     // Yaw left 90°: the view turns to +x (left of +z with y up), same distance, still level.
@@ -341,28 +368,51 @@ describe("Spec 06 — rendering", () => {
     expect(keys.forward).toBe(false);
     // ⌘ pressed while flying and turning: everything released (macOS won't send the key-ups).
     keyEvent(keys, turn, ev("KeyS"), true, false);
-    keyEvent(keys, turn, ev("ArrowLeft"), true, false);
+    keyEvent(keys, turn, ev("KeyA"), true, false);
     keyEvent(keys, turn, ev("MetaLeft", { key: "Meta", metaKey: true }), true, false);
     expect(keys.back).toBe(false);
     expect(turn.left).toBe(false);
     // Ctrl/Alt shortcuts too; key-downs while typing in a field are ignored.
-    keyEvent(keys, turn, ev("KeyA"), true, false);
+    keyEvent(keys, turn, ev("ArrowLeft"), true, false);
     keyEvent(keys, turn, ev("KeyC", { ctrlKey: true }), true, false);
     expect(keys.left).toBe(false);
-    expect(keyEvent(keys, turn, ev("KeyD"), true, true)).toBe(false);
+    expect(keyEvent(keys, turn, ev("ArrowRight"), true, true)).toBe(false);
     expect(keys.right).toBe(false);
   });
-  test("REND-17: the camera starts over the town ahead of the tornado, facing it", async () => {
+  test("REND-17: the camera starts framed on the tornado, ahead of it on its track", async () => {
     const { startView } = await import("../../src/render/cameraFly");
-    // Tornado 2.8 km west of the center of a 2.6 km town, heading east.
-    const v = startView({ x: -2800, z: 0 }, { x: 1, z: 0 }, 1300, 1000);
-    const ahead = 2800 - 1300 + 1000; // track enters at x = −1300, then 1 km inside
-    expect(v.camera.x).toBeCloseTo(-2800 + ahead, 9);
-    expect(v.camera.z).toBeCloseTo(0.3 * ahead, 9); // right of an eastward track is +z (y up)
-    expect(v.camera.y).toBe(150);
-    expect(v.target).toMatchObject({ x: -2800, y: 150, z: 0 });
-    // Starting inside town: at least 1.5 km ahead.
-    const w = startView({ x: 0, z: 0 }, { x: 0, z: 1 }, 1300, 1000);
-    expect(Math.hypot(w.camera.x, w.camera.z) / Math.hypot(1, 0.3)).toBeCloseTo(1500, 6);
+    const fov = 50;
+    const aspect = 16 / 9;
+    const half = (fov / 2) * (Math.PI / 180);
+    const hHalf = Math.atan(Math.tan(half) * aspect);
+    const check = (center: { x: number; z: number }, dir: { x: number; z: number }, rMax: number, cloudBase: number) => {
+      const v = startView(center, dir, rMax, cloudBase, fov, aspect);
+      expect(v.camera.y).toBe(30);
+      expect(v.target).toMatchObject({ x: center.x, y: 0.4 * cloudBase, z: center.z });
+      const rel = { x: v.camera.x - center.x, z: v.camera.z - center.z };
+      const D = Math.hypot(rel.x, rel.z);
+      // Ahead on the track and 30% to the right (right of the heading = (−dz, dx)).
+      const along = rel.x * dir.x + rel.z * dir.z;
+      const across = rel.x * -dir.z + rel.z * dir.x;
+      expect(across / along).toBeCloseTo(0.3, 9);
+      expect(D).toBeGreaterThanOrEqual(300 - 1e-6);
+      // Frames ground to cloud base in ≤ 80% of the view height, 4·R_max in ≤ 60% of its width,
+      // and is the nearest such distance (one of them is tight, or the 300 m floor).
+      const vert = Math.atan((cloudBase - 30) / D) + Math.atan(30 / D);
+      const wide = 2 * Math.atan((2 * rMax) / D);
+      expect(vert).toBeLessThanOrEqual(0.8 * 2 * half + 1e-6);
+      expect(wide).toBeLessThanOrEqual(0.6 * 2 * hHalf + 1e-6);
+      const tight = Math.abs(vert - 0.8 * 2 * half) < 1e-3 || Math.abs(wide - 0.6 * 2 * hHalf) < 1e-3 || Math.abs(D - 300) < 1e-6;
+      expect(tight).toBe(true);
+      return D;
+    };
+    const ef0 = check({ x: -2800, z: 0 }, { x: 1, z: 0 }, 40, 550);
+    const ef5 = check({ x: 100, z: 50 }, { x: 0, z: 1 }, 350, 400);
+    // A small tornado starting far outside town is now well under a kilometre away.
+    expect(ef0).toBeLessThan(1000);
+    expect(ef5).toBeGreaterThan(ef0);
+    // Before the canvas has a size (aspect 0/0) the view is still a real place.
+    const nan = startView({ x: 0, z: 0 }, { x: 1, z: 0 }, 300, 400, fov, NaN);
+    expect(Number.isFinite(nan.camera.x + nan.camera.y + nan.camera.z)).toBe(true);
   });
 });

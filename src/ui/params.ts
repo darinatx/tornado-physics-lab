@@ -6,19 +6,10 @@ import { TIME_SCALES } from "../config/sim";
 import type { Sim } from "../sim/loop";
 import { defaultParams } from "../sim/types";
 import { buildControlDefs } from "./controls";
+import { DEFAULT_PANEL_STATE } from "./panelDefaults";
+import type { PanelState } from "./panelDefaults";
 
-export interface PanelState {
-  follow: boolean;
-  autoRepeat: boolean;
-  arrows: boolean;
-  funnel: boolean;
-  tracers: boolean;
-  debris: boolean;
-  enlargeDebris: boolean;
-  damageColors: boolean;
-  brightness: number;
-  probeHeight: number;
-}
+export type { PanelState } from "./panelDefaults";
 
 export interface Panel {
   readonly state: PanelState;
@@ -39,18 +30,7 @@ export function createPanel(
 ): Panel {
   const gui = new GUI({ title: "Tornado controls", width: 300 });
   const values = { ...sim.params } as Record<string, unknown>;
-  const state: PanelState = {
-    follow: true,
-    autoRepeat: true,
-    arrows: false,
-    funnel: true,
-    tracers: true,
-    debris: true,
-    enlargeDebris: false,
-    damageColors: true,
-    brightness: 1,
-    probeHeight: 10,
-  };
+  const state: PanelState = { ...DEFAULT_PANEL_STATE };
   const controllers: Controller[] = [];
 
   // --- Preset --------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.10) — Phases 1–4
+Status: Approved (v1.11) — Phases 1–4
 
 ## Purpose
 
@@ -153,16 +153,22 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 - **REND-12**: Dust spawns only where the ground wind exceeds u_t, within 6·R_max, over the
   whole area where it does (a tornado whose lifting area reaches beyond 2·R_max gets dust
   there), with spawn density in proportion to the emission rate F.
-- **REND-14**: Flying moves the camera and its orbit point together: W/S along the horizontal
-  view direction, A/D across it, E/Q straight up and down, at ~1.2 m/s per metre of height
-  (clamped 10–1,000 m/s, ×4 with Shift), never below 1.7 m (camera) or 0 m (orbit point).
+- **REND-14**: Moving moves the camera and its orbit point together, at ~1.2 m/s per metre of
+  height (clamped 10–1,000 m/s, ×4 with Shift), at the same speed whatever keys are combined:
+  W/S along the full 3-D view direction (looking down, W moves toward the ground), ←/→ sideways
+  along the ground, ↑/↓ (and PageUp/PageDown) straight up and down. The camera never goes below
+  1.7 m: moving forward into the floor stops there. The orbit point keeps its direction and
+  distance from the camera, but never goes below the ground (it lands where the view meets it).
 - **REND-15**: Turning moves only the point the camera looks at: the camera stays put, the
   look direction rotates by the yaw about the vertical and by the pitch about the camera's
   right axis, pitch stays within ±85° of level, and the look point never goes below the
-  ground (looking down, it lands where the view meets the ground).
-- **REND-17**: The starting view is ahead of the tornado on its track (the track's entry into
-  town plus 1 km, at least 1.5 km), 30% of that distance to the right, 150 m up, and looks at
-  the tornado's axis at 15% of the cloud-base height.
+  ground (looking down, it lands where the view meets the ground). Keys: A/D pan left/right,
+  Q/E tilt down/up; right-drag turns too.
+- **REND-17**: The starting view frames the tornado: the camera is 30 m up, looking at the
+  axis at 40% of the cloud-base height, from ahead of it on its track and 30% to the right, at
+  the nearest distance (at least 300 m) where the funnel from the ground to the cloud base
+  fills no more than 80% of the view's height and a 4·R_max-wide debris cloud (R_max at
+  maturity: the core is wider while it spins up) no more than 60% of its width.
 - **REND-16**: Held keys never stick: a key-up always releases its key (whatever has focus or
   modifiers), pressing ⌘, Ctrl or Alt releases every flying and turning key (macOS sends no
   key-up for keys released while ⌘ is held), and so does the page losing focus or visibility.
@@ -178,7 +184,23 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 - No buildings in Phase 1.
 - Visual checks (does it look right, frame rate) are demo checklist items, not unit tests.
 
+## Decisions
+
+1. **Start distance from framing, not the town (v1.11):** the camera is placed by what it has to
+   show (ground to cloud base, the debris cloud's width) rather than the town's edge, so it is
+   never kilometres away. Follow mode (on by default) keeps the offset, so the tornado doesn't
+   run into the camera.
+2. **Forward follows the view, including tilt (v1.11):** at the user's request, like a drone
+   camera. Hitting the eye-height floor stops forward motion rather than sliding along the
+   ground, so the view never changes direction unasked.
+
 ## Changelog
+
+- v1.11: new key layout at the user's request: W/S forward and back along the view (tilt
+  included), A/D pan, Q/E tilt, arrows move up/down and sideways (REND-14, REND-15). The
+  starting view is framed on the tornado at a few hundred metres to ~1.5 km by its size
+  (REND-17): it could start 3 km or more away when the track began far outside town.
+
 
 - v1.10: the camera starts over the city ahead of the tornado, facing it (REND-17), at the
   user's request (it started behind the tornado).

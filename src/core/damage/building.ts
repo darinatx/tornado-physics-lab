@@ -99,6 +99,7 @@ export function createHouse(spec: HouseSpec, rng: () => number, base: Record<Par
     sweep: simple("sweep"),
     deficitIn: 0,
     peakMph: 0,
+    closestEdge: Infinity,
     dod: 0,
     shift: null,
     rev: 0,
@@ -442,6 +443,8 @@ export interface BuildingReport {
   description: string;
   estimate: EFEstimate;
   peakMph: number;
+  /** Closest approach to the core edge (m; Spec 03 DMG-14). */
+  closestEdge: number;
   /** Failures grouped by part type, in order of first failure. */
   failures: FailureGroup[];
   /** Connection failures after the house entered the detail zone (Spec 09), by type. */
@@ -490,6 +493,7 @@ export function buildingReport(b: Building): BuildingReport {
     description: row ? row.text : "No damage",
     estimate: efFromDamage(b.dod, b.cls),
     peakMph: b.peakMph,
+    closestEdge: b.closestEdge,
     failures: [...groups.values()].sort((a, c) => a.time - c.time),
     detailFailures: b.detailFailures ?? [],
   };

@@ -256,4 +256,32 @@ describe("Spec 03 — damage (component houses)", () => {
     }
     expect(checked).toBeGreaterThan(10);
   }, 60000);
+
+  test("DMG-14: every house records its closest approach to the core edge", async () => {
+    const { createWorld } = await import("../../src/sim/world");
+    const { baseState } = await import("../helpers");
+    const world = createWorld(7);
+    const all = world.buildings;
+    expect(all.length).toBeGreaterThan(10);
+    for (const b of all) expect(b.closestEdge).toBe(Infinity);
+    // A destroyed house still records it.
+    const gone = all[0]!;
+    world.setDod(gone, 10);
+    // Calm: nothing recorded.
+    world.update(1 / 30, baseState({ vMax: 0, center: { x: gone.x, z: gone.z } }), "open", 0);
+    expect(gone.closestEdge).toBe(Infinity);
+    // The tornado moves and changes size; the record is the minimum of (distance − R_max) at each step.
+    const steps = [
+      { center: { x: -3000, z: 0 }, rMax: 100 },
+      { center: { x: 0, z: 0 }, rMax: 200 },
+      { center: { x: 1500, z: 300 }, rMax: 400 },
+    ];
+    const expected = all.map(() => Infinity);
+    steps.forEach((st, k) => {
+      world.update(1 / 30, baseState({ vMax: 1, ...st }), "open", k);
+      all.forEach((b, i) => (expected[i] = Math.min(expected[i]!, Math.hypot(b.x - st.center.x, b.z - st.center.z) - st.rMax)));
+    });
+    all.forEach((b, i) => expect(b.closestEdge).toBeCloseTo(expected[i]!, 9));
+    expect(all.some((b) => b.closestEdge < 0)).toBe(true); // some were inside the core
+  });
 });

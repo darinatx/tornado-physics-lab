@@ -18,7 +18,15 @@ const view = createRenderer(
     const f = sim.detailFocus;
     return { view: sim.detail, spot: f ? { ...f, r: sim.detailSpotRadius } : null };
   },
+  () => sim.params.rMax,
 );
+// Layout columns (Spec 07 v1.10): panels in a column stack, so they can never cover each other.
+const leftCol = document.createElement("div");
+leftCol.className = "left-col";
+document.body.appendChild(leftCol);
+const bottomCol = document.createElement("div");
+bottomCol.className = "bottom-col";
+document.body.appendChild(bottomCol);
 // Placing the detail spot: the next click on the ground.
 let pickingSpot = false;
 const spotHint = document.createElement("div");
@@ -29,7 +37,7 @@ document.body.appendChild(spotHint);
 const detailStatus = document.createElement("div");
 detailStatus.className = "detail-status";
 detailStatus.hidden = true;
-document.body.appendChild(detailStatus);
+bottomCol.appendChild(detailStatus);
 const panel = createPanel(sim, (state) => {
   view.setFollow(state.follow);
   view.setLayers({ arrows: state.arrows, funnel: state.funnel, tracers: state.tracers, debris: state.debris });
@@ -52,14 +60,14 @@ const panel = createPanel(sim, (state) => {
 view.onCameraMoved(() => {
   panel.state.follow = false;
 });
-const readout = mountReadout(document.body);
+const readout = mountReadout(leftCol);
 const probe = createProbeUI(app, view, (x, z) => sim.world.buildingAt(x, z), (p) => {
   if (!pickingSpot) return false;
   pickingSpot = false;
   spotHint.hidden = true;
   sim.setDetailFocus({ x: p.x, z: p.z });
   return true;
-});
+}, { dock: leftCol, hint: bottomCol });
 
 /** Seconds to wait after dissipation before repeating. */
 const REPEAT_DELAY = 3;

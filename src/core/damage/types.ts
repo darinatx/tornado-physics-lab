@@ -160,6 +160,9 @@ export interface Building extends HouseSpec {
   deficitIn: number;
   /** Peak wind speed experienced at roof height (mph). */
   peakMph: number;
+  /** Closest approach to the tornado's core edge: min over steps of (distance to the axis −
+   *  R_max) (m, negative inside the core; +∞ before any) (Spec 03 v2.2, DMG-14). */
+  closestEdge: number;
   /** Current degree of damage (0–10). */
   dod: number;
   /** Offset after shifting off the foundation (m). */

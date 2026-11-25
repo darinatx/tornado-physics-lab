@@ -1,6 +1,6 @@
 # Spec 03 — Damage Model
 
-Status: Approved (v2.1) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
+Status: Approved (v2.2) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
 
 ## Purpose
 
@@ -182,6 +182,10 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
 - **DMG-12**: Damage is progressive: in a tornado pass that reaches DOD 7, the house's failures
   happen over more than three separate evaluations and its wall panels over at least two. (A
   whole roof may lift off in one evaluation, as real roofs often do.)
+- **DMG-14**: Every house records its closest approach to the core edge: the minimum over
+  physics steps with an active tornado of (distance from the house center to the axis − R_max)
+  at that step, in m (negative inside the core; +∞ before any); damaged, destroyed and
+  detail-zone houses included.
 
 ## Simplifications / out of scope
 
@@ -191,7 +195,15 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
 - Quasi-static: no dynamic shaking or fatigue.
 - Components are rigid; a failing panel detaches whole.
 
+## Decisions
+
+1. **Closest approach measured to the core edge at each step (v2.2):** R_max changes over the
+   tornado's life, so the edge is taken at the time, not from today's size. For the inspector
+   (Spec 07); no effect on damage.
+
 ## Changelog
+
+- v2.2: closest approach to the core edge recorded per house (DMG-14), at the user's request.
 
 - v2.1: debris impacts (Spec 10): queued impacts are applied at the start of each evaluation
   (even when calm), impulse pressure adds inward to wall panels and the garage door, holes

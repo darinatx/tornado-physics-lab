@@ -4,7 +4,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { flyStep, keyEvent, lookStep, NO_KEYS, releaseAll, startView } from "./cameraFly";
-import { CITY } from "../sim/city";
 import type { FlyKeys, TurnKeys } from "./cameraFly";
 import { CAMERA, RENDER } from "../config/render";
 import type { Building } from "../core/damage/types";
@@ -73,6 +72,9 @@ export function createRenderer(
   getSettled: () => { pieces: readonly Piece[]; dropped: number; version: number } = () => ({ pieces: [], dropped: 0, version: 0 }),
   /** Detailed houses (Spec 09 slice B) and the detail spot, if any. */
   getDetail: () => { view: DetailView; spot: { x: number; z: number; r: number } | null } | null = () => null,
+  /** The tornado's mature core radius (m), for framing the start view (REND-17): while it spins
+   *  up the core is wider than it will be. Defaults to the current radius. */
+  getMatureRMax: (() => number) | null = null,
 ): SimRenderer {
   // Logarithmic depth: debris lies millimetres above the ground hundreds of metres away, which a
   // linear 1 m–30 km depth buffer can't separate (pieces flickered in and out as the camera moved).
@@ -106,7 +108,7 @@ export function createRenderer(
   // Houses.
   const houses = createHouseLayer();
   scene.add(houses.group);
-  let damageColors = true;
+  let damageColors = false;
 
   // Flying debris.
   const debris = createDebrisLayer(DEBRIS.cap);
@@ -316,10 +318,10 @@ export function createRenderer(
 
       // Camera.
       if (!placed) {
-        // Over the town ahead of the tornado, looking back at it as it approaches (REND-17).
+        // Framed on the tornado, ahead of it on its track (REND-17).
         const sp = Math.hypot(s.velocity.x, s.velocity.z);
         const dir = sp > 1e-9 ? { x: s.velocity.x / sp, z: s.velocity.z / sp } : { x: 1, z: 0 };
-        const v = startView(s.center, dir, CITY.extent / 2, curr.cloudBase);
+        const v = startView(s.center, dir, getMatureRMax ? getMatureRMax() : s.rMax, curr.cloudBase, camera.fov, camera.aspect);
         controls.target.set(v.target.x, v.target.y, v.target.z);
         camera.position.set(v.camera.x, v.camera.y, v.camera.z);
         camera.lookAt(controls.target);
@@ -351,11 +353,9 @@ export function createRenderer(
       const pitchKeys = (turnKeys.up ? 1 : 0) - (turnKeys.down ? 1 : 0);
       if (yawKeys || pitchKeys) turn(yawKeys * CAMERA.turnRate * fdt, pitchKeys * CAMERA.turnRate * fdt);
       const mv = flyStep(keys, fdt, camera.position, controls.target);
-      if (mv.camera.x || mv.camera.y || mv.camera.z || mv.target.y) {
-        if (mv.camera.x || mv.camera.z) leaveFollow();
-        camera.position.add(mv.camera as THREE.Vector3Like);
-        controls.target.add(mv.target as THREE.Vector3Like);
-      }
+      if (Math.abs(mv.camera.x - camera.position.x) + Math.abs(mv.camera.z - camera.position.z) > 1e-9) leaveFollow();
+      camera.position.set(mv.camera.x, mv.camera.y, mv.camera.z);
+      controls.target.set(mv.target.x, mv.target.y, mv.target.z);
       controls.update();
       // Floors: zooming toward the cursor can carry either below them.
       if (controls.target.y < 0) controls.target.y = 0;

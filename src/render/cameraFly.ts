@@ -17,7 +17,7 @@ export interface FlyKeys {
 
 export const NO_KEYS: FlyKeys = { forward: false, back: false, left: false, right: false, up: false, down: false, fast: false };
 
-/** Arrow keys held for turning in place. */
+/** Keys held for turning in place: A/D pan, E/Q tilt. */
 export interface TurnKeys {
   left: boolean;
   right: boolean;
@@ -25,11 +25,13 @@ export interface TurnKeys {
   down: boolean;
 }
 
+/** W/S along the view; arrows sideways and up/down (REND-14). */
 export const FLY_KEY_MAP: Readonly<Record<string, keyof FlyKeys>> = {
-  KeyW: "forward", KeyS: "back", KeyA: "left", KeyD: "right",
-  KeyE: "up", PageUp: "up", KeyQ: "down", PageDown: "down",
+  KeyW: "forward", KeyS: "back", ArrowLeft: "left", ArrowRight: "right",
+  ArrowUp: "up", PageUp: "up", ArrowDown: "down", PageDown: "down",
 };
-export const TURN_KEY_MAP: Readonly<Record<string, keyof TurnKeys>> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
+/** A/D pan, Q/E tilt down/up (REND-15). */
+export const TURN_KEY_MAP: Readonly<Record<string, keyof TurnKeys>> = { KeyA: "left", KeyD: "right", KeyE: "up", KeyQ: "down" };
 
 export interface KeyLike {
   code: string;
@@ -78,37 +80,43 @@ export function flySpeed(height: number, fast: boolean): number {
   return fast ? v * CAMERA.fastFactor : v;
 }
 
-/** The moves (m) to add to the camera and its orbit point this frame: the same, except that
- *  neither goes below its floor (eye height for the camera, the ground for the point). */
+/**
+ * The camera and orbit point after this frame's move (REND-14). W/S go along the full view
+ * direction (tilt included), ←/→ sideways along the ground, ↑/↓ straight up; any combination
+ * moves at the same speed. The camera stops at eye height (forward motion into the floor stops
+ * where it meets it); the orbit point keeps its direction and distance from the camera, but
+ * lands on the ground where the view meets it.
+ */
 export function flyStep(keys: FlyKeys, dt: number, camera: Vec3, target: Vec3): { camera: Vec3; target: Vec3 } {
   const f = (keys.forward ? 1 : 0) - (keys.back ? 1 : 0);
   const r = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
   const u = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
-  if (!f && !r && !u) return { camera: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 } };
-  // Forward: the view direction along the ground; right: forward × up.
-  let fx = target.x - camera.x;
-  let fz = target.z - camera.z;
-  const len = Math.hypot(fx, fz);
-  if (len < 1e-9) {
-    fx = 0;
-    fz = -1;
-  } else {
-    fx /= len;
-    fz /= len;
-  }
-  const rx = -fz;
-  const rz = fx;
-  const step = flySpeed(camera.y, keys.fast) * dt;
-  // Horizontal moves are along the ground; together they keep the same speed diagonally.
-  const h = f && r ? Math.SQRT1_2 : 1;
-  const dy = u * step;
-  const dx = (f * fx + r * rx) * h * step;
-  const dz = (f * fz + r * rz) * h * step;
-  // Never below eye height (camera) or the ground (orbit point).
-  return {
-    camera: { x: dx, y: Math.max(dy, CAMERA.minHeight - camera.y), z: dz },
-    target: { x: dx, y: Math.max(dy, -target.y), z: dz },
-  };
+  if (!f && !r && !u) return { camera: { ...camera }, target: { ...target } };
+  const vx = target.x - camera.x;
+  const vy = target.y - camera.y;
+  const vz = target.z - camera.z;
+  const vl = Math.hypot(vx, vy, vz);
+  // View direction (3-D) and its right along the ground (forward × up).
+  const fw = vl > 1e-9 ? { x: vx / vl, y: vy / vl, z: vz / vl } : { x: 0, y: 0, z: -1 };
+  const hl = Math.hypot(fw.x, fw.z);
+  const right = hl > 1e-9 ? { x: -fw.z / hl, z: fw.x / hl } : { x: 1, z: 0 };
+  // Forward (F) and sideways/vertical (G) parts, scaled together to the flying speed.
+  const F = { x: f * fw.x, y: f * fw.y, z: f * fw.z };
+  const G = { x: r * right.x, y: u, z: r * right.z };
+  const len = Math.hypot(F.x + G.x, F.y + G.y, F.z + G.z);
+  if (len < 1e-12) return { camera: { ...camera }, target: { ...target } };
+  const k = (flySpeed(camera.y, keys.fast) * dt) / len;
+  // Sideways and vertical first (↓ stops at the floor), then forward, stopped where it meets it.
+  const c = { x: camera.x + G.x * k, y: Math.max(CAMERA.minHeight, camera.y + G.y * k), z: camera.z + G.z * k };
+  let fk = k;
+  if (F.y < 0 && c.y + F.y * fk < CAMERA.minHeight) fk = Math.max(0, (CAMERA.minHeight - c.y) / F.y);
+  c.x += F.x * fk;
+  c.y = Math.max(CAMERA.minHeight, c.y + F.y * fk);
+  c.z += F.z * fk;
+  // The orbit point: same direction and distance from the camera, not below the ground.
+  let L = Math.max(vl, CAMERA.minDistance);
+  if (fw.y < 0 && c.y + fw.y * L < 0) L = Math.max(c.y / -fw.y, CAMERA.minDistance);
+  return { camera: c, target: { x: c.x + fw.x * L, y: Math.max(0, c.y + fw.y * L), z: c.z + fw.z * L } };
 }
 
 /**
@@ -140,24 +148,43 @@ export function lookStep(camera: Vec3, target: Vec3, yaw: number, pitch: number)
 }
 
 /**
- * Starting view (REND-17): over the town on the side the tornado is coming toward, looking
- * back at it. `center` is the tornado's position, `dir` its heading (unit, horizontal),
- * `townHalf` half the town's square extent (m).
+ * Starting view (REND-17): framed on the tornado. `center` is its position, `dir` its heading
+ * (unit, horizontal), `rMax` its core radius (m), `cloudBase` (m), `fovDeg` the vertical field
+ * of view and `aspect` width / height. The camera sits ahead on the track and to the right, at
+ * the nearest distance where ground-to-cloud-base fills ≤ 80% of the height and a 4·R_max-wide
+ * debris cloud ≤ 60% of the width (at least 300 m), looking at the axis partway up.
  */
-export function startView(center: { x: number; z: number }, dir: { x: number; z: number }, townHalf: number, cloudBase: number): { camera: Vec3; target: Vec3 } {
-  // Where the track enters the town square (slab method); 0 if it starts inside.
-  let tIn = 0;
-  for (const [c, d] of [[center.x, dir.x], [center.z, dir.z]] as const) {
-    if (Math.abs(d) < 1e-9) continue;
-    const t1 = (-townHalf - c) / d;
-    const t2 = (townHalf - c) / d;
-    tIn = Math.max(tIn, Math.min(t1, t2));
+export function startView(
+  center: { x: number; z: number },
+  dir: { x: number; z: number },
+  rMax: number,
+  cloudBase: number,
+  fovDeg: number,
+  aspect: number,
+): { camera: Vec3; target: Vec3 } {
+  const h = CAMERA.startHeight;
+  const half = (fovDeg / 2) * (Math.PI / 180);
+  // Before the canvas has a size the aspect is 0/0: assume a widescreen view.
+  const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9;
+  const hHalf = Math.atan(Math.tan(half) * a);
+  // Width: 2·atan(2·R_max / D) ≤ fill · 2·hHalf.
+  const dWide = (CAMERA.startDebrisWidth * rMax) / 2 / Math.tan(CAMERA.startFillWidth * hHalf);
+  // Height: atan((H − h)/D) + atan(h/D) ≤ fill · 2·half; it falls with D, so bisect.
+  const maxV = CAMERA.startFillHeight * 2 * half;
+  const vert = (d: number) => Math.atan(Math.max(cloudBase - h, 0) / d) + Math.atan(h / d);
+  let lo = 1;
+  let hi = 1e6;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    if (vert(mid) > maxV) lo = mid;
+    else hi = mid;
   }
-  const ahead = Math.max(CAMERA.startMinAhead, tIn + CAMERA.startInsideTown);
+  const D = Math.max(CAMERA.startMinDistance, dWide, hi);
   const right = { x: -dir.z, z: dir.x };
-  const side = CAMERA.startSide * ahead;
+  const s = CAMERA.startSide;
+  const n = Math.hypot(1, s);
   return {
-    camera: { x: center.x + dir.x * ahead + right.x * side, y: CAMERA.startHeight, z: center.z + dir.z * ahead + right.z * side },
+    camera: { x: center.x + ((dir.x + right.x * s) / n) * D, y: h, z: center.z + ((dir.z + right.z * s) / n) * D },
     target: { x: center.x, y: cloudBase * CAMERA.startLookUp, z: center.z },
   };
 }
