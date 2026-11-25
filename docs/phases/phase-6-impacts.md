@@ -176,3 +176,30 @@ already over before these changes (23–24 ms with the fixed look-ahead; the sca
 slightly cheaper). Also: `detail-zone.test.ts` run whole can hit vitest's "onTaskUpdate" worker
 timeout (long synchronous loops); its tests pass when run on their own.
 
+
+## Town difference: detailed houses less damaged than town houses (2026-11-25)
+
+Not the neighbors, and not a detail-zone bug: each patch house alone, in the patch's own
+tornado, shows the same gap (≈160 mph: component DOD 8–9, detailed DOD 4). Cause, traced in the
+wind tunnel (straight-wind ramps 60→200 mph, 12 houses in 15 s): in a steady or slowly veering
+wind a detailed house loses its side windows first (suction −0.7 beats windward +0.8 − C_pi),
+then part of its roof; every opening is then in suction, the inside pressure goes to about
+−0.45, and that holds the rest of the roof down, up to 200 mph in 2 of 8 houses. That is the
+mean-flow physics. In a real storm debris breaks the windward windows first; the town model
+has that folded into its DI 2 calibration, the detailed model only gets it from debris that
+actually hits it. The old alignment patch (60 m) had no houses upwind, so nothing hit.
+
+With houses out to 130 m as debris sources (only the central 60 m compared and detailed), the
+same 7 houses at 330 m offset: detailed DOD 7–10, town 7–9 (60 m patch: 4 vs 8). The alignment
+check now uses that layout by default (`npm run check:alignment`).
+
+Tried and left out (each equal or worse against DI 2 in the lab's straight-wind ramp): windward
+roof slope C_p by pitch per ASCE 7 (roof loss across the ridge at ~178 mph instead of ~126),
+roof openings at their own slope's C_p instead of −0.9 (60° wind: roof two-thirds gone at
+190 mph instead of 166), and the windward overhang's underside pressure (first failure moves to
+eave sheathing, and the stall comes earlier).
+
+Open: in straight wind without debris a detailed house can still stall (wind-tunnel ramps);
+an ambient small-missile environment (gravel, branches, far-field debris that isn't modeled)
+would be the physical next step, for both models together (the town model would need
+recalibrating without the debris it now folds in).

@@ -25,6 +25,9 @@ export interface PatchSpec {
   x: number;
   z: number;
   radius: number;
+  /** Only houses within this distance of the center are compared and detailed (default: all);
+   *  the rest are town houses whose debris reaches them (m). */
+  compare?: number;
   /** The track passes this far to the left of the patch center (m): positive puts the patch
    *  on the track's right, where translation adds to the rotation. */
   offset: number;
@@ -55,7 +58,7 @@ export interface PatchRun {
 /** Wind below this can't fail anything (Spec 09 calm skip is 55 mph); the pass starts there. */
 const QUIET_MS = 22;
 
-function params(spec: PatchSpec): { p: TornadoParams; start: { x: number; z: number }; end: number } {
+export function patchTornado(spec: PatchSpec): { p: TornadoParams; start: { x: number; z: number }; end: number } {
   const preset = PRESETS.find((q) => q.id === (spec.preset ?? "ef4-wedge"))!;
   const base = createSim({ buildings: false }).params;
   const heading = spec.heading ?? 60;
@@ -136,14 +139,21 @@ function detailLook(sim: Sim, i: number): Omit<HouseLook, "id" | "cls" | "peak">
   return { dod: b.dod, wall: wallU / wallT, roof: roofU / roofT, near: massN / massT };
 }
 
+/** How many houses lie within the compared radius (the detail zone's size). */
+function countInner(spec: PatchSpec): number {
+  const sim = createSim({ area: { x: spec.x, z: spec.z, radius: spec.radius } }, spec.seed ?? 1);
+  return sim.world.buildings.filter((b) => Math.hypot(b.x - spec.x, b.z - spec.z) <= spec.compare!).length;
+}
+
 /** Run one patch on one model. */
 export async function runPatch(spec: PatchSpec, detail: boolean, opts: { soloWorlds?: boolean; engines?: number } = {}): Promise<PatchRun> {
   const t0 = performance.now();
-  const { p, start, end } = params(spec);
+  const { p, start, end } = patchTornado(spec);
   if (detail) await initRapier();
   detailOptions.worldPerHouse = !!opts.soloWorlds;
+  const inner = (b: { x: number; z: number }) => Math.hypot(b.x - spec.x, b.z - spec.z) <= (spec.compare ?? Infinity);
   const sim = createSim(
-    { area: { x: spec.x, z: spec.z, radius: spec.radius }, start },
+    { area: { x: spec.x, z: spec.z, radius: spec.radius }, start, ...(spec.compare ? { detailHouses: countInner(spec) } : {}) },
     spec.seed ?? 1,
     p,
     detail ? (_s, b) => createLocalBackend(b, opts.engines ?? 2) : undefined,
@@ -158,9 +168,10 @@ export async function runPatch(spec: PatchSpec, detail: boolean, opts: { soloWor
     }
   }
   detailOptions.worldPerHouse = false;
-  const houses = sim.world.buildings.map((b, i) => {
+  const houses = sim.world.buildings.flatMap((b, i) => {
+    if (!inner(b)) return [];
     const look = detail ? detailLook(sim, i) ?? componentLook(sim, i) : componentLook(sim, i);
-    return { id: b.id, cls: b.cls, peak: Math.round(b.peakMph), ...look };
+    return [{ id: b.id, cls: b.cls, peak: Math.round(b.peakMph), ...look }];
   });
   return { houses, simS: sim.time, wallS: (performance.now() - t0) / 1000 };
 }
@@ -211,9 +222,12 @@ export function summarize(rows: readonly Paired[]): BandSummary[] {
   });
 }
 
-/** Patches that together cover the three wind bands with the EF4 preset (R_max 150 m). */
+/** Patches that together cover the three wind bands with the EF4 preset (R_max 300 m). */
+/** Houses out to 130 m exist (their debris reaches the compared ones, as in town: with nothing
+ *  upwind, no debris breaks windward windows, and detailed houses stall); only those within
+ *  60 m are compared and detailed. */
 export const ALIGNMENT_PATCHES: PatchSpec[] = [
-  { x: 0, z: 20, radius: 60, offset: 0 },
-  { x: 0, z: 20, radius: 60, offset: 260 },
-  { x: 0, z: 20, radius: 60, offset: 420 },
+  { x: 0, z: 20, radius: 130, compare: 60, offset: 0 },
+  { x: 0, z: 20, radius: 130, compare: 60, offset: 260 },
+  { x: 0, z: 20, radius: 130, compare: 60, offset: 420 },
 ];

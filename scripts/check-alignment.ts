@@ -2,6 +2,7 @@
  * Detail vs component alignment report (Spec 09, STR-31): the same patches of houses on both
  * models, house by house and by wind band.
  *   npm run check:alignment [-- --solo] [--offsets=0,260,420] [--seed=1] [--radius=45]
+ *   --radius=130 --compare=60 (defaults): houses out to 130 m (debris sources), those within 60 m compared
  *   --solo: each detailed house in its own physics world (no hits from neighbors)
  */
 import { ALIGNMENT_PATCHES, runPaired, summarize } from "../tests/harness/alignment";
@@ -12,8 +13,9 @@ const opt = (k: string) => args.find((a) => a.startsWith(`--${k}=`))?.split("=")
 const solo = args.includes("--solo");
 const seed = Number(opt("seed") ?? 1);
 const radius = Number(opt("radius") ?? ALIGNMENT_PATCHES[0]!.radius);
+const compare = Number(opt("compare") ?? ALIGNMENT_PATCHES[0]!.compare);
 const offsets = opt("offsets")?.split(",").map(Number);
-const patches: PatchSpec[] = (offsets ?? ALIGNMENT_PATCHES.map((p) => p.offset)).map((offset) => ({ ...ALIGNMENT_PATCHES[0]!, offset, seed, radius }));
+const patches: PatchSpec[] = (offsets ?? ALIGNMENT_PATCHES.map((p) => p.offset)).map((offset) => ({ ...ALIGNMENT_PATCHES[0]!, offset, seed, radius, compare }));
 
 const t0 = performance.now();
 const rows: Paired[] = [];
