@@ -8,7 +8,7 @@ import type { Vec2 } from "../core/math/vec";
 import { createRng } from "./rng";
 import { createWorld } from "./world";
 import { DebrisField } from "../core/debris/field";
-import { DEBRIS } from "../config/debris";
+import { DEBRIS, HEAVY } from "../config/debris";
 import type { World } from "./world";
 import { defaultParams } from "./types";
 import type { SimConfig, SimFrame, SimSnapshot, TornadoParams } from "./types";
@@ -19,6 +19,7 @@ import { DetailView } from "./detailBackend";
 import type { DetailBackend } from "./detailBackend";
 import { ZoneSelector } from "./detailZone";
 import { DetailStandIns } from "./detailStandIns";
+import { HeavyDebris } from "./heavyDebris";
 import type { TownHit } from "./structureWorld";
 import { surfaceAt, toLocal } from "../core/impact/envelope";
 import type { PlaneId } from "../core/impact/envelope";
@@ -28,6 +29,8 @@ import { tunnelState } from "./tunnelFlow";
 import type { TownState } from "./townColliders";
 
 export interface Sim {
+  /** Profiling only: the heavy-debris world, if made. */
+  _heavy?: () => HeavyDebris | null;
   /** Advance by real elapsed seconds (clamped, then scaled by the time scale). */
   advance(realDtSeconds: number): SimFrame;
   /** Queue parameter changes; they apply at the start of the next step. */
@@ -81,6 +84,23 @@ export function createSim(
   const withBuildings = config.buildings ?? true;
   let world: World = createWorld(seed, withBuildings, config.area, config.houses);
   let debris = new DebrisField(seed);
+  /** Heavy pieces as rigid bodies (Spec 04 v2.0), made when the first one is (needs Rapier). */
+  let heavy: HeavyDebris | null = null;
+  const attachHeavy = () => {
+    debris.heavy = {
+      take: (p, b, time) => {
+        if (!heavy) {
+          try {
+            heavy = new HeavyDebris(world.buildings, (x, z) => world.near(x, z), dt * DEBRIS.stepInterval * HEAVY.stepEvery);
+          } catch (e) {
+            throw new Error(`heavy debris needs Rapier: call initRapier() before running the sim (${(e as Error).message})`);
+          }
+        }
+        heavy.take(p, b, time);
+      },
+    };
+  };
+  attachHeavy();
   /** Building id → index (impacts on stand-ins name the house by id). */
   let indexById = new Map<number, number>();
   const taps = config.taps;
@@ -107,7 +127,7 @@ export function createSim(
   const townHits: { n: number; h: TownHit }[] = [];
   /** Draws for those hits' fragility (perforation), deterministic in hit order. */
   let hitRng = createRng(seed ^ 0x2c1b3c6d);
-  function applyTownHit(h: TownHit): void {
+  function applyTownHit(h: TownHit, path: "detail" | "heavy" = "detail"): void {
     const house = world.buildings[h.house];
     // A detailed house in another physics group was hit through its stand-in there: resolve
     // it on the stand-in, which forwards it to the detail engine like the town's debris hits
@@ -118,7 +138,7 @@ export function createSim(
     const out = resolveImpact(b, surface, { label: h.label, family: h.family, mass: h.mass, dims: h.dims }, h.vn, hitRng, true);
     if (out) {
       b.impacts.push(out.impact);
-      taps?.impact?.(h.house, out.impact, "detail", null, stepCount * dt);
+      taps?.impact?.(h.house, out.impact, path === "heavy" ? "debris" : "detail", null, stepCount * dt);
     }
   }
   let detailN = 0;
@@ -293,6 +313,13 @@ export function createSim(
         for (const t of due) applyTownHit(t.h);
       }
       config.inject?.debris?.(pre.time, debris);
+      // Heavy pieces first, so the debris field's counts see where they are now.
+      if (heavy && (stepCount / DEBRIS.stepInterval) % HEAVY.stepEvery === 0) {
+        heavy.step(pre.tornado, pre.terrain, pre.time);
+        // Their hits on houses, in a fixed order.
+        const hits = heavy.hits.splice(0).sort((a, b) => a.house - b.house || a.point.x - b.point.x || a.point.z - b.point.z || a.point.y - b.point.y || a.vn - b.vn);
+        for (const h of hits) applyTownHit(h, "heavy");
+      }
       debris.step(dt * DEBRIS.stepInterval, pre.tornado, pre.terrain, damageStep, pre.time, pre.cloudBase, world);
     }
     curr = makeSnapshot();
@@ -304,6 +331,9 @@ export function createSim(
     rng = createRng(currentSeed);
     world = createWorld(currentSeed, withBuildings, config.area, config.houses);
     debris = new DebrisField(currentSeed);
+    heavy?.dispose();
+    heavy = null;
+    attachHeavy();
     indexById = new Map(world.buildings.map((b, i) => [b.id, i]));
     if (taps) debris.onImpact = (b, q, p) => taps.impact?.(indexById.get(b.standInFor ?? b.id) ?? -1, q, "debris", p, stepCount * dt);
     zone = new ZoneSelector(config.detailHouses, fixedZone);
@@ -374,6 +404,8 @@ export function createSim(
     get world() {
       return world;
     },
+    /** Profiling only. */
+    _heavy: () => heavy,
     get debris() {
       return debris;
     },

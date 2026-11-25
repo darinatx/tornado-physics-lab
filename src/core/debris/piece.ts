@@ -41,6 +41,11 @@ export interface Piece {
   gust: Vec3;
   /** Hidden from the debris field (rubble carried off when its slab was swept). */
   hidden?: boolean;
+  /** A heavy piece moving as a rigid body in the heavy-debris world (Spec 04 v2.0): the point
+   *  model leaves it alone while set. */
+  rigid?: boolean;
+  /** Retired from the heavy-debris world: the field moves it to the permanent debris field. */
+  settleNow?: boolean;
   /** Where its source house stands (m), for spreading representative copies (Spec 10). */
   origin?: { x: number; z: number };
   /** Stuck through a house surface (Spec 10): its key in the field's lodged list. */

@@ -161,3 +161,56 @@ export const DEBRIS_COLORS: Partial<Record<DebrisKind, number>> = {
   glass: 0x9fc4d8,
   chunk: 0x8f8a82,
 };
+
+/**
+ * Heavy pieces as rigid bodies (Spec 04 v2.0): pieces of at least `minKg` standing for one real
+ * object move in the heavy-debris world (Rapier) instead of the point model.
+ */
+export const HEAVY = {
+  /** kg; the detail zone's own cutoff between rigid and light pieces (DETAIL.lightKg). */
+  minKg: 40,
+  /** Contact friction with the ground, slabs, houses and each other (as Spec 09's members). */
+  friction: 0.6,
+  /** Bounce on landing: wood and drywall panels hardly bounce. */
+  restitution: 0.1,
+  /** s: no contact with its own house's walls and roof it overlaps while it tears away. */
+  separationS: 0.5,
+  /** m: overlaps are judged with the piece this much smaller at its edges (touching neighbors
+   *  aren't overlaps). */
+  edgeShrink: 0.1,
+  /** m: look-ahead of Rapier's soft CCD (Spec 10: as the detail zone's loose bodies). */
+  softCcd: 0.5,
+  /** …and at least this many times how far the body can move in a step (as the detail zone). */
+  ccdMargin: 2,
+  /** Contact solver iterations (Rapier's default). Thin sheets landing hard sank a few cm until
+   *  full CCD went on for bodies moving more than half their thickness a step; 8 didn't help. */
+  solverIterations: 4,
+  /** m: a body's lowest corner sunk more than this into the ground or a slab is set back on it. */
+  sinkTolerance: 0.005,
+  /** m: houses within this distance of a moving body (beyond its footprint) are built as
+   *  colliders; a sleeping body keeps only those within restReach (what it lies on or against). */
+  houseReach: 10,
+  restReach: 2,
+  /** m: above this a body meets no house (roofs are below ~7 m): none are built for it. */
+  highY: 10,
+  /** Debris steps a built house is kept after nothing wants it (moving in and out rebuilt it). */
+  keepHouseSteps: 60,
+  /** Hits below this many times the body's weight are resting contact, not impacts. */
+  hitWeights: 3,
+  /** A sleeping body is checked against the wind every this many debris steps (and the houses
+   *  around the bodies are updated every step). */
+  wakeEvery: 6,
+  /** s: a body asleep this long, once the tornado has passed it (behind its center, beyond
+   *  retireRmax·R_max), is retired to the permanent debris field: the wind behind the core
+   *  falls off, and a heavy piece that settled there stays (cost: Phase 6 profile). */
+  retireAfterS: 2,
+  retireRmax: 1.5,
+  /** Most bodies in the world at once: past this the longest-resting sleepers are retired,
+   *  then the slowest pieces creeping on the ground (below creepSpeed m/s, under creepY m). */
+  maxBodies: 400,
+  creepSpeed: 3,
+  creepY: 1,
+  /** The heavy-debris world steps every this many debris steps (1: 60 Hz). At 30 Hz contacts
+   *  went soft: thin sheets landing hard sank 2–40 cm into the ground and slabs. */
+  stepEvery: 1,
+} as const;

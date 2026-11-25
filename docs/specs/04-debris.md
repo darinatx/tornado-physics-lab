@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v1.9) — flight, landing, re-lofting; hits on houses per Spec 10
+Status: Approved (v2.0) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
 
 ## Purpose
 
@@ -149,6 +149,51 @@ full of flying pieces, a component piece is placed as rubble rather than dropped
 **Mass bookkeeping:** every component has a mass, and each house's failed mass is split into
 rubble, ground debris, flying debris and lofted debris.
 
+### Heavy pieces are rigid bodies (v2.0)
+
+A piece of at least **40 kg** that stands for one real object (a wall panel, roof section, deck
+section, garage door, a heavy chunk) doesn't use the point model above. It is a rigid box of its
+own dimensions in the **heavy-debris world**, a physics world (Rapier) stepped with the debris
+step on the sim thread, the same treatment the detail zone gives its members above 40 kg
+(Spec 09):
+
+- **Wind:** the plate force on the box's face at its own position and velocity, with rotational
+  drag (Spec 09's loose-member aerodynamics, `rigidAero`), from the mean wind at its center.
+- **What it meets:** the ground, every slab, the standing walls, roof sections and gables of
+  the houses near it (Spec 10's town colliders, with holes at broken windows and doors; a
+  detailed house as its stand-in), and the other heavy pieces: it lands, slides, catches,
+  leans and stacks with contact friction 0.6. Light pieces don't meet it.
+- **Its own house:** it starts where the component was (or where it fell, for rubble), with
+  the launch velocity above. For its first 0.5 s it passes the walls and roof of its own house
+  that it overlaps when made (it is tearing away from them), and only while it still overlaps
+  them; the rest of its house and its own slab stop it from the start.
+- **Hits:** contact with a house's wall, roof or gable is an impact on that surface (Spec 10),
+  with the body's mass and the normal speed from the contact impulse, ignoring the source house
+  for the first 0.5 s and resting contact.
+- **Rest:** a body still (below 0.1 m/s and 0.1 rad/s) for 0.5 s that the wind can't move is
+  put to sleep (the detail zone's rubble rule: the wind would keep nudging it awake). It stays
+  put until the wind on it could lift it or push it past friction (μ 0.6), then wakes. It is
+  retired into the permanent debris field where it lies once it has slept 2 s and the tornado
+  has passed it (behind the center, beyond 1.5·R_max), or the tornado is beyond
+  `settleRangeRmax`·R_max; at most 400 bodies at once (past that the longest-resting sleepers
+  retire). A sleeping body keeps only the houses it lies on or against as colliders.
+- **Stepping:** Rapier's soft CCD reaches past how far each body can move in a step, spin
+  included (as the detail zone's loose bodies); 8 solver iterations.
+- **Bookkeeping:** it is a piece like any other (mass ledger, rendering, pass-through checks);
+  the point model skips it while it is rigid.
+
+Decisions:
+- **Same physics for heavy debris in both house models.** The paired comparison (Phase 6) showed
+  destroyed town houses leaving ~1% of their material within 5 m against 20–48% for detailed
+  ones: as points, 300 kg wall panels slid and skimmed with the tornado for ~1.3 km. A box with
+  real contacts digs a corner, rests on other rubble, and catches on slabs and walls, as the
+  detail zone's members do. 40 kg is the detail zone's own cutoff (DETAIL.lightKg).
+- **On the sim thread, stepped with the debris step:** deterministic with no worker lag.
+  Cost (EF4 through the default town, headless): ~1.2 ms per debris step at the peak (~900
+  bodies, most of them flying); the sim's own compute rises from ~3.3 to ~5.6 s per 20 s of
+  sim at the worst point. Without retirement, bodies piled up to 7,000 (4× the compute).
+- **Mean wind, no gust model:** as for detailed members; gusts matter for light pieces.
+
 ### Spawning (Phase 3 representative sets)
 
 When a part fails (Spec 03), it releases a representative set of pieces from where that part
@@ -258,12 +303,27 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
   skin friction on its top face: a flat-lying sheet gets far less drag than its tumbling
   average, a 2×4 end-on less than side-on, and a fallen 290 kg wall panel in a 60 m/s wind
   shuffles but stays near where it fell.
+- **DEB-22**: Heavy pieces (≥ 40 kg, one real object) are rigid boxes of their dimensions in the
+  heavy-debris world; lighter ones stay on the point model. A wall panel dropped on the ground
+  in still air comes to rest lying on it, inside no slab and no other box; two dropped on each
+  other stack.
+- **DEB-23**: A heavy piece driven into a standing house's wall stops at it (no pass-through)
+  and its hit is an impact on that wall (Spec 10); its own house's walls don't stop it for its
+  first 0.5 s, its own slab does.
+- **DEB-24**: Rubble stays: in the alignment patch on the town model (EF4, track 330 m from
+  the patch, houses out to 130 m), the compared houses keep at least 15% of their failed mass
+  within 5 m of their footprints (detailed houses there: 20–48%; before v2.0: 1%), and at least
+  90% of the heavy pieces' mass has come to rest by the end. (The wind tunnel's uniform wind is
+  no test of this: it blows everywhere at once, so even detailed houses keep ~5% there.)
+- **DEB-25**: A resting heavy piece wakes only when the wind on it could lift it or push it past
+  friction, and is retired to the permanent debris field once the tornado is out of range;
+  same seed and inputs → identical heavy-piece poses.
 - **DEB-08**: Same seed and same failures → identical debris trajectories.
 
 ## Simplifications / out of scope
 
-- Pieces don't collide with each other. They hit component houses (Spec 10); detailed houses
-  not until Phase 6 slice B.
+- Light pieces don't collide with each other or with heavy ones; heavy pieces (v2.0) collide
+  with each other, slabs and houses.
 - Orientation doesn't feed back into the aerodynamics: drag and lift use tumble-averaged
   coefficients (standard for debris-flight models).
 - Pieces are rigid and don't break further.
@@ -271,6 +331,9 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- v2.0: heavy pieces as rigid bodies (DEB-22–25), at the user's request to make town and
+  detailed houses look alike: destroyed town houses left almost no rubble (wall panels and roof
+  sections skimmed off with the tornado for ~1.3 km).
 - v1.9: `DebrisField.launch` (a piece of a given kind, point, velocity and orientation joins the field,
   counted as spawned) and an impact observer (`onImpact`, read-only), for the wind tunnel (Spec 12).
 - v1.8: drag on the ground from the piece's projected area (DEB-21). Found in the paired detail

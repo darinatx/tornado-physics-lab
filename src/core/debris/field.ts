@@ -3,7 +3,7 @@
  * overflow, permanent debris field, mass bookkeeping.
  */
 import { AREAL_MASS, LAYOUT } from "../../config/buildings";
-import { DEBRIS, DEBRIS_COLORS, DEBRIS_KINDS, SPAWN_TABLE, TURBULENCE, sheet } from "../../config/debris";
+import { DEBRIS, DEBRIS_COLORS, DEBRIS_KINDS, HEAVY, SPAWN_TABLE, TURBULENCE, sheet } from "../../config/debris";
 import type { DebrisKind, DebrisKindDef } from "../../config/debris";
 import { createRng } from "../math/rng";
 import type { Vec3 } from "../math/vec";
@@ -91,8 +91,16 @@ function realCount(b: Building, rec: FailureRecord, kind: DebrisKind): number {
   }
 }
 
+/** Where heavy pieces go (Spec 04 v2.0): the sim's heavy-debris world. */
+export interface HeavySink {
+  /** Take a new heavy piece from house `b`, at its pose and velocity. */
+  take(p: Piece, b: Building, time: number): void;
+}
+
 export class DebrisField {
   readonly pieces: Piece[] = [];
+  /** Heavy pieces become rigid bodies here when set (the sim sets it); else the point model. */
+  heavy: HeavySink | null = null;
   readonly stats: DebrisStats = { airborne: 0, resting: 0, skipped: 0, lofted: 0, settled: 0, maxSpeed: 0, maxHeight: 0, impacts: 0, lodged: 0, lodgedTotal: 0 };
   /** Permanent debris field: resting pieces the tornado has left behind (append-only). */
   readonly settled: Piece[] = [];
@@ -361,6 +369,17 @@ export class DebrisField {
       // Roof pieces that failed in uplift always leave; others drop as rubble if the wind
       // can't move them, or if the active pool is completely full of flying pieces.
       const poolFull = this.pieces.length >= this.cap && !this.pieces.some((q) => q.resting);
+      // Heavy pieces are rigid bodies (Spec 04 v2.0): from where they fell, or moving.
+      if (this.heavy && p.represents === 1 && p.def.mass >= HEAVY.minKg) {
+        if (rubble && !launched && !this.canMove(p, rec.wind)) {
+          if (!rubble()) p.pos.y = (overSlab(b, p.pos) ? IMPACT.slabTop : 0) + p.def.dims[2] / 2;
+          p.vel = { x: 0, y: 0, z: 0 };
+        }
+        p.rigid = true;
+        this.pieces.push(p);
+        this.heavy.take(p, b, time);
+        continue;
+      }
       if (rubble && ((!launched && !this.canMove(p, rec.wind)) || poolFull)) {
         // Lying flat on the ground, or on the slab where it fell onto it (unless placed leaning).
         if (!rubble()) p.pos.y = (overSlab(b, p.pos) ? IMPACT.slabTop : 0) + p.def.dims[2] / 2;
@@ -395,7 +414,7 @@ export class DebrisField {
     let oldest = -1;
     let t = Infinity;
     this.pieces.forEach((q, i) => {
-      if (q.resting && q.restedAt < t) {
+      if (q.resting && !q.rigid && q.restedAt < t) {
         t = q.restedAt;
         oldest = i;
       }
@@ -423,6 +442,20 @@ export class DebrisField {
 
     for (let i = 0; i < this.pieces.length; i++) {
       const p = this.pieces[i]!;
+      // Moving in the heavy-debris world (Spec 04 v2.0).
+      if (p.rigid) {
+        if (p.resting) resting++;
+        else airborne++;
+        continue;
+      }
+      // Retired from it: it stays where it lies, in the permanent debris field.
+      if (p.settleNow) {
+        delete p.settleNow;
+        if (!p.hidden) this.settle(p);
+        this.pieces[i] = null as unknown as Piece;
+        removed = true;
+        continue;
+      }
       if (p.resting) {
         const near = s.vMax > 0 && Math.hypot(p.pos.x - s.center.x, p.pos.z - s.center.z) < range;
         if (!near) {

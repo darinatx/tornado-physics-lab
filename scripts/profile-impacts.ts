@@ -5,6 +5,9 @@
  */
 import { PRESETS } from "../src/config/presets";
 import { createSim } from "../src/sim/loop";
+import { initRapier } from "../src/sim/structureWorld";
+
+await initRapier();
 
 const ef4 = PRESETS.find((p) => p.id === "ef4-wedge")!;
 for (const hits of [true, false]) {

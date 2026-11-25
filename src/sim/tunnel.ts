@@ -188,7 +188,7 @@ export async function createTunnel(s: TunnelScenario): Promise<Tunnel> {
   if (donors.same !== undefined) detailSet.push({ index: donors.same, group: "tunnel:target", stripped: true });
   if (donors.other !== undefined) detailSet.push({ index: donors.other, group: "tunnel:other", stripped: true });
   const needDetail = detailSet.length > 0;
-  if (needDetail) await initRapier();
+  await initRapier();
 
   // Pending launches, in time order (stable).
   const pending = launches.map((l, i) => ({ l, i })).sort((a, b) => a.l.t - b.l.t || a.i - b.i);

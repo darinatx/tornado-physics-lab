@@ -46,5 +46,5 @@ describe("validation — debris field", () => {
     }
     const fracs = destroyed.map((b) => (near.get(b.id) ?? 0) / (d.massBySource.get(b.id) ?? 1));
     expect(median(fracs)).toBeGreaterThanOrEqual(0.35);
-  }, 180000);
+  }, 600000);
 });

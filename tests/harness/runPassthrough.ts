@@ -38,7 +38,7 @@ export interface PassThroughOptions {
 export async function runPassThrough(opts: PassThroughOptions = {}): Promise<PassThroughRun> {
   const seconds = opts.seconds ?? 6;
   const t0 = performance.now();
-  if (opts.detail) await initRapier();
+  await initRapier();
   const sim = createSim({}, opts.seed ?? 3, QUICK_PASS, opts.detail ? (_s, b) => createLocalBackend(b) : undefined);
   if (opts.detail) sim.setDetailFocus({ x: 0, z: 0 });
   // Test-only: a smaller debris pool (the field reads its cap when spawning).

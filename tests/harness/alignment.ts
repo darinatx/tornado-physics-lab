@@ -149,7 +149,7 @@ function countInner(spec: PatchSpec): number {
 export async function runPatch(spec: PatchSpec, detail: boolean, opts: { soloWorlds?: boolean; engines?: number } = {}): Promise<PatchRun> {
   const t0 = performance.now();
   const { p, start, end } = patchTornado(spec);
-  if (detail) await initRapier();
+  await initRapier();
   detailOptions.worldPerHouse = !!opts.soloWorlds;
   const inner = (b: { x: number; z: number }) => Math.hypot(b.x - spec.x, b.z - spec.z) <= (spec.compare ?? Infinity);
   const sim = createSim(
