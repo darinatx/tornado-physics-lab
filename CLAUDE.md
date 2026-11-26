@@ -88,9 +88,24 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    named phase, or accept as a documented limitation in its spec); "fix" items are fixed (usual
    rules) → final sign-off → tag `phase-N-done`.
 
-**Push at each gate.** Right after tagging `phase-N-prelim` or `phase-N-done`, recommend pushing
-`main` and the new tag to GitHub (`origin`), so the phase is backed up online. Say what will be
-pushed (branch, tag, number of commits), and push only when the user says yes.
+### Branches
+
+Each phase has its own branch, `phase-N`, and `main` only changes when a phase is merged.
+- **Start:** phase N branches from `phase-(N-1)` at its `phase-(N-1)-prelim` tag (the previous
+  phase isn't merged yet; the two-stage gate lets N start early), or from `main` if the
+  previous phase is already merged. Once `phase-(N-1)` is merged, merge `main` into `phase-N`.
+- **During the phase:** sessions commit to `phase-N` (a session in its own worktree merges its
+  branch into `phase-N` when its work is done) and push `phase-N` to GitHub (`origin`) after
+  each commit, so work is backed up as it goes. The user has approved these pushes; no need to
+  ask each time. Tag `phase-N-prelim` on `phase-N` and push the tag.
+- **Validation** for phase N commits its backlog entries and scripts to `phase-N` too.
+- **End of phase:** at the final gate, open a pull request from `phase-N` into `main`, with
+  the phase's summary, the backlog decisions and the checks run. Merge only when the user says
+  so, then tag `phase-N-done` on `main` and push the tag.
+- Never push to `main` directly, and never force-push.
+
+Phase 6 predates this: its work is already on `main`. Phase 7 is the first phase on its own
+branch (`phase-7`, from `main`).
 
 ### Backlog
 
