@@ -165,43 +165,79 @@ export function lookStep(camera: Vec3, target: Vec3, yaw: number, pitch: number)
 }
 
 /**
- * Starting view (REND-17): framed on the tornado. `center` is its position, `dir` its heading
- * (unit, horizontal), `rMax` its core radius (m), `cloudBase` (m), `fovDeg` the vertical field
- * of view and `aspect` width / height. The camera sits ahead on the track and to the right, at
- * the nearest distance where ground-to-cloud-base fills ≤ 80% of the height and a 4·R_max-wide
- * debris cloud ≤ 60% of the width (at least 300 m), looking at the axis partway up.
+ * Starting view (Spec 06 v1.13, REND-17): over the town center `town`, CAMERA.startHeight up,
+ * looking at the spawn point's axis at CAMERA.startLookUp of the cloud base (m). If the tornado
+ * spawns on top of the town center, it looks along its heading `dir` (unit, horizontal).
  */
 export function startView(
-  center: { x: number; z: number },
+  town: { x: number; z: number },
+  spawn: { x: number; z: number },
   dir: { x: number; z: number },
-  rMax: number,
   cloudBase: number,
-  fovDeg: number,
-  aspect: number,
 ): { camera: Vec3; target: Vec3 } {
-  const h = CAMERA.startHeight;
-  const half = (fovDeg / 2) * (Math.PI / 180);
-  // Before the canvas has a size the aspect is 0/0: assume a widescreen view.
-  const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9;
-  const hHalf = Math.atan(Math.tan(half) * a);
-  // Width: 2·atan(2·R_max / D) ≤ fill · 2·hHalf.
-  const dWide = (CAMERA.startDebrisWidth * rMax) / 2 / Math.tan(CAMERA.startFillWidth * hHalf);
-  // Height: atan((H − h)/D) + atan(h/D) ≤ fill · 2·half; it falls with D, so bisect.
-  const maxV = CAMERA.startFillHeight * 2 * half;
-  const vert = (d: number) => Math.atan(Math.max(cloudBase - h, 0) / d) + Math.atan(h / d);
-  let lo = 1;
-  let hi = 1e6;
-  for (let i = 0; i < 100; i++) {
-    const mid = (lo + hi) / 2;
-    if (vert(mid) > maxV) lo = mid;
-    else hi = mid;
+  const camera = { x: town.x, y: CAMERA.startHeight, z: town.z };
+  const y = cloudBase * CAMERA.startLookUp;
+  if (Math.hypot(spawn.x - town.x, spawn.z - town.z) < 1) {
+    const L = Math.max(CAMERA.minDistance, 300);
+    return { camera, target: { x: town.x + dir.x * L, y, z: town.z + dir.z * L } };
   }
-  const D = Math.max(CAMERA.startMinDistance, dWide, hi);
-  const right = { x: -dir.z, z: dir.x };
-  const s = CAMERA.startSide;
-  const n = Math.hypot(1, s);
-  return {
-    camera: { x: center.x + ((dir.x + right.x * s) / n) * D, y: h, z: center.z + ((dir.z + right.z * s) / n) * D },
-    target: { x: center.x, y: cloudBase * CAMERA.startLookUp, z: center.z },
-  };
+  return { camera, target: { x: spawn.x, y, z: spawn.z } };
+}
+
+/**
+ * Turning follow on (Spec 06 v1.16, REND-19): the point to look at, the core's center on the
+ * ground (the middle of the R_max ring). The camera isn't moved. On the axis (within 1 m), it
+ * looks out along its current heading `heading` (unit, horizontal).
+ */
+export function aimAtCore(camera: Vec3, center: { x: number; z: number }, heading: { x: number; z: number }): Vec3 {
+  if (Math.hypot(center.x - camera.x, center.z - camera.z) < 1) {
+    const L = Math.max(CAMERA.minDistance, 300);
+    return { x: camera.x + heading.x * L, y: 0, z: camera.z + heading.z * L };
+  }
+  return { x: center.x, y: 0, z: center.z };
+}
+
+/**
+ * The look point `t` seconds into the eased turn (REND-19) from looking at `from` to looking at
+ * `to`, with the camera fixed: the direction turns along the great circle between the two and
+ * the distance changes in step, eased in and out over CAMERA.followTurnTime.
+ */
+export function turnToward(camera: Vec3, from: Vec3, to: Vec3, t: number): Vec3 {
+  const T = CAMERA.followTurnTime;
+  if (t >= T) return { ...to };
+  const x = Math.max(0, t / T);
+  const e = x * x * (3 - 2 * x);
+  const a = { x: from.x - camera.x, y: from.y - camera.y, z: from.z - camera.z };
+  const b = { x: to.x - camera.x, y: to.y - camera.y, z: to.z - camera.z };
+  const la = Math.max(Math.hypot(a.x, a.y, a.z), 1e-9);
+  const lb = Math.max(Math.hypot(b.x, b.y, b.z), 1e-9);
+  const u = { x: a.x / la, y: a.y / la, z: a.z / la };
+  const v = { x: b.x / lb, y: b.y / lb, z: b.z / lb };
+  const cos = Math.min(1, Math.max(-1, u.x * v.x + u.y * v.y + u.z * v.z));
+  const w = Math.acos(cos);
+  let d: Vec3;
+  if (w < 1e-6) d = v;
+  else {
+    const sw = Math.sin(w);
+    // Opposite directions have no unique great circle: go round through the vertical side.
+    const k0 = sw > 1e-6 ? Math.sin((1 - e) * w) / sw : 1 - e;
+    const k1 = sw > 1e-6 ? Math.sin(e * w) / sw : e;
+    d = { x: u.x * k0 + v.x * k1, y: u.y * k0 + v.y * k1, z: u.z * k0 + v.z * k1 };
+    const dl = Math.max(Math.hypot(d.x, d.y, d.z), 1e-9);
+    d = { x: d.x / dl, y: d.y / dl, z: d.z / dl };
+  }
+  const L = la + (lb - la) * e;
+  return { x: camera.x + d.x * L, y: Math.max(0, camera.y + d.y * L), z: camera.z + d.z * L };
+}
+
+/** A camera input, for deciding whether follow carries on (REND-19). */
+export type CameraInput = "move" | "slide" | "turn" | "height" | "zoom";
+
+/**
+ * Whether follow stays on after this input (Spec 06 v1.15, REND-19): following means facing the
+ * core, so inputs that keep the look point on it (height, zoom straight at it) keep following,
+ * and those that move or aim the camera elsewhere (W/A/S/D, sliding, turning) end it.
+ */
+export function keepsFollow(input: CameraInput): boolean {
+  return input === "height" || input === "zoom";
 }

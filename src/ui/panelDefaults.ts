@@ -13,7 +13,7 @@ export interface PanelState {
 }
 
 export const DEFAULT_PANEL_STATE: Readonly<PanelState> = {
-  follow: true,
+  follow: false,
   autoRepeat: false,
   arrows: false,
   funnel: true,
