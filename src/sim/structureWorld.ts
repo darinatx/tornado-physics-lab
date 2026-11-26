@@ -1735,7 +1735,16 @@ export class DetailHouse {
       const p = lp.piece;
       if (p.resting) {
         if (!checkResting) continue;
-        if (!wakeIfForced(p, wind.at({ x: p.pos.x, y: 1, z: p.pos.z }))) continue;
+        // Held by something other than the floor: it falls once nothing is under or beside it.
+        const unheld = lp.held && !this.sw.lightSupported(p);
+        if (unheld) {
+          p.resting = false;
+          p.grounded = false;
+          p.snagged = false;
+          p.snagDir = null;
+        } else if (!wakeIfForced(p, wind.at({ x: p.pos.x, y: 1, z: p.pos.z }))) continue;
+        lp.held = false;
+        lp.still = undefined;
       }
       // The houses around it (Spec 10 v0.6), and the ground under it: a slab top (this house's
       // or another's) or the ground.
@@ -1756,6 +1765,7 @@ export class DetailHouse {
       const close = (b: Building) => Math.hypot(p.pos.x - b.x, p.pos.z - b.z) < Math.hypot(b.width, b.depth) / 2 + p.def.dims[0] + 3 && p.pos.y - supportHeightOf(p) < b.wallHeight + b.roofRise + 2;
       if (close(this.building) || near.some(close)) this.blockLight(p, from, qFrom);
       if (near.length) unbury(p, targets);
+      this.holdStill(lp, wind);
       for (const id of lp.members) this.lightChanged.push(id);
       this.lightMoved.push(lp);
       if (Math.abs(p.pos.x) > GROUND_HALF - 50 || Math.abs(p.pos.z) > GROUND_HALF - 50 || p.pos.y > 5000) {
@@ -1768,6 +1778,35 @@ export class DetailHouse {
         this.lostWhy["left the area"] = (this.lostWhy["left the area"] ?? 0) + lp.members.length;
       }
     }
+  }
+
+  /**
+   * A light piece held in place by something other than the floor (rubble under it, a wall the
+   * wind presses it against) comes to rest exactly where it is once it has stayed within
+   * heldDrift and heldTurnDeg for heldAfterS while touching something (Spec 09 v0.16). The wind
+   * failed to move it all that time, so it stays until the wind turns (Spec 04 snag rule) or
+   * could lift it, or its support goes.
+   */
+  private holdStill(lp: LightPiece, wind: WindSource): void {
+    const p = lp.piece;
+    if (p.resting) return;
+    const s = lp.still;
+    const t = this.sw.time;
+    const turned = s ? 2 * Math.acos(Math.min(1, Math.abs(s.q[0] * p.q[0] + s.q[1] * p.q[1] + s.q[2] * p.q[2] + s.q[3] * p.q[3]))) * (180 / Math.PI) : Infinity;
+    if (!s || Math.hypot(p.pos.x - s.pos.x, p.pos.y - s.pos.y, p.pos.z - s.pos.z) > DETAIL.heldDrift || turned > DETAIL.heldTurnDeg) {
+      lp.still = { pos: { ...p.pos }, q: [p.q[0], p.q[1], p.q[2], p.q[3]], t };
+      return;
+    }
+    if (t - s.t < DETAIL.heldAfterS - 1e-9 || !(p.grounded || this.sw.lightSupported(p))) return;
+    const w = wind.at({ x: p.pos.x, y: 1, z: p.pos.z });
+    const wh = Math.hypot(w.x, w.z);
+    p.resting = true;
+    p.vel = { x: 0, y: 0, z: 0 };
+    p.snagged = wh > 0;
+    p.snagDir = wh > 0 ? { x: w.x / wh, z: w.z / wh } : null;
+    p.restedAt = Math.min(p.restedAt, t);
+    lp.held = true;
+    lp.still = undefined;
   }
 
   /** Stop a light piece where its box first meets something fixed, and bounce it off. */
@@ -1917,6 +1956,10 @@ export class DetailHouse {
 /** A light group flying on the Spec 04 debris model. */
 interface LightPiece {
   piece: Piece;
+  /** Where it was when it last moved more than DETAIL.heldDrift / heldTurnDeg, and when. */
+  still?: { pos: Vec3; q: Q; t: number };
+  /** At rest held by something other than the floor (Spec 09 v0.16): wakes if that goes. */
+  held?: boolean;
   /** Rotation from house-local axes (the group's frame) to the piece's axes. */
   r: Q;
   /** Center of the group's box, house-local. */

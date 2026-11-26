@@ -1,6 +1,6 @@
 # Spec 09 — Structural Physics (Detail Zone)
 
-Status: Approved (v0.15) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
+Status: Approved (v0.16) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
 
 ## Purpose
 
@@ -243,6 +243,16 @@ Spec 04 debris model (tumble-averaged drag and lift, ground contact, stepped at 
 motion stays smooth on screen), keeping its shape,
 position, velocity and orientation. The tear-off itself stays fully simulated; afterwards it
 no longer collides with other pieces or houses (like the town's debris until Phase 6).
+A light piece comes to rest on open ground or a slab as in Spec 04. It also comes to rest where
+something else holds it: a piece that stays within 3 cm and 2° of where it was for 0.5 s while
+touching something (lying on rubble, leaning on a wall, pressed against one by the wind) is
+held there, exactly as it lies. Over that half second the wind already failed to move it, so
+it stays until the wind changes: it wakes when the wind could lift it, when the wind turns
+more than 90° from the way it blew when the piece came to rest (Spec 04 snag rule), or when
+nothing is under or beside it any more (checked 4 times a second, as for other resting pieces).
+Before, such pieces were pushed back out of what they touched every step and never counted as
+resting: ~140 per torn-apart house jittered in place, stepped at 60 Hz, 2–4·R_max behind an
+EF4.
 Structural members (wall frames, rafters, interior walls, gable ends, the garage door) and
 every multi-member chunk stay rigid bodies. This keeps a torn-apart house at ~30 rigid
 bodies instead of ~650.
@@ -316,6 +326,11 @@ Decisions (v0.15):
 - Rubble support: checked at the 4 Hz rubble wind check rather than every step (a quarter
   second of hanging is not visible at the distances involved), plus at once on a stand-in change
   (the common case).
+- Held light pieces (v0.16) rest on the evidence that the wind didn't move them for 0.5 s, not
+  on a force balance against the wall: the debris model has no contact forces with walls or
+  rubble, only push-back. Waking reuses Spec 04's snag rule (pinned while the wind still blows
+  within 90° of its direction at rest), so held detail pieces and snagged town pieces behave
+  alike.
 - No hard cap on settling: a piece the storm's updraft holds aloft keeps its house simulating
   (cheap: light pieces only, the rest is fixed rubble) until it lands or leaves the area.
 - Zone exit stays at 6·R_max behind (profiled, v0.15): behind the core 57% (EF4) / 48% (EF5) of
@@ -467,6 +482,9 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
 - **STR-34**: Houses that left the zone keep getting detail steps after the zone is empty, until
   they freeze; one still settling a minute later has nothing hanging (every rigid piece has
   something under it, every unsupported light piece is moving).
+- **STR-35**: A light piece held still by something other than the ground (lying on rubble,
+  pressed against a wall by the wind) comes to rest within 0.5 s of stopping and stays where it
+  lies; it wakes when the wind turns away from the wall, and when its support is removed.
 - **STR-24** *(validation)*: Standard detailed houses passed through simulated strong
   tornadoes (the Spec 03 calibration cases) reach each DOD at a Kaplan–Meier median peak wind
   within ±10% of the DI 2 expected value (DOD 5, not represented, is reached with DOD 6), on a
@@ -502,6 +520,15 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   on other pieces or other slabs).
 
 ## Changelog
+
+- v0.16: light pieces held still by something other than the ground (rubble, a wall, a slab
+  edge) come to rest (STR-35). Profiled 2–4·R_max behind an EF4: light pieces were 80% of the
+  detail cost (10.5 of 13.3 ms per house-step), ~515 per house still stepped and only 8 resting.
+  The light-piece model can't slide a piece along anything but the floor: one on rubble or
+  against a wall was put back every step and gathered phantom speed (up to 20 m/s while not
+  moving). After (same run, 10 houses): behind the tornado 12.8 → 8.1 ms per house-step (−36%);
+  pieces the wind can lift now leave instead of staying stuck. Open: real sliding along rubble
+  and walls for light pieces.
 
 - v0.15: no detail pieces left in mid-air (user report: debris floating long after the tornado
   had passed). Three causes: (1) once the last house left the zone the sim sent no more detail

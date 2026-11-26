@@ -207,6 +207,11 @@ export const DETAIL = {
   creepSpeed: 0.2,
   creepSpin: 0.2,
   creepForS: 1,
+  /** A light piece that stays within heldDrift (m) and heldTurnDeg (°) of where it was for
+   *  heldAfterS (s) while touching something is held there at rest (Spec 09 v0.16). */
+  heldDrift: 0.03,
+  heldTurnDeg: 2,
+  heldAfterS: 0.5,
   /** Calm skip: no load solve below this roof-height wind (mph) and APC push (Pa). Nothing can
    *  fail below 64 mph in any class or direction (first: aged shingles on a weak house at
    *  66 mph); 55 mph leaves ~30% margin on load. */
