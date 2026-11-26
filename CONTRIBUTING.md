@@ -74,7 +74,10 @@ Not sure where something fits? Open an issue and ask.
    `src/config`, run `npm run test` too.
 5. If your change could affect speed, measure before and after on the same machine and put
    the numbers in the PR. A slowdown over 10% needs an explanation.
-6. Open a PR against `main` and fill in the template.
+6. Bring in anything new on `main` first: `git fetch upstream && git merge upstream/main`
+   (where `upstream` is this repo), then run `npm run verify:fast` again. Merge, don't
+   rebase, once your branch is pushed.
+7. Open a PR against `main` and fill in the template.
 
 **Commits:** one logical change per commit, with a short summary line that says what changed
 ("Debris: lodged lumber keeps its spin"), not how you got there.

@@ -116,6 +116,29 @@ joins that phase's plan), or **accept** (written into the relevant spec's simpli
 Fixing one follows the usual rules (spec change first, tests first). Close an item by moving
 it to "Done" with the commit that fixed it, or the spec that records it as accepted.
 
+## Branches and GitHub
+
+The repo is public at `github.com/darinatx/tornado-sim`. `main` is protected: changes reach it
+only through a pull request with CI (`verify:fast`) passing. Never push to `main` directly.
+Work happens on a working branch: a phase branch (e.g. `phase-6-wind-tunnel`) or a short
+branch for one fix.
+
+**Keep the working branch current with `main`.** At the start of every task, and again before
+opening or updating a pull request:
+
+1. `git fetch origin`, then check `git log --oneline HEAD..origin/main`.
+2. If `main` has commits the working branch lacks, merge them in: `git merge origin/main`.
+   Merge, never rebase: working branches are pushed and shared.
+3. If uncommitted changes touch the same files as the incoming commits, stop and ask the user
+   before merging. Don't stash their work.
+4. Resolve conflicts by the usual rules: the approved spec wins, and if two approved spec
+   versions conflict, ask the user.
+5. After a merge, run `npm run verify:fast` before continuing, and tell the user in one line
+   what came in from `main`.
+
+Merging into `main`: a phase branch lands with a merge commit so its history stays; small
+pull requests are squash-merged.
+
 ## Commands
 
 - `npm run dev`: start the app
