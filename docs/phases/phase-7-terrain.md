@@ -50,23 +50,25 @@ setting any more; the structure lab can override it.
 
 ## Demo checklist
 
-- [ ] Main sim: no terrain control in the panel
-- [ ] Ground: fields outside town, mowed lawn across the neighborhood, no roads or section lines,
+Reviewed by the user 2026-11-26: "demo looks good".
+
+- [x] Main sim: no terrain control in the panel
+- [x] Ground: fields outside town, mowed lawn across the neighborhood, no roads or section lines,
       no hard seam at the town edge
-- [ ] Probe over a field, at the town edge and deep in town: class, z₀ and β change, and β at the
+- [x] Probe over a field, at the town edge and deep in town: class, z₀ and β change, and β at the
       edge depends on which way the wind blows
-- [ ] EF3 preset from the fields into town: the probe's 5 m wind drops as it crosses the edge
+- [x] EF3 preset from the fields into town: the probe's 5 m wind drops as it crosses the edge
       over a few hundred metres, not at once
-- [ ] After the core passes, probe the flattened area: z₀ lower, near-ground wind higher than
+- [x] After the core passes, probe the flattened area: z₀ lower, near-ground wind higher than
       in the standing town beside it
-- [ ] Lab: Terrain Auto / Open / Suburban / Urban; the ground changes to match (Urban shows
+- [x] Lab: Terrain Auto / Open / Suburban / Urban; the ground changes to match (Urban shows
       concrete); the same pass gives less roof wind over Urban than Open; a recorded-wind
       replay locks the setting
-- [ ] Ground roughness layer: off to start; turned on, fields read smooth, the town rough, the
+- [x] Ground roughness layer: off to start; turned on, fields read smooth, the town rough, the
       edge a gradient a few hundred metres wide that shifts as the tornado and its wind move
       past; the legend shows the classes
-- [ ] With the layer on, the track behind the core fades toward smooth as houses come down
-- [ ] In the lab, an override turns the layer uniform; Auto shows the surroundings
+- [x] With the layer on, the track behind the core fades toward smooth as houses come down
+- [x] In the lab, an override turns the layer uniform; Auto shows the surroundings
 
 ## Slice notes
 
@@ -96,7 +98,7 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 
 - [x] Spec 17 approved (v1.0); Specs 01, 04, 05, 06, 07, 12, 13 updated
 - [x] Slice A: TERR-01 to TERR-09, TERR-13 pass
-- [ ] Slice B: TERR-10 to TERR-12, TERR-14 pass (done); demo reviewed by the user
+- [x] Slice B: TERR-10 to TERR-12, TERR-14 pass; demo reviewed by the user (2026-11-26)
 - [ ] Benchmark run for slices A and B against the baseline once `npm run bench` exists;
       any scene more than 10% slower explained, and fixed or logged
 - [ ] Slice C, profiling: hotspots listed with estimated and confirmed gains; cheap wins
