@@ -21,7 +21,17 @@ setting any more; the structure lab can override it.
   pavement) and the blended town edge; terrain dropdown removed; probe and inspector show
   the local terrain; the lab's Terrain setting and its ground; the Ground roughness layer
   and its legend. Demo below. TERR-10 to TERR-12, TERR-14.
-- **C — Validation, in its own session alongside Phase 8** (CLAUDE.md Phase loop step 6):
+- **C — Profiling** (CLAUDE.md rule 9, Phase loop step 4), before the preliminary gate:
+  profile the benchmark scenes (`npm run bench`) and the browser frame, since the ground shader,
+  cover mask and roughness layer are render work. List the top hotspots, each with an
+  estimated gain as a range; confirm each one with the benchmark once it's done. Do the cheap,
+  large wins here; put bigger ones in `docs/backlog.md` (category `perf`) for the user, and
+  structural work goes to the performance phase. Record before/after numbers below. Known
+  candidates: the roughness update (~11 ms every 2 s of sim time while houses fail),
+  `windAt` over a field (~1.5× a class near the ground), the layer refresh (6–10 ms).
+  **Blocked:** `npm run bench` is Phase 6's slice D and isn't built yet; slices A and B were
+  never benchmarked, so they get one run against the new baseline when it exists.
+- **D — Validation, in its own session alongside Phase 8** (CLAUDE.md Phase loop step 6):
   `npm run verify`; z₀ against published values for comparable neighborhoods; the
   adjustment length at the town edge against internal-boundary-layer data; damage and EF
   readout for an EF2 and an EF4 preset through town before and after (the town was open
@@ -77,8 +87,8 @@ setting any more; the structure lab can override it.
     changed `src/core`, `src/sim` and `src/config`; the user chose to let it continue
     (2026-11-26). Its results describe the pre-terrain code: rerun its checks that involve
     near-ground wind or debris in town on this code.
-  - `npm run bench` (rule 9) doesn't exist yet; it's to be specced once Phase 6 validation
-    finishes. No benchmark run for this slice.
+  - Benchmark: none run. `npm run bench` (rule 9) doesn't exist yet; it's Phase 6's slice D.
+    Slices A and B get one run when it does (exit criterion above).
 
 ## Exit criteria
 
@@ -87,12 +97,16 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 - [x] Spec 17 approved (v1.0); Specs 01, 04, 05, 06, 07, 12, 13 updated
 - [x] Slice A: TERR-01 to TERR-09, TERR-13 pass
 - [ ] Slice B: TERR-10 to TERR-12, TERR-14 pass (done); demo reviewed by the user
+- [ ] Benchmark run for slices A and B against the baseline once `npm run bench` exists;
+      any scene more than 10% slower explained, and fixed or logged
+- [ ] Slice C, profiling: hotspots listed with estimated and confirmed gains; cheap wins
+      done, the rest in the backlog (`perf`); before/after numbers recorded
 - [ ] `npm run verify:fast` passes
 - [ ] Specs updated, simplifications note and retro written
 - [ ] User's preliminary sign-off; tag `phase-7-prelim`
 
 Final sign-off (tag `phase-7-done`):
 
-- [ ] Slice C, validation, in its own session; findings in `docs/backlog.md`
+- [ ] Slice D, validation, in its own session; findings in `docs/backlog.md`
 - [ ] Every Phase 7 backlog item decided by the user (fix, defer, accept); "fix" items fixed
 - [ ] User's final sign-off; tag `phase-7-done`
