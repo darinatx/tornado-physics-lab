@@ -28,19 +28,28 @@ describe("validation — debris impacts", () => {
     // 9 lb 2×4 at 34 mph through a vinyl-sided OSB wall (BIA test); the 15 lb shelter missile at 100 mph.
     expect(share(twoByFour(4.1), 15.2)).toBeGreaterThanOrEqual(0.9);
     expect(share(twoByFour(6.8), 44.7)).toBeGreaterThanOrEqual(0.999);
-    // Glass over many panes: a shingle at 10 m/s, a shard at 1 m/s.
-    const glass = (kind: "shingle" | "glass", v: number) => {
+    // Glass over many panes, by impact momentum p (kg·m/s).
+    const glass = (kind: "shingle" | "stud" | "glass", p: number) => {
       const d = DEBRIS_KINDS[kind];
       const m: Missile = { label: d.label, family: d.family, mass: d.mass, dims: d.dims };
       let k = 0;
       for (let id = 0; id < 5000; id++) {
         const h = { ...b, id } as Building;
-        if (resolveImpact(h, { kind: "pane", index: 0, face: 0 }, m, v, rng)!.impact.broke) k++;
+        if (resolveImpact(h, { kind: "pane", index: 0, face: 0 }, m, p / d.mass, rng)!.impact.broke) k++;
       }
       return k / 5000;
     };
-    expect(glass("shingle", 10)).toBeGreaterThanOrEqual(0.99);
-    expect(glass("glass", 1)).toBeLessThanOrEqual(0.5);
+    // Shingles on 3.18 mm annealed glass (Shah 2008; Masters et al. 2010): mean breaking momentum
+    // 4.71 kg·m/s, lowest seen 2.35, highest 7.04.
+    expect(glass("shingle", 4.71)).toBeGreaterThanOrEqual(0.4);
+    expect(glass("shingle", 4.71)).toBeLessThanOrEqual(0.6);
+    expect(glass("shingle", 2.35)).toBeLessThanOrEqual(0.05);
+    expect(glass("shingle", 7.04)).toBeGreaterThanOrEqual(0.85);
+    // 2×4s on annealed glass (NAHB 2002): 50% breakage at 2.3–2.5 lbf·s (10.2–11.1 kg·m/s).
+    expect(glass("stud", 10.2)).toBeGreaterThanOrEqual(0.4);
+    expect(glass("stud", 11.1)).toBeLessThanOrEqual(0.6);
+    // A shard dropped onto a pane at 1 m/s rarely breaks it.
+    expect(glass("glass", 0.25)).toBeLessThanOrEqual(0.5);
   });
 
   test("IMP-13 (validation): an EF4 through town breaks windows with debris and lodges lumber", async () => {

@@ -137,15 +137,19 @@ describe("Spec 10 — debris impacts", () => {
       expect(resolveImpact(b, surf, m, (th / m.mass) * 0.999, rng)!.impact.broke).toBe(false);
     }
     // Medians by family, and strong glazing.
-    const med = (family: "sheet" | "compact", cls: Building["cls"]) => {
+    const med = (family: "sheet" | "rod" | "compact", cls: Building["cls"]) => {
       const v = Array.from({ length: 4001 }, (_, id) => glassThreshold({ id, cls } as Building, 0, family)).sort((x, y) => x - y);
       return v[2000]!;
     };
-    expect(med("compact", "standard") / IMPACT.glass.point.median).toBeGreaterThan(0.95);
-    expect(med("compact", "standard") / IMPACT.glass.point.median).toBeLessThan(1.05);
-    expect(med("sheet", "standard") / IMPACT.glass.sheet.median).toBeGreaterThan(0.95);
-    expect(med("sheet", "standard") / IMPACT.glass.sheet.median).toBeLessThan(1.05);
-    expect(med("sheet", "strong") / med("sheet", "standard")).toBeCloseTo(IMPACT.strongGlazing, 9);
+    for (const family of ["sheet", "rod", "compact"] as const) {
+      expect(med(family, "standard") / IMPACT.glass[family].median).toBeGreaterThan(0.95);
+      expect(med(family, "standard") / IMPACT.glass[family].median).toBeLessThan(1.05);
+      expect(med(family, "strong") / med(family, "standard")).toBeCloseTo(IMPACT.strongGlazing, 9);
+    }
+    // Lumber's blunt end spreads its contact more than a shingle's edge (NAHB 2002), and both
+    // more than a hard compact piece.
+    expect(med("rod", "standard")).toBeGreaterThan(med("sheet", "standard"));
+    expect(med("sheet", "standard")).toBeGreaterThan(med("compact", "standard"));
   });
 
   test("IMP-04: rods and compact pieces perforate by energy, sheets never; lodged lumber falls when its wall does", () => {

@@ -182,7 +182,9 @@ describe("Spec 04 v2.1 — heavy debris beside the sim, at a fixed lag", () => {
       let maxPending = 0;
       let frames = 0;
       while (sim.time < T - 1e-9) {
-        sim.advance(1 / 30);
+        // Never past T, so both runs are compared at the same sim time (a lagging frame
+        // otherwise overshoots by up to a frame).
+        sim.advance(Math.min(1 / 30, T - sim.time));
         frames++;
         const b = backend as ReturnType<typeof createDeferredHeavy> | null;
         if (b) {
@@ -193,6 +195,7 @@ describe("Spec 04 v2.1 — heavy debris beside the sim, at a fixed lag", () => {
       }
       const pieces = sim.debris.pieces.filter((p) => p.def.mass >= HEAVY.minKg && p.represents === 1);
       return {
+        time: sim.time,
         maxPending,
         frames,
         heavy: pieces.length,
@@ -206,6 +209,7 @@ describe("Spec 04 v2.1 — heavy debris beside the sim, at a fixed lag", () => {
     // It did lag (the sim had to wait for it) and never ran more than 8 steps ahead.
     expect(b.frames).toBeGreaterThan(a.frames);
     expect(b.maxPending).toBeLessThanOrEqual(HEAVY.lagSteps + 1);
+    expect(b.time).toBeCloseTo(a.time, 9);
     expect(b.heavy).toBe(a.heavy);
     expect(b.poses).toBe(a.poses);
     expect(b.damage).toBe(a.damage);

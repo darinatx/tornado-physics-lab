@@ -12,16 +12,25 @@ export interface Fragility {
 
 export const IMPACT = {
   /**
-   * Annealed window glass breaking momentum (normal component). Momentum predicts breakage
-   * better than energy (Masters, Gurley, Shah & Fernandez 2010, Engineering Structures, ~600
-   * impacts on residential annealed glass). Point/edge contact (rods, compact pieces) breaks
-   * at lower momentum than a sheet's spread contact. To be checked against the paper's tables.
+   * Annealed window glass breaking momentum (normal component, kg·m/s), by missile family.
+   * Momentum predicts breakage better than energy (Shah 2008, UF thesis; Masters, Gurley, Shah &
+   * Fernandez 2010, Engineering Structures 32:911; Bole 1999).
+   * - sheet: full-weight asphalt shingles on 3.18 mm (1/8 in) annealed glass, mean threshold
+   *   4.71 kg·m/s, range 2.35–7.04 (Shah 2008, Table 3-2 and §5.1.1). β: the lab scatter is
+   *   ~0.2; 0.3 adds impact location, angle and edge support in real windows.
+   * - rod: 2×4 lumber on annealed glass, 50% breakage at 2.3–2.5 lbf·s = 10.2–11.1 kg·m/s
+   *   (NAHB Research Center 2002, for HUD). The blunt 38 × 89 mm end spreads its contact.
+   * - compact: shards and rubble chunks; not tested directly. Bounded by hard point contacts
+   *   (a 2 g steel ball at 0.08 kg·m/s, the ASTM E1996 small missile, breaks annealed glass)
+   *   and blunt wood (~10); an estimate.
    */
   glass: {
-    point: { median: 0.4, beta: 0.5 } as Fragility,
-    sheet: { median: 1.2, beta: 0.5 } as Fragility,
+    sheet: { median: 4.7, beta: 0.3 } as Fragility,
+    rod: { median: 10.5, beta: 0.3 } as Fragility,
+    compact: { median: 0.4, beta: 0.5 } as Fragility,
   },
-  /** Impact-rated glazing on strong houses (Spec 03 class factor for windows). */
+  /** Impact-rated glazing on strong houses (Spec 03 class factor for windows). Also about the
+   *  step from 3.18 to 4.76 mm annealed glass (×1.4 in breaking momentum, Shah 2008). */
   strongGlazing: 1.4,
   /**
    * Perforation energy (normal component), rods and compact pieces under `perforateMaxKg`.

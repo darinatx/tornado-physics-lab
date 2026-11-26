@@ -1,6 +1,6 @@
 # Spec 10 — Debris Impacts
 
-Status: Approved (v0.13) — Phase 6 slice A (impact physics and component houses) and the first
+Status: Approved (v0.15) — Phase 6 slice A (impact physics and component houses) and the first
 part of slice B (detail-zone pieces hit the houses around them). The rest of slice B is outlined
 at the end.
 
@@ -102,8 +102,9 @@ construction (impact-rated windows) multiplies the glazing threshold by 1.4, as 
 
 | Surface | Mode | Measure | Median | β | Applies to |
 |---|---|---|---|---|---|
-| Window (annealed) | breaks | p | 0.4 kg·m/s | 0.5 | rods and compact pieces (edge, corner or point contact) |
-| Window (annealed) | breaks | p | 1.2 kg·m/s | 0.5 | sheets (contact spread over a face or long edge) |
+| Window (annealed) | breaks | p | 4.7 kg·m/s | 0.3 | sheets (shingles, siding, sheathing: edge or face contact) |
+| Window (annealed) | breaks | p | 10.5 kg·m/s | 0.3 | rods (lumber: the blunt end or side spreads its contact) |
+| Window (annealed) | breaks | p | 0.4 kg·m/s | 0.5 | compact pieces (shards, rubble chunks: hard corners) |
 | Wall (vinyl siding, 12 mm OSB) | perforated | E | 250 J | 0.4 | rods and compact pieces under 60 kg |
 | Roof (shingles, 12 mm OSB deck) | perforated | E | 250 J | 0.4 | rods and compact pieces under 60 kg |
 | Garage door (steel, foam core) | perforated | E | 150 J | 0.4 | rods and compact pieces under 60 kg |
@@ -111,13 +112,25 @@ construction (impact-rated windows) multiplies the glazing threshold by 1.4, as 
 | Shingles | torn off | E | 60 J | 0.5 | any piece hitting a roof plane |
 
 Sources and checks:
-- Glass: residential annealed glass breaks under very light debris; Masters, Gurley, Shah &
-  Fernandez (2010, *Engineering Structures*) built momentum fragility curves for annealed
-  window glass from ~600 impacts and found momentum the better predictor. Small-missile tests
-  (ASTM E1996: 2 g steel ball at 39.6 m/s, 0.08 kg·m/s) are the standard that impact-rated
-  glazing must pass. *The medians above are set from that work's range and still have to be
-  checked against the paper's tables.* A shingle at 10 m/s carries 10 kg·m/s: any real debris
-  hit at storm speeds breaks ordinary glass, as surveys show.
+- Glass: momentum predicts breakage better than energy (Shah 2008, Masters, Gurley, Shah &
+  Fernandez 2010, *Engineering Structures* 32:911, ~600 impacts; Bole 1999 found 2×4s of equal
+  energy gave very different outcomes).
+  - Sheets: full-weight asphalt shingles on 0.6 × 0.6 m and 0.6 × 1.2 m panes of 3.18 mm
+    (1/8 in) annealed glass broke them at a mean momentum of 4.71 and 4.8 kg·m/s (pane size
+    didn't matter), range 2.35–7.04, at about 12 m/s; flight mode (autorotation or tumbling) and
+    shingle age didn't matter (Shah 2008, UF thesis, Table 3-2 and §5.1.1, the data behind
+    Masters et al. 2010). The lab scatter is β ≈ 0.2; 0.3 adds impact point, angle and edge
+    support in real windows. NAHB Research Center (2002, for HUD) found 50% breakage for
+    shingles at 0.2–1.2 lbf·s (0.9–5.3 kg·m/s) over thinner panes as well (2.38–3.97 mm).
+  - Rods: NAHB (2002) found 50% breakage for 2×4s at 2.3–2.5 lbf·s (10.2–11.1 kg·m/s).
+  - Compact pieces: no direct test. Hard point contacts break annealed glass at very low
+    momentum (the ASTM E1996 small missile, a 2 g steel ball at 39.6 m/s, 0.08 kg·m/s, is what
+    impact-rated glazing must survive; Beason 1974 found steel-ball size the main factor), and
+    blunt wood takes ~10. 0.4 is an estimate between them, kept from v0.1.
+  - Strong houses ×1.4: going from 3.18 to 4.76 mm annealed glass raised the breaking momentum
+    by about that much (Shah 2008: 4.7 → 6.6 kg·m/s), matching Spec 03's glazing factor.
+  - At storm speeds every family still breaks glass easily: a 1 kg shingle at 10 m/s carries
+    10 kg·m/s, a 4.5 kg stud at 10 m/s 45.
 - Walls: a 4.1 kg (9 lb) 2×4 at 15.2 m/s (34 mph, ~470 J) went through vinyl- and
   fiber-cement-sided walls with 1/2 in. OSB sheathing (BIA-sponsored test, reported by NAHB);
   Texas Tech found 2×4 missiles pass through wood-frame walls with little damage to the
@@ -287,7 +300,7 @@ Values live in `src/config/impacts.ts`.
 - **IMP-02**: A hit is assigned to the surface it lands on: the pane, the garage door, the wall
   panel (including the gable above an end wall) or the roof section at that point.
 - **IMP-03**: A window breaks exactly when the normal momentum exceeds that pane's threshold;
-  the threshold medians and β follow the table by piece family, are 1.4× for strong houses,
+  the threshold medians and β follow the table by piece family (sheet, rod, compact), are 1.4× for strong houses,
   and are the same for every hit on one pane.
 - **IMP-04**: Rods and compact pieces under 60 kg perforate walls, roofs and garage doors
   according to the energy fragility; sheets never do. A perforating piece lodges in the
@@ -309,8 +322,10 @@ Values live in `src/config/impacts.ts`.
 - **IMP-11**: Same seed → identical impacts and damage.
 - **IMP-12** *(validation)*: Reference tests reproduced by the model: a 4.1 kg 2×4 at 15.2 m/s
   end-on perforates a standard wall with probability ≥ 90%, the 6.8 kg 2×4 at 44.7 m/s with
-  ≥ 99.9%; a 1 kg shingle at 10 m/s breaks a standard pane with probability ≥ 99%; a 0.25 kg
-  shard at 1 m/s breaks it with probability ≤ 50%.
+  ≥ 99.9%. Glass, over standard panes: a shingle at 4.71 kg·m/s breaks 40–60% of them (Shah
+  2008's mean), at 2.35 kg·m/s ≤ 5% and at 7.04 kg·m/s ≥ 85% (the lowest and highest seen);
+  a 2×4 breaks ≥ 40% at 10.2 kg·m/s and ≤ 60% at 11.1 kg·m/s (NAHB 2002's 50% range); a
+  0.25 kg shard at 1 m/s breaks ≤ 50%.
 - **IMP-14**: A piece's size counts: a long piece's box never reaches into a standing wall it
   is flying at (it is stopped when its box touches).
 - **IMP-15**: Slabs: a piece sliding into a slab's side stays outside it; a piece falling onto
@@ -398,6 +413,11 @@ n + lead, which they are certain to have reached):
 
 ## Changelog
 
+- v0.15: glass thresholds checked against the sources (Phase 6 open item). Sheets 1.2 → 4.7
+  kg·m/s, β 0.5 → 0.3 (Shah 2008 / Masters et al. 2010 shingle tests); lumber gets its own
+  family, 10.5 kg·m/s, β 0.3 (NAHB 2002 2×4 tests), instead of sharing 0.4 with compact
+  pieces; compact unchanged (estimate). IMP-12 now checks against those tests. Windows had
+  been breaking 4× too easily for shingles and ~25× for lumber.
 - v0.13: soft CCD look-ahead scales with each body's speed and spin (1.5× its reach per step,
   at least 0.5 m). A fixed 0.5 m let a gable chunk at 31 m/s (0.52 m per step) end a step 12 cm
   into a neighbor's wall, and a tumbling wall section sink 3 cm into a slab edge (IMP-17).

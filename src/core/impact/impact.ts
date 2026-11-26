@@ -45,13 +45,13 @@ export function drawThreshold(f: Fragility, rng: () => number): number {
   return f.median * Math.exp(f.beta * boxMuller(rng(), rng()));
 }
 
-const SALT = { glassPoint: 1, glassSheet: 2, siding: 3, shingle: 4 } as const;
+const SALT = { glassCompact: 1, glassSheet: 2, siding: 3, shingle: 4, glassRod: 5 } as const;
+const GLASS_SALT: Record<DebrisFamily, number> = { compact: SALT.glassCompact, sheet: SALT.glassSheet, rod: SALT.glassRod };
 
 /** A pane's breaking momentum for this missile family (kg·m/s), IMP-03. */
 export function glassThreshold(b: Building, pane: number, family: DebrisFamily): number {
-  const f = family === "sheet" ? IMPACT.glass.sheet : IMPACT.glass.point;
   const cls = b.cls === "strong" ? IMPACT.strongGlazing : 1;
-  return componentThreshold(f, b.id, pane, family === "sheet" ? SALT.glassSheet : SALT.glassPoint) * cls;
+  return componentThreshold(IMPACT.glass[family], b.id, pane, GLASS_SALT[family]) * cls;
 }
 
 export const sidingThreshold = (b: Building, panel: number) => componentThreshold(IMPACT.siding, b.id, panel, SALT.siding);

@@ -53,8 +53,12 @@ elsewhere. Pieces stop passing through standing houses.
   lodged in walls (lumber is only released late, by partitions and swept slabs).
 - Cost: hit tests add ~150 ms of CPU per simulated second at the core (649 vs 501 ms, main
   thread, `npx tsx scripts/profile-impacts.ts`); the sim stays faster than real time.
-- To check at the demo: window breakage now spreads well ahead of the wind damage; glass
-  thresholds still have to be checked against Masters et al. (2010).
+- To check at the demo: window breakage now spreads well ahead of the wind damage. Glass
+  thresholds checked against the sources (Spec 10 v0.15, 2026-11-25): shingles 4.7 kg·m/s
+  (Shah 2008, the data behind Masters et al. 2010; was 1.2), lumber 10.5 (NAHB 2002 2×4 tests;
+  was 0.4), compact pieces unchanged at 0.4 (estimate, no direct test). EF4 pass (seed 1)
+  after the change: 1,820 houses lost their first window to debris (not comparable to the
+  2,051 above, which predates later debris changes).
 
 ## Slice A demo feedback (2026-11-24)
 
