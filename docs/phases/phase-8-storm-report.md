@@ -1,6 +1,6 @@
-# Phase 7 — Storm Report
+# Phase 8 — Storm Report
 
-Status: Spec review (drafted 2026-11-26). Starts after the Phase 6 gate.
+Status: Spec review (drafted 2026-11-26 as Phase 7; renumbered to Phase 8 the same day). Starts after Phase 7.
 
 ## Goal
 
@@ -45,4 +45,4 @@ rating, the true wind the sim recorded there.
 - [ ] Slice C: REP-14, REP-15 pass
 - [ ] All tests pass; `npm run verify` passes
 - [ ] Specs updated, simplifications note and retro written
-- [ ] User sign-off; commit tagged `phase-7-done`
+- [ ] User sign-off; commit tagged `phase-8-done`

@@ -240,14 +240,14 @@ All values live in `src/config/wind.ts`.
 
 - An analytic vortex instead of a solved flow. Mass continuity is not strictly enforced
   between the inflow, updraft and swirl components.
-- The terrain class is uniform per query. No local speed-up between buildings.
+- The terrain class is uniform per query. No local speed-up between buildings. Phase 7 (Spec 17) makes β vary with place and wind direction.
 - No short-period turbulence. Speeds represent 3-second gusts. A seeded gust-noise layer may
   be added later with its own criteria.
 - In a two-cell vortex the central downdraft doesn't spread outward along the ground (the
   real near-surface outflow from the eye is not modeled); inflow is unchanged.
 - The swirl ratio uses the core radius as the updraft radius; lab definitions vary, so the
   thresholds are calibrated to observed tornado behavior rather than lab values.
-- No suction vortices yet. Multi-vortex mode is planned as a later spec version (WIND-2x), in Phase 9 (storm structure).
+- No suction vortices yet. Multi-vortex mode is planned as a later spec version (WIND-2x), in Phase 10 (storm structure).
 - The core pressure deficit is defined in Spec 02 (loads), not here.
 
 ## Decisions

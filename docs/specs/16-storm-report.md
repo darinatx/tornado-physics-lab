@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Draft (v0.1) — Phase 7. Approved when Phase 7 starts (after the Phase 6 gate), so
+Status: Draft (v0.1) — Phase 8. Approved when Phase 8 starts, so
 `npm run trace` keeps passing until its tests exist.
 
 ## Purpose
@@ -190,13 +190,13 @@ function showReport(report: Report): void;
 ## Simplifications / out of scope
 
 - No people: no deaths, injuries, warnings or shelter outcomes.
-- No real places: positions are relative to the town center until Phase 12 adds town and street names.
-- No radar section until Phase 9 (storm structure) adds radar.
-- One damage indicator (DI 2) until Phases 8 and 10 add trees and building types; each adds
+- No real places: positions are relative to the town center until Phase 13 adds town and street names.
+- No radar section until Phase 10 (storm structure) adds radar.
+- One damage indicator (DI 2) until Phases 9 and 11 add trees and building types; each adds
   its indicators to the survey.
 - The survey has no human judgment beyond the Spec 03 construction-class rule (no surveyor
   disagreement, no missed buildings).
-- No saved-run library or replay from the report (Phase 14).
+- No saved-run library or replay from the report (Phase 15).
 
 ## Decisions
 
@@ -214,7 +214,7 @@ function showReport(report: Report): void;
 - **Browser print for PDF:** no PDF library to bundle, and vector maps and charts print sharply.
 
 - **Positions as distance and direction from the town center (user's choice, 2026-11-26):**
-  the town has no named streets yet. Phase 12 (city generation) adds a seeded town name and
+  the town has no named streets yet. Phase 13 (city generation) adds a seeded town name and
   street names with the road network, and the report then uses them ("near Oak St and 3rd
   Ave"), as real reports do.
 

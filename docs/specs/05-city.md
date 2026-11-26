@@ -53,7 +53,7 @@ interface Neighborhood {
 ## Simplifications / out of scope
 
 - Houses only; no trees, cars, power lines or other building types until Phase 4.
-- The whole map uses one terrain roughness (Spec 01). A per-zone roughness arrives with the city.
+- The whole map uses one terrain roughness (Spec 01). Phase 7 (Spec 17) replaces it with roughness worked out from the buildings and ground cover.
 
 ## Changelog
 

@@ -364,7 +364,7 @@ worker backends, as `src/main.ts` uses them.
 
 - The neighborhood ring is component-model only. More detailed houses means more lab houses.
 - One physics group for the block, even when it spans what in town would be two street rows.
-- No saved runs or replay in the app beyond the record export (Phase 14).
+- No saved runs or replay in the app beyond the record export (Phase 15).
 - A recorded detailed member replays without spin.
 - Replay is exact only for each piece's first hit, and only with dispersion off (see Debris
   replay).
