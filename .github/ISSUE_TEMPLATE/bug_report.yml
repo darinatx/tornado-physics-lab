@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in the sim is wrong, broken or crashes.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The seed, preset and settings you used, and the steps. The sim is deterministic, so the same seed and settings should show it again.
+      placeholder: |
+        Seed: 1234
+        Preset: EF4
+        1. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of problem
+      options:
+        - Physics looks wrong (damage, wind, debris)
+        - Debris passes through a house or slab
+        - Crash or error
+        - Slow (frame rate, slow motion)
+        - Display or UI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Screenshots, console errors, inspector readouts, or a published reference the result disagrees with.
+  - type: input
+    id: env
+    attributes:
+      label: Browser, OS and computer
+      placeholder: Chrome 131, macOS 15, M2 MacBook Air
+  - type: input
+    id: commit
+    attributes:
+      label: Version
+      description: Commit or tag you ran (`git rev-parse --short HEAD`).
