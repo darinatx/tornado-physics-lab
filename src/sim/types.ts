@@ -14,6 +14,7 @@ export interface TornadoParams {
   vPeak: number;
   rMax: number;
   alpha: number;
+  outerReach: number;
   inflowRatio: number;
   inflowDepth: number;
   updraftMax: number;
@@ -39,6 +40,7 @@ export function defaultParams(): TornadoParams {
     vPeak: w.vPeak.default,
     rMax: w.rMax.default,
     alpha: w.alpha.default,
+    outerReach: w.outerReach.default,
     inflowRatio: w.inflowRatio.default,
     inflowDepth: w.inflowDepth.default,
     updraftMax: w.updraftMax.default,

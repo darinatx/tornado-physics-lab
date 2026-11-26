@@ -29,6 +29,13 @@ export const WIND_PARAMS = {
     label: "Outer decay (α)", unit: "–", default: 0.6, min: 0.5, max: 1.0, step: 0.01,
     source: "1.0 = classic Rankine; radar-observed 0.5–0.8",
   },
+  outerReach: {
+    label: "Outer reach (n_o)", unit: "× R_max", default: 1.5, min: 1, max: 4, step: 0.05,
+    source:
+      "Where the r^(−α) decay turns to a free vortex (1/r), as a multiple of R_max (Spec 01 v1.11). " +
+      "Calibrated, not measured: 1.5 puts the presets' EF0 path widths at the top of surveyed " +
+      "maximum widths (EF5 ~1.6–2.7 km; record 4.2 km, El Reno 2013).",
+  },
   inflowRatio: {
     label: "Inflow ratio (k_r)", unit: "–", default: 0.5, min: 0, max: 1, step: 0.01,
     source: "Near-surface radial / tangential ratio",
@@ -56,6 +63,15 @@ export const WIND_PARAMS = {
 } as const satisfies Record<string, ParamDef>;
 
 export type WindParamKey = keyof typeof WIND_PARAMS;
+
+/**
+ * Outer decay (Spec 01 v1.10): beyond r_o = outerReach·R_max (WIND_PARAMS.outerReach) the
+ * swirl decays as r^(−exponent). Free vortex: the inflow conserves angular momentum (1/r).
+ */
+export const OUTER_DECAY = {
+  /** α_o, free-vortex decay exponent beyond r_o (–). */
+  exponent: 1,
+} as const;
 
 /** Power-law exponent β by terrain roughness (standard wind-engineering values). */
 export const TERRAIN_BETA = {

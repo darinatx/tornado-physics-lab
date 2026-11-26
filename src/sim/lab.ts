@@ -277,6 +277,7 @@ export function passTrack(w: Extract<LabWind, { kind: "pass" }>, houses: readonl
     vMax: base.vPeak,
     rMax: base.rMax,
     alpha: base.alpha,
+    outerReach: base.outerReach,
     inflowRatio: base.inflowRatio,
     inflowDepth: base.inflowDepth,
     updraftMax: base.updraftMax,

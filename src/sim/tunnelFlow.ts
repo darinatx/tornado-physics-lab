@@ -52,6 +52,7 @@ export function tunnelState(f: TunnelFlow, p: Partial<TornadoParams> = {}): Torn
     vMax: 1,
     rMax: TUNNEL.inRange,
     alpha: d.alpha,
+    outerReach: d.outerReach,
     inflowRatio: d.inflowRatio,
     inflowDepth: d.inflowDepth,
     updraftMax: d.updraftMax,

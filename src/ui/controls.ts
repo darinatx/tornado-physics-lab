@@ -44,6 +44,10 @@ const UI: Partial<Record<keyof TornadoParams, { label: string; group: ControlGro
     label: "Outer wind falloff", group: "Advanced",
     help: "How quickly winds weaken outside the core. Higher = winds drop off faster with distance.",
   },
+  outerReach: {
+    label: "Outer wind reach", group: "Advanced",
+    help: "How far out (in core radii) winds keep the slow falloff before weakening like a free vortex. A calibration to surveyed damage-path widths, not a measured value: 1.5 is realistic; higher = wider damage paths.",
+  },
   inflowRatio: {
     label: "Inflow strength", group: "Advanced",
     help: "How strongly air rushes inward along the ground into the tornado.",
