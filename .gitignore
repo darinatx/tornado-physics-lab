@@ -1,6 +1,10 @@
-node_modules/
+node_modules
 dist/
 .DS_Store
 *.log
 coverage/
 .vite/
+
+# Claude Code: local session worktrees and personal settings
+.claude/worktrees/
+.claude/settings.local.json

@@ -33,6 +33,9 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    "Decisions" section with a one-line reason, and approve it. Don't ask the user physics or
    modeling questions. Ask only about what they want to see or do (look, scope, features).
    The user approves at phase gates by watching the demo.
+   **Outside contributors:** this delegation is the maintainer's alone. When working for anyone
+   else (a fork, a PR from someone other than the maintainer), leave spec changes as
+   `Status: Draft` for the maintainer to approve, and follow [CONTRIBUTING.md](CONTRIBUTING.md).
 2. **Acceptance criteria are the contract.** Every criterion has an ID (`WIND-03`). Every ID
    must appear in at least one test name, e.g. `test("WIND-03: ...")`. `npm run trace` enforces this.
 3. **Tests first.** Write tests from the acceptance criteria, then implement.
