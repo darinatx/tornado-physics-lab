@@ -5,15 +5,17 @@
  */
 import { AIR_DENSITY } from "../../config/atmosphere";
 import { OUTER_DECAY } from "../../config/wind";
+import { outerReach } from "./windField";
 import type { TornadoState } from "./types";
 
 /** The deficit's pieces for a state, in Pa: q = ρ·V_max², at R_max, at r_o, at the center. */
 export function deficitTerms(s: TornadoState) {
   const R = Math.max(s.rMax, 1e-6);
-  const ro = OUTER_DECAY.radiusRatio * R;
+  const n = outerReach(s);
+  const ro = n * R;
   const ao = OUTER_DECAY.exponent;
   const q = AIR_DENSITY * s.vMax * s.vMax;
-  const m = Math.pow(OUTER_DECAY.radiusRatio, -2 * s.alpha);
+  const m = Math.pow(n, -2 * s.alpha);
   const atRo = (q * m) / (2 * ao);
   const atR = (q * (1 - m)) / (2 * s.alpha) + atRo;
   return { R, ro, ao, q, atRo, atR, center: atR + q / 2 };

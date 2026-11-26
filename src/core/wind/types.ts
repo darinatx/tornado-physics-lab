@@ -31,6 +31,8 @@ export interface TornadoState {
   readonly rMax: number;
   /** Outer decay exponent. */
   readonly alpha: number;
+  /** n_o = r_o / R_max, where the decay turns to a free vortex (Spec 01 v1.11); default when absent. */
+  readonly outerReach?: number;
   /** k_r: near-surface inflow / tangential ratio. */
   readonly inflowRatio: number;
   /** δ: inflow-layer depth (m). */

@@ -382,6 +382,7 @@ export function createSim(
           vMax: lc.vMax,
           rMax: lc.rMax,
           alpha: params.alpha,
+          outerReach: params.outerReach,
           inflowRatio: params.inflowRatio,
           inflowDepth: params.inflowDepth,
           updraftMax: params.updraftMax,

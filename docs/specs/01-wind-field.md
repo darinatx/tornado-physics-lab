@@ -1,6 +1,6 @@
 # Spec 01 — Wind Field
 
-Status: Approved (v1.10)
+Status: Approved (v1.11)
 
 ## Purpose
 
@@ -21,12 +21,16 @@ v_t(r) = V_max · (R_max / r)^α                        for R_max < r ≤ r_o
 v_t(r) = V_max · (R_max / r_o)^α · (r_o / r)^α_o      for r > r_o        (r_o = n_o · R_max)
 ```
 
-Radar fits of α (typically 0.5–0.8) come from the flow within a couple of core radii of the
-axis. Farther out, the air spiralling in keeps its angular momentum, so the swirl falls off
-like a free vortex, 1/r (α_o = 1), and the tornado's own wind fades within a few kilometres
-even for the widest wedges. Carrying the slow r^(−α) decay to any distance gave EF0 winds
-4 km from an EF5 core and a 5.4 km wide EF0 path. Surveyed EF5 paths are about 1–2.7 km
-wide, and the widest tornado on record (El Reno, 2013) was 4.2 km.
+Mobile radar fits the flow just outside the core with α ≈ 0.5–0.7 (e.g. Spencer 1998,
+Mulhall 1999), but the published fits don't say how far out that slower decay holds. Far out,
+the air spiralling in keeps its angular momentum, so the swirl falls off like a free vortex,
+1/r (α_o = 1). The switch point n_o ("outer reach") is therefore a **calibration**, not a
+measurement: its default of 1.5 puts the presets' EF0 path widths at the top of the surveyed
+maximum widths (WIND-24), and it is a user setting (1–4) for exploring wider or tighter
+outer winds. At n_o = 1 the decay is 1/r from the core edge and α has no effect. Carrying the slow r^(−α) decay to any distance gave EF0 winds
+4 km from an EF5 core and a 5.4 km wide EF0 path. Surveyed EF5 maximum widths are about
+1.6–2.7 km (typical widths along the path are narrower), and the widest tornado on record
+(El Reno, 2013) was 4.2 km.
 
 ### Vertical profile with near-ground overshoot
 
@@ -122,7 +126,7 @@ m = n_o^(−2α)                                                  (= (R_max / r_
 ```
 
 The center deficit is ρ·V_max²·((1 − m)/(2α) + m/(2α_o) + ½). For the default tornado (60 m/s,
-α 0.6) that's about 51 hPa; measured
+α 0.6, default outer reach) that's about 49 hPa; measured
 tornado deficits range from a few hPa to about 100 hPa. Following boundary-layer theory, the
 pressure field is imposed from above and taken as independent of height near the ground.
 Spec 02 uses it for roof uplift; Spec 06 uses it to shape the condensation funnel.
@@ -158,6 +162,7 @@ interface TornadoState {
   vMax: number;          // m/s, current peak tangential speed aloft (after lifecycle)
   rMax: number;          // m, current core radius (after lifecycle)
   alpha: number;         // outer decay exponent
+  outerReach?: number;   // n_o = r_o / R_max (default 1.5 when absent)
   inflowRatio: number;   // k_r
   inflowDepth: number;   // δ, m
   updraftMax: number;    // W_max, m/s
@@ -190,7 +195,7 @@ what's in `TornadoState`.
 | V_peak | m/s | 60 | 15–128 | aloft speed; with the near-ground overshoot and translation this spans sub-EF0 to upper EF5 (EF0 needs only ~18–22 m/s aloft) |
 | R_max | m | 150 | 20–800 | rope to wedge; typical radar values 50–500 m |
 | α | – | 0.6 | 0.5–1.0 | 1.0 = classic Rankine; radar-observed tornadoes typically 0.5–0.8 |
-| n_o | – | 2 | — | r_o / R_max, where the decay turns to a free vortex; radar fits of α span about the first two core radii, and n_o = 2 puts the presets' EF0 path widths in the surveyed ranges (WIND-24) |
+| n_o (outer reach) | – | 1.5 | 1–4 | r_o / R_max, where the decay turns to a free vortex. Calibrated, not measured: 1.5 puts the presets' EF0 path widths at the top of surveyed maximum widths (WIND-24); larger values give wider outer winds |
 | α_o | – | 1 | — | free-vortex decay beyond r_o (angular momentum conserved by the inflow) |
 | k_r | – | 0.5 | 0.0–1.0 | inflow / tangential ratio near the surface |
 | δ | m | 50 | 10–200 | inflow-layer depth; observed corner-flow depths are tens of meters |
@@ -249,11 +254,12 @@ All values live in `src/config/wind.ts`.
 - **WIND-21**: With a typical 15 m/s forward speed, V_peak = 94 m/s gives a 10 m peak at or
   below 135 m/s (the strongest measured tornado winds), and the maximum setting (128 m/s) gives
   380–400 mph, the hypothetical ceiling the user chose.
-- **WIND-24**: Path widths match damage surveys. For the mature Spec 07 presets on open terrain,
-  the EF0 path width (where the peak 10 m wind over the pass is ≥ 65 mph, both sides together)
-  is 0.3–1.5 km for EF3, 0.5–2.5 km for EF4 and 1–3.5 km for EF5. Surveyed EF5 paths:
-  Joplin 2011 ~1.6 km, Moore 2013 ~1.7 km, Greensburg 2007 ~2.7 km; the widest on record is
-  El Reno 2013, 4.2 km, which no realistic preset may exceed.
+- **WIND-24**: At the default outer reach, path widths match damage surveys. For the mature
+  Spec 07 presets on open terrain, the EF0 path width (where the peak 10 m wind over the pass
+  is ≥ 65 mph, both sides together) is 0.3–1.0 km for EF3, 0.8–1.7 km for EF4 and 1.6–2.8 km
+  for EF5. These are maximum widths, as surveys report them: EF5 Joplin 2011 ~1.65 km, Moore
+  2013 1.7–2.1 km (typical width ~1 km), Greensburg 2007 ~2.7 km; the record is El Reno 2013,
+  4.2 km. A larger outer reach gives a wider path (monotonic).
 - **WIND-17**: The axis vertical velocity decreases monotonically as S rises from S₁ to S₂,
   with no jumps (one-cell and two-cell blend smoothly).
 
@@ -290,13 +296,20 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
    wind of at most 10 m/s at 10 m (typical of tornadic environments; storm motion follows the
    0–6 km mean wind). Adding V_trans everywhere made a 30 m/s tornado blow 67 mph across the
    whole map.
-6. **Outer decay (v1.10):** the r^(−α) decay holds out to r_o = 2·R_max, then turns to a free
-   vortex (1/r). Radar fits of α cover the near-core flow; beyond it, angular-momentum
-   conservation gives 1/r. Calibrated against damage-survey path widths: the old unbounded
+6. **Outer decay (v1.10, v1.11):** the r^(−α) decay holds out to r_o = n_o·R_max, then turns
+   to a free vortex (1/r, angular-momentum conservation). n_o is calibrated against
+   damage-survey path widths, since radar fits don't bound the r^(−α) range: the old unbounded
    r^(−α) gave EF0 winds 4 km out on the right of an EF5 (5.4 km EF0 path, wider than the
-   record). Peak winds are unchanged. Found by the user.
+   record). Default 1.5 (v1.11; was 2 in v1.10, which left the EF5 preset at 3.0 km, wider than
+   every surveyed EF5 but El Reno). 1.5 rather than 1 keeps the radar-observed near-core α.
+   A user setting so wider or tighter outer winds can be explored. Found by the user.
 
 ## Changelog
+
+- v1.11: outer reach n_o is a user parameter (1–4), default 1.5 (was a fixed 2). The spec no
+  longer claims radar bounds the r^(−α) range: n_o is a calibration to surveyed path widths.
+  WIND-24 tightened to surveyed maximum widths. EF0 path widths: EF3 0.78 → 0.72 km, EF4
+  1.73 → 1.56 km, EF5 2.96 → 2.65 km. Center deficit ~5% below v1.10 (51 → 49 hPa for the default tornado).
 
 - v1.10: outer decay turns to a free vortex (1/r) beyond r_o = 2·R_max (WIND-23, WIND-24;
   WIND-07, WIND-18, WIND-19 and WIND-22 reworded). The carried wind's weight follows the same

@@ -5,21 +5,33 @@
  * World frame: Y up, ground plane X–Z. Cyclonic rotation is positive rotation about +Y
  * (counter-clockwise viewed from above).
  */
-import { CELL_STRUCTURE, ENV_REFERENCE_HEIGHT, ENV_SURFACE_WIND, OUTER_DECAY, PROFILE_EPSILON, TERRAIN_BETA } from "../../config/wind";
+import { CELL_STRUCTURE, ENV_REFERENCE_HEIGHT, ENV_SURFACE_WIND, OUTER_DECAY, PROFILE_EPSILON, TERRAIN_BETA, WIND_PARAMS } from "../../config/wind";
 import type { Vec3 } from "../math/vec";
 import type { TerrainClass, TornadoState, TunnelFlow } from "./types";
 import { TUNNEL } from "../../config/tunnel";
 
+/** n_o for a state: its outer reach, or the default (Spec 01 v1.11). At least 1. */
+export function outerReach(s: { readonly outerReach?: number }): number {
+  return Math.max(s.outerReach ?? WIND_PARAMS.outerReach.default, 1);
+}
+
 /**
- * Modified Rankine tangential speed aloft (no height factor): r^(−α) out to r_o, then a free
- * vortex (Spec 01 v1.10).
+ * Modified Rankine tangential speed aloft (no height factor): r^(−α) out to r_o = n_o·R_max,
+ * then a free vortex (Spec 01 v1.10).
  */
-export function tangentialProfile(r: number, vMax: number, rMax: number, alpha: number): number {
+export function tangentialProfile(
+  r: number,
+  vMax: number,
+  rMax: number,
+  alpha: number,
+  reach: number = WIND_PARAMS.outerReach.default,
+): number {
   const R = Math.max(rMax, 1e-6);
   if (r <= R) return vMax * (r / R);
-  const ro = OUTER_DECAY.radiusRatio * R;
+  const n = Math.max(reach, 1);
+  const ro = n * R;
   if (r <= ro) return vMax * Math.pow(R / r, alpha);
-  return vMax * Math.pow(1 / OUTER_DECAY.radiusRatio, alpha) * Math.pow(ro / r, OUTER_DECAY.exponent);
+  return vMax * Math.pow(1 / n, alpha) * Math.pow(ro / r, OUTER_DECAY.exponent);
 }
 
 /** S(r): overshoot strength, strongest at r = R_max, falling to 1 far from the core. */
@@ -78,7 +90,7 @@ export function windComponents(
 ): WindComponents {
   const zz = Math.max(z, 0);
   const R = Math.max(s.rMax, 1e-6);
-  const vt = tangentialProfile(r, s.vMax, R, s.alpha);
+  const vt = tangentialProfile(r, s.vMax, R, s.alpha, outerReach(s));
   const decay = Math.exp(-zz / s.inflowDepth);
   return {
     tangential: vt * heightFactor(r, zz, s, terrain),
@@ -98,7 +110,7 @@ export function envFactor(z: number, terrain: TerrainClass): number {
  * g = 1 inside R_max and the swirl's shape v_t / V_max beyond (v1.10), and V_env = V_trans·min(1, U_env / |V_trans|).
  */
 export function carriedFactors(r: number, s: TornadoState): number {
-  const g = r <= s.rMax ? 1 : tangentialProfile(r, 1, s.rMax, s.alpha);
+  const g = r <= s.rMax ? 1 : tangentialProfile(r, 1, s.rMax, s.alpha, outerReach(s));
   const speed = Math.hypot(s.velocity.x, s.velocity.z);
   const env = speed > ENV_SURFACE_WIND ? ENV_SURFACE_WIND / speed : 1;
   return g + (1 - g) * env;

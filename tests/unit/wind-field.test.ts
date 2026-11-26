@@ -86,18 +86,26 @@ describe("Spec 01 — wind field", () => {
   };
 
   test("WIND-07: between R_max and r_o the decay follows r^(−α)", () => {
-    const s = baseState(); // R_max 150, r_o 300
-    const slope = decaySlope(s, [160, 190, 220, 260, 300]);
+    const s = baseState(); // R_max 150, r_o = 1.5·R_max = 225
+    const ro = WIND_PARAMS.outerReach.default * s.rMax;
+    const slope = decaySlope(s, [1.02, 1.1, 1.2, 1.35, 1.5].map((k) => Math.min(k * s.rMax, ro)));
     expect(Math.abs(-slope - s.alpha) / s.alpha).toBeLessThan(0.02);
   });
 
   test("WIND-23: beyond r_o the decay is a free vortex, continuous at r_o", () => {
     const s = baseState();
-    const ro = OUTER_DECAY.radiusRatio * s.rMax;
+    const ro = WIND_PARAMS.outerReach.default * s.rMax;
     const slope = decaySlope(s, [ro * 1.2, ro * 2, ro * 4, ro * 8, ro * 16]);
     expect(Math.abs(-slope - OUTER_DECAY.exponent) / OUTER_DECAY.exponent).toBeLessThan(0.02);
     const v = (r: number) => windComponents(r, 300, s, "open").tangential;
     expect(Math.abs(v(ro * (1 + 1e-12)) - v(ro)) / v(ro)).toBeLessThan(1e-9);
+    // A user-set outer reach moves the switch point.
+    const wide = baseState({ outerReach: 3 });
+    const roW = 3 * wide.rMax;
+    const slopeIn = decaySlope(wide, [160, 250, 350, 450]);
+    expect(Math.abs(-slopeIn - wide.alpha) / wide.alpha).toBeLessThan(0.02);
+    const slopeOut = decaySlope(wide, [roW * 1.2, roW * 4, roW * 16]);
+    expect(Math.abs(-slopeOut - OUTER_DECAY.exponent)).toBeLessThan(0.02);
   });
 
   test("WIND-08: deterministic", () => {
@@ -219,7 +227,11 @@ describe("Spec 01 — wind field", () => {
     const ao = OUTER_DECAY.exponent;
     for (const [vMax, alpha] of [[60, 0.6], [30, 1.0], [90, 0.5]] as const) {
       const s = baseState({ vMax, alpha });
-      const m = Math.pow(OUTER_DECAY.radiusRatio, -2 * alpha);
+      const m = Math.pow(WIND_PARAMS.outerReach.default, -2 * alpha);
+      // At outer reach 1 the decay is 1/r from the core edge (the classic Rankine deficit with α_o).
+      const s1 = baseState({ vMax, alpha, outerReach: 1 });
+      const e1 = AIR_DENSITY * vMax * vMax * (1 / (2 * ao) + 0.5);
+      expect(Math.abs(pressureDeficit(0, s1) - e1) / e1).toBeLessThan(1e-9);
       const expected = AIR_DENSITY * vMax * vMax * ((1 - m) / (2 * alpha) + m / (2 * ao) + 0.5);
       if (alpha === ao) expect(Math.abs(expected / (AIR_DENSITY * vMax * vMax * (1 / (2 * alpha) + 0.5)) - 1)).toBeLessThan(1e-12);
       expect(Math.abs(pressureDeficit(0, s) - expected) / expected).toBeLessThan(1e-9);
@@ -230,7 +242,7 @@ describe("Spec 01 — wind field", () => {
     const s = baseState();
     const R = s.rMax;
     expect(Math.abs(pressureDeficit(R - 1e-9, s) - pressureDeficit(R, s)) / pressureDeficit(R, s)).toBeLessThan(1e-6);
-    const ro = OUTER_DECAY.radiusRatio * R;
+    const ro = WIND_PARAMS.outerReach.default * R;
     expect(Math.abs(pressureDeficit(ro - 1e-9, s) - pressureDeficit(ro, s)) / pressureDeficit(ro, s)).toBeLessThan(1e-6);
     let prev = Infinity;
     for (let r = 0; r <= 3000; r += 5) {
@@ -271,7 +283,7 @@ describe("Spec 01 — wind field", () => {
       const at = (r: number) => windAt({ x: 0, y: 10, z: r }, s, "open");
       const env = Math.min(fwd, 10);
       for (const r of [0, 150, 300, 600, 1500, 6000, 15000]) {
-        const ro = OUTER_DECAY.radiusRatio * 300;
+        const ro = WIND_PARAMS.outerReach.default * 300;
         const g =
           r <= 300 ? 1 : r <= ro ? Math.pow(300 / r, 0.6) : Math.pow(300 / ro, 0.6) * Math.pow(ro / r, OUTER_DECAY.exponent);
         const want = g * fwd + (1 - g) * env;
@@ -291,9 +303,10 @@ describe("Spec 01 — wind field", () => {
 
   test("WIND-24: preset EF0 path widths match damage surveys", () => {
     const EF0 = mphToMs(65);
-    const width = (id: string) => {
+    const width = (id: string, outerReach?: number) => {
       const q = { ...defaultParams(), ...PRESETS.find((p) => p.id === id)!.params };
       const s = baseState({
+        outerReach,
         vMax: q.vPeak, rMax: q.rMax, alpha: q.alpha, inflowRatio: q.inflowRatio, inflowDepth: q.inflowDepth,
         updraftMax: q.updraftMax, overshoot: q.overshoot, zPeak: q.zPeak, velocity: { x: q.translationSpeed, z: 0 },
       });
@@ -312,11 +325,14 @@ describe("Spec 01 — wind field", () => {
     };
     const ef3 = width("ef3-strong"), ef4 = width("ef4-wedge"), ef5 = width("ef5-extreme");
     expect(ef3).toBeGreaterThanOrEqual(300);
-    expect(ef3).toBeLessThanOrEqual(1500);
-    expect(ef4).toBeGreaterThanOrEqual(500);
-    expect(ef4).toBeLessThanOrEqual(2500);
-    expect(ef5).toBeGreaterThanOrEqual(1000);
-    expect(ef5).toBeLessThanOrEqual(3500);
+    expect(ef3).toBeLessThanOrEqual(1000);
+    expect(ef4).toBeGreaterThanOrEqual(800);
+    expect(ef4).toBeLessThanOrEqual(1700);
+    expect(ef5).toBeGreaterThanOrEqual(1600);
+    expect(ef5).toBeLessThanOrEqual(2800);
+    // A larger outer reach widens the path.
+    expect(width("ef5-extreme", 3)).toBeGreaterThan(ef5);
+    expect(width("ef5-extreme", 1)).toBeLessThan(ef5);
   });
 
   test("WIND-15: vertical profile is continuous at z_p", () => {
