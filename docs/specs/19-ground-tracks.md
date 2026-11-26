@@ -20,8 +20,10 @@ A grid of **2 m cells** in tiles of 32 × 32 cells (64 m), created only where th
 reaches, so an untouched map costs nothing. It lives in `src/sim`, is deterministic, and is
 updated every **0.5 s of sim time** (fixed times; the wind at a point changes over
 R_max ÷ forward speed, tens of seconds) for the cells within the **active radius**: where the
-near-ground wind can exceed the lowest threshold (crop lodging), found from the vortex's
-tangential profile, and never beyond 3·R_max. Each update samples the wind at **2 m** (canopy
+near-ground wind can exceed the weakest cell's lowest threshold (crop lodging × 0.8), from an
+upper bound on the 2 m wind (swirl with its overshoot, inflow and the full carried wind),
+within 10·R_max. (A fixed 3·R_max cap cut strong tracks off along a straight line: the EF4
+preset's 2 m wind is still ~29 m/s at 5·R_max on its strong side.) Each update samples the wind at **2 m** (canopy
 and turf height) with `windAt` (the terrain's β included, Spec 17) on an 8 m lattice aligned
 with the tiles, and interpolates it to the cells (the wind is smooth on the core's scale). To
 keep the cost down (TERR-24):
@@ -29,7 +31,9 @@ keep the cost down (TERR-24):
   cells and is below the scour onset (interpolation never exceeds the corners), which is
   everything the core has passed;
 - beyond 1.5·R_max, where the wind changes slowly, each block updates every fourth pass
-  (staggered), its dose over that longer interval.
+  (staggered), its dose over that longer interval;
+- beyond 3·R_max (smooth wind, below the scour onset), one wind sample per 32 m patch serves
+  its cells, every eighth pass.
 
 Per cell:
 
@@ -179,8 +183,8 @@ measured thresholds, so they are calibrated to those outcomes and logged as a si
   EF4 at half its forward speed more of the core stripped or bare, and at least as much bare
   soil. (EF5's core is bare at either speed.)
 - **TERR-20**: Track width follows the core's size, not its strength: doubling R_max at the
-  same V_max roughly doubles the lodged width (±25%); raising V_max at the same R_max widens it
-  by less than the lodging radius of the profile implies (bounded by 3·R_max).
+  same V_max roughly doubles the lodged width (±25%); raising V_max at the same R_max widens it,
+  never beyond the active radius on either side.
 - **TERR-21**: Lodged and scoured cells lower the roughness: at the next roughness update the
   node over a scoured strip has a lower z₀ than before, and the 5 m wind there is higher.
 - **TERR-22**: Debris landings faster than 5 m/s leave gouges and slides leave streaks along
@@ -231,5 +235,8 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
   hard contour lines and a speckled straw ring); much lighter debris marks (sliding pieces
   had painted the lawn nearly black). Then, after the user's look at an EF5 track: the
   variation in ~24 m patches (per-cell variation broke the edge into speckle) and a wider
-  soil fringe (from 25% of the thinning dose).
+  soil fringe (from 25% of the thinning dose). Then, after the user saw a too-smooth straight
+  edge on a strong track's right side: the 3·R_max cap replaced by the physical active radius
+  (within 10·R_max), with a coarse far zone (one sample per 32 m, every eighth pass) to stay
+  within the cost (TERR-20 restated).
 - v0.1 (2026-11-26): drafted at the user's request (another session's design).

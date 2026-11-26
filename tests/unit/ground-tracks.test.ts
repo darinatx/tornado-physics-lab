@@ -127,10 +127,12 @@ describe("Spec 19 — ground damage tracks", () => {
     const w2 = width({ vPeak: 40, rMax: 100 });
     expect(w2 / w1).toBeGreaterThan(2 * 0.75);
     expect(w2 / w1).toBeLessThan(2 * 1.25);
-    // Much stronger at the same size: wider, but never beyond the 3·R_max reach on each side.
+    // Much stronger at the same size: wider, but never beyond the active radius on either side
+    // (where the 2 m wind can no longer reach the weakest cell's lodging threshold).
     const w3 = width({ vPeak: 80, rMax: 50 });
     expect(w3).toBeGreaterThanOrEqual(w1);
-    expect(w3).toBeLessThanOrEqual(6 * 50 + 4);
+    const Ra = GroundTrack.activeRadius({ center: { x: 0, z: 0 }, velocity: { x: 12, z: 0 }, vMax: 80, rMax: 50, alpha: 0.6, inflowRatio: 0.5, inflowDepth: 50, updraftMax: 30, overshoot: 1.3, zPeak: 20, rotation: 1 });
+    expect(w3).toBeLessThanOrEqual(2 * Ra + 4);
   }, 180000);
 
   test("TERR-21: lodged and scoured ground lowers the roughness and raises the near-ground wind", () => {

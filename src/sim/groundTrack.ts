@@ -9,7 +9,7 @@ import { coverAt } from "../core/terrain/roughness";
 import type { GroundCover, Terrain } from "../core/terrain/roughness";
 import type { Piece } from "../core/debris/piece";
 import type { TornadoState } from "../core/wind/types";
-import { windAt } from "../core/wind/windField";
+import { carriedFactors, overshootFactor, tangentialProfile, windAt } from "../core/wind/windField";
 
 /** Cell states, in order of damage (they never go back). */
 export const TRACK_STATE = { standing: 0, pushedOver: 1, lodged: 2, snapped: 3, thinned: 4, stripped: 5, bare: 6 } as const;
@@ -24,6 +24,8 @@ const BLOCKS = TILE_M / TRACK.lattice;
 const PER = TRACK.lattice / TRACK.cell;
 /** Blocks beyond 1.5·R_max update every this many passes. */
 const OUTER_EVERY = 4;
+/** Beyond 3·R_max (the slowest-changing wind) every this many passes. */
+const FAR_EVERY = 8;
 
 export interface TrackTile {
   /** Tile coordinates (tile i covers x in [i·64, (i+1)·64) m). */
@@ -177,12 +179,25 @@ export class GroundTrack {
     return { peak: t.peak[c]!, dirRad: (t.dir[c]! / 256) * 2 * Math.PI, dose: t.dose[c]!, state: t.state[c]!, mark: t.mark[c]!, cover: COVER_OF[t.cover[c]!]! };
   }
 
-  /** How far from the axis the 2 m wind can reach the lowest threshold (m), capped at 3·R_max. */
+  /**
+   * How far from the axis the 2 m wind can reach the weakest cell's lowest threshold (m): the
+   * first radius where an upper bound on the 2 m wind (swirl with its overshoot, inflow, and the
+   * full carried wind, with the smoothest terrain's height factor) drops below it. No fixed cap
+   * (a 3·R_max cap cut strong tracks off along a straight line); 10·R_max as a safety limit.
+   */
   static activeRadius(s: TornadoState): number {
-    const umin = Math.min(TRACK.cropLodge, TRACK.lawnFlatten);
-    const vmax = s.vMax * s.overshoot + Math.hypot(s.velocity.x, s.velocity.z);
-    if (!(s.vMax > 0) || vmax <= umin) return 0;
-    return Math.min(3 * s.rMax, s.rMax * Math.pow(vmax / umin, 1 / s.alpha));
+    if (!(s.vMax > 0)) return 0;
+    const umin = Math.min(TRACK.cropLodge, TRACK.lawnFlatten) * (1 - TRACK.variation.plants);
+    const R = Math.max(s.rMax, 1e-6);
+    const hf = Math.pow(TRACK.sampleHeight / s.zPeak, 0.08) * 1.0001; // β ≥ 0.08 (Spec 17 clamp)
+    const vtr = Math.hypot(s.velocity.x, s.velocity.z);
+    const bound = (r: number) => {
+      const vt = tangentialProfile(r, s.vMax, R, s.alpha);
+      return Math.hypot(vt * overshootFactor(r, s) * hf, s.inflowRatio * vt) + carriedFactors(r, s) * vtr;
+    };
+    if (bound(R) < umin) return 0;
+    for (let r = R; r <= 10 * R; r += 0.1 * R) if (bound(r) < umin) return r + 0.1 * R;
+    return 10 * R;
   }
 
   /** One update over dt seconds of sim time (Spec 19). */
@@ -193,10 +208,12 @@ export class GroundTrack {
     const L = TRACK.lattice;
     const cx0 = s.center.x;
     const cz0 = s.center.z;
-    const i0 = Math.floor((cx0 - R) / L);
-    const i1 = Math.ceil((cx0 + R) / L);
-    const j0 = Math.floor((cz0 - R) / L);
-    const j1 = Math.ceil((cz0 + R) / L);
+    // The fine lattice covers the near zone (≤ 3·R_max); beyond it, `farZone` (coarser).
+    const Rn = Math.min(R, 3 * s.rMax + L);
+    const i0 = Math.floor((cx0 - Rn) / L);
+    const i1 = Math.ceil((cx0 + Rn) / L);
+    const j0 = Math.floor((cz0 - Rn) / L);
+    const j1 = Math.ceil((cz0 + Rn) / L);
     const nx = i1 - i0 + 1;
     const nz = j1 - j0 + 1;
     // Wind at 2 m on the lattice (x and z components), computed only where a block needs it.
@@ -219,6 +236,7 @@ export class GroundTrack {
     // OUTER_EVERY-th pass, staggered, with its dose over that longer interval.
     const n = this.updates++;
     const inner2 = (1.5 * s.rMax) ** 2;
+    const far2 = (3 * s.rMax) ** 2;
     // Debris load per tile: flying mass below 3 m (kg/m²).
     const load = new Map<number, number>();
     for (const q of debris) {
@@ -234,9 +252,11 @@ export class GroundTrack {
       for (let i = 0; i < nx - 1; i++) {
         const bxc = (i0 + i + 0.5) * L - cx0;
         const bzc = (j0 + j + 0.5) * L - cz0;
-        const outer = bxc * bxc + bzc * bzc > inner2;
-        if (outer && (n + i0 + i + j0 + j) % OUTER_EVERY !== 0) continue;
-        const bdt = outer ? dt * OUTER_EVERY : dt;
+        const d2 = bxc * bxc + bzc * bzc;
+        const every = d2 > far2 ? FAR_EVERY : d2 > inner2 ? OUTER_EVERY : 1;
+        if (every > 1 && (n + i0 + i + j0 + j) % every !== 0) continue;
+        const bdt = dt * every;
+        if (d2 > far2) continue;
         const a = at(i, j);
         const b = at(i + 1, j);
         const c = at(i, j + 1);
@@ -301,6 +321,74 @@ export class GroundTrack {
           this.version++;
         }
       }
+    }
+    if (R > 3 * s.rMax) this.farZone(n, s, terrain, R, umin);
+  }
+
+  /**
+   * The far zone (3·R_max to the active radius): one wind sample per 32 m patch serves its 16
+   * blocks; each patch updates every FAR_EVERY-th pass, staggered.
+   */
+  private farZone(n: number, s: TornadoState, terrain: Terrain, R: number, umin: number): void {
+    const P = TRACK.lattice * 4;
+    const cx0 = s.center.x;
+    const cz0 = s.center.z;
+    const near2 = (3 * s.rMax) ** 2;
+    const R2 = R * R;
+    const p = { x: 0, y: TRACK.sampleHeight, z: 0 };
+    for (let pj = Math.floor((cz0 - R) / P); pj <= Math.ceil((cz0 + R) / P); pj++) {
+      for (let pi = Math.floor((cx0 - R) / P); pi <= Math.ceil((cx0 + R) / P); pi++) {
+        if ((n + pi + pj) % FAR_EVERY !== 0) continue;
+        const px = (pi + 0.5) * P - cx0;
+        const pz = (pj + 0.5) * P - cz0;
+        const d2 = px * px + pz * pz;
+        if (d2 <= near2 || d2 > R2) continue;
+        p.x = (pi + 0.5) * P;
+        p.z = (pj + 0.5) * P;
+        const w = windAt(p, s, terrain);
+        const sp = Math.sqrt(w.x * w.x + w.z * w.z);
+        if (sp < umin) continue;
+        for (let bj = 0; bj < 4; bj++) for (let bi = 0; bi < 4; bi++) this.farBlock(pi * P + bi * TRACK.lattice, pj * P + bj * TRACK.lattice, w, sp);
+      }
+    }
+  }
+
+  /**
+   * A block beyond 3·R_max: the wind there is smooth over hundreds of metres and below the scour
+   * onset, so one sample at the block's centre serves its 16 cells (each still with its own
+   * strength), and there is no dose to add.
+   */
+  private farBlock(bx: number, bz: number, w: { x: number; z: number }, sp: number): void {
+    const ti = Math.floor(bx / TILE_M);
+    const tj = Math.floor(bz / TILE_M);
+    const bi = Math.round((bx - ti * TILE_M) / TRACK.lattice) + Math.round((bz - tj * TILE_M) / TRACK.lattice) * BLOCKS;
+    const existing = this.tile(ti, tj);
+    if (existing && sp <= existing.blockMin[bi]!) return;
+    const t = existing ?? this.ensure(ti, tj);
+    let ang = Math.atan2(w.z, w.x) / (2 * Math.PI);
+    ang -= Math.floor(ang);
+    const dir = Math.round(ang * 256) & 255;
+    const cx0b = Math.round((bx - ti * TILE_M) / TRACK.cell);
+    const cz0b = Math.round((bz - tj * TILE_M) / TRACK.cell);
+    let changed = false;
+    let bmin = Infinity;
+    for (let v = 0; v < PER; v++) {
+      for (let u = 0; u < PER; u++) {
+        const ci = cx0b + u + (cz0b + v) * N;
+        if (sp > t.peak[ci]!) {
+          t.peak[ci] = sp;
+          t.dir[ci] = dir;
+          const st = stateFor(t.cover[ci]!, sp, t.dose[ci]!, t.kv[ci]!, t.ks[ci]!);
+          if (st > t.state[ci]!) t.state[ci] = st;
+          changed = true;
+        }
+        if (t.peak[ci]! < bmin) bmin = t.peak[ci]!;
+      }
+    }
+    t.blockMin[bi] = bmin;
+    if (changed) {
+      t.version++;
+      this.version++;
     }
   }
 
