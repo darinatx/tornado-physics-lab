@@ -53,6 +53,25 @@ interface Heavy {
   asleepSince: number | null;
   /** Houses around it when it fell asleep (kept built while it sleeps). */
   houses: number[] | null;
+  /** Snagging (Spec 04 v2.4): ground slid since its last snag (m), its snags so far, the draw
+   *  for the next one (its distance is −λ·ln u), and the obstacle it is pinned against: the
+   *  direction it was moving and how far along that it may go. */
+  slid: number;
+  snags: number;
+  snagU: number;
+  pin: { x: number; z: number; s: number } | null;
+}
+
+/**
+ * A body's `n`-th snag draw in (0, 1] (Spec 04 v2.4): a hash of its id and n, so the same body
+ * snags at the same places in-process, in a worker or lagging.
+ */
+export function snagDraw(id: number, n: number): number {
+  let h = (Math.imul(id | 0, 0x9e3779b1) ^ Math.imul((n | 0) + 0x7f4a7c15, 0x85ebca6b)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x21f0aaad) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x735a2d97) >>> 0;
+  h = (h ^ (h >>> 15)) >>> 0;
+  return (h + 1) / 4294967296;
 }
 
 interface BuiltHouse {
@@ -74,6 +93,8 @@ export class HeavyDebris implements HeavySink {
   private readonly indexById: Map<number, number>;
   private readonly forces: Vec3[] = [];
   private stepCount = 0;
+  /** Swept slabs whose heavy pieces have the wind until `at` (s), by house index (Spec 04 v2.4). */
+  private readonly sweeps: { index: number; at: number }[] = [];
   private taken = 0;
   private time = 0;
   /** Hits on houses since the last step's call (drained by `step`'s caller). */
@@ -106,6 +127,7 @@ export class HeavyDebris implements HeavySink {
       .setTranslation(p.pos.x, p.pos.y, p.pos.z)
       .setRotation({ x: p.q[0], y: p.q[1], z: p.q[2], w: p.q[3] })
       .setLinvel(p.vel.x, p.vel.y, p.vel.z)
+      .setAngvel(p.angVel ?? STILL)
       .setSoftCcdPrediction(HEAVY.softCcd);
     const body = this.world.createRigidBody(desc);
     // Box axes as the debris model's: X length, Y thickness, Z width.
@@ -122,7 +144,7 @@ export class HeavyDebris implements HeavySink {
     // One plate: the box's broad face (normal along its thickness), with rotational drag about
     // its in-plane axes.
     const plates: BodyPlate[] = [{ id: 0, pos: { x: 0, y: 0, z: 0 }, n: { x: 0, y: 1, z: 0 }, area: L * W, ext: { a: { x: 1, y: 0, z: 0 }, b: { x: 0, y: 0, z: 1 }, la: L, lb: W } }];
-    const h: Heavy = { p, body, collider, source: this.indexById.get(b.id) ?? -1, bornAt: time, mass: p.def.mass, plates, dims: [L, W, T], asleepSince: null, houses: null, stillSince: null, ignore: null, wind: null, ccd: false, k: this.taken++ };
+    const h: Heavy = { p, body, collider, source: this.indexById.get(b.id) ?? -1, bornAt: time, mass: p.def.mass, plates, dims: [L, W, T], asleepSince: null, houses: null, stillSince: null, ignore: null, wind: null, ccd: false, k: this.taken++, slid: 0, snags: 0, snagU: snagDraw(p.id, 0), pin: null };
     this.bodies.push(h);
     this.byCollider.set(collider.handle, h);
     p.q = [p.q[0], p.q[1], p.q[2], p.q[3]];
@@ -234,6 +256,8 @@ export class HeavyDebris implements HeavySink {
    */
   step(s: TornadoState, terrain: TerrainClass, time: number): void {
     this.time = time;
+    // Swept slabs whose wind has had its time: what still lies there goes (in sweep order).
+    while (this.sweeps.length && this.sweeps[0]!.at <= time) this.carryOff(this.sweeps.shift()!.index);
     if (!this.bodies.length) return;
     let t0 = performance.now();
     this.updateHouses();
@@ -247,19 +271,16 @@ export class HeavyDebris implements HeavySink {
       body.resetForces(false);
       body.resetTorques(false);
       const com = body.worldCom();
+      const tr = body.translation();
+      const r = body.rotation();
+      const q: [number, number, number, number] = [r.x, r.y, r.z, r.w];
+      const v = asleep ? STILL : body.linvel();
       // The wind at a piece changes over tenths of a second: sampled every other step (and at
       // once for a new body).
       if (!h.wind || asleep || (this.stepCount + h.k) % 2 === 0) h.wind = windAt(com, s, terrain);
       const w = h.wind;
       if (asleep && Math.hypot(w.x, w.y, w.z) < 0.5) continue;
-      const r = body.rotation();
-      const { force: F, torque: Tq } = rigidAero(
-        { t: body.translation(), q: [r.x, r.y, r.z, r.w], com, v: asleep ? STILL : body.linvel(), w: asleep ? STILL : body.angvel() },
-        h.plates,
-        () => w,
-        w,
-        this.forces,
-      );
+      const { force: F, torque: Tq } = rigidAero({ t: tr, q, com, v, w: asleep ? STILL : body.angvel() }, h.plates, () => w, w, this.forces);
       // Could the wind lift it or push it past friction?
       const Wt = h.mass * GRAVITY;
       const holds = F.y < Wt && Math.hypot(F.x, F.z) < HEAVY.friction * (Wt - F.y);
@@ -338,6 +359,8 @@ export class HeavyDebris implements HeavySink {
     if (over > 0) {
       const ranked: [number, Heavy][] = [];
       for (const h of this.bodies) {
+        // Not one the wind of a swept slab still has (it would be out of the sweep's reach).
+        if (this.sweeps.length && this.inSweep(h)) continue;
         if (h.asleepSince !== null) ranked.push([h.asleepSince - 1e9, h]);
         else if (h.p.pos.y < HEAVY.creepY) {
           const v = Math.hypot(h.p.vel.x, h.p.vel.y, h.p.vel.z);
@@ -354,6 +377,7 @@ export class HeavyDebris implements HeavySink {
       // A sleeping body hasn't moved: its pose is as last written.
       if (!asleep || h.asleepSince === null) {
         this.keepAbove(h);
+        this.snag(h, terrain);
         const t = h.body.translation();
         const r = h.body.rotation();
         p.pos.x = t.x;
@@ -403,11 +427,26 @@ export class HeavyDebris implements HeavySink {
   }
 
   /**
-   * House `index`'s slab was swept (Spec 04 v2.3): bodies lying on it, at rest or creeping
-   * (below HEAVY.creepSpeed), are carried off with it, and so are its own pieces still coming
-   * down over it at any speed (what is left of the house). Other faster ones are left to the wind.
+   * House `index`'s slab was swept (Spec 04 v2.4): the bodies on it are woken and left to the
+   * wind for HEAVY.sweepGraceS, then what still lies there is carried off (`carryOff`).
    */
   sweep(index: number): void {
+    const b = this.buildings[index];
+    if (!b) return;
+    for (const h of this.bodies)
+      if (h.body.isSleeping() && lyingOnSlab(b, h.body.translation())) {
+        h.body.wakeUp();
+        h.asleepSince = null;
+      }
+    this.sweeps.push({ index, at: this.time + HEAVY.sweepGraceS });
+  }
+
+  /**
+   * Carry off what lies on house `index`'s swept slab (Spec 04 v2.3): bodies at rest or creeping
+   * on it (below HEAVY.creepSpeed), and its own pieces still coming down over it at any speed
+   * (what is left of the house). Other faster ones are left to the wind.
+   */
+  carryOff(index: number): void {
     const b = this.buildings[index];
     if (!b) return;
     const roofTop = IMPACT.slabTop + b.wallHeight + b.roofRise;
@@ -452,13 +491,79 @@ export class HeavyDebris implements HeavySink {
     const ryY = 1 - 2 * (r.x * r.x + r.z * r.z);
     const rzY = 2 * (r.y * r.z - r.w * r.x);
     const sup = 0.5 * (Math.abs(rxY) * L + Math.abs(ryY) * T + Math.abs(rzY) * W);
-    let floor = 0;
-    for (const b of this.near(t.x, t.z)) if (overSlab(b, t)) floor = IMPACT.slabTop;
+    const floor = this.floorAt(t);
     const sink = floor - (t.y - sup);
     if (sink <= HEAVY.sinkTolerance) return;
     h.body.setTranslation({ x: t.x, y: t.y + sink, z: t.z }, true);
     const v = h.body.linvel();
     if (v.y < 0) h.body.setLinvel({ x: v.x, y: 0, z: v.z }, true);
+  }
+
+  /**
+   * Snagging on the ground (Spec 04 v2.4): a body sliding on the ground catches on an obstacle
+   * after −λ·ln u of sliding; it is then pinned (no motion into the obstacle) until it moves
+   * away from it or is lifted HEAVY.snagClear above the ground.
+   */
+  private snag(h: Heavy, terrain: TerrainClass): void {
+    const b = h.body;
+    const t = b.translation();
+    const floor = this.floorAt(t);
+    const low = this.lowest(h, t, b.rotation()) - floor;
+    const v = b.linvel();
+    if (h.pin) {
+      const along = v.x * h.pin.x + v.z * h.pin.z;
+      if (low > HEAVY.snagClear || along < -HEAVY.snagRelease) {
+        h.pin = null;
+        return;
+      }
+      const s = t.x * h.pin.x + t.z * h.pin.z;
+      if (s > h.pin.s) b.setTranslation({ x: t.x - (s - h.pin.s) * h.pin.x, y: t.y, z: t.z - (s - h.pin.s) * h.pin.z }, true);
+      if (along > 0) b.setLinvel({ x: v.x - along * h.pin.x, y: v.y, z: v.z - along * h.pin.z }, true);
+      return;
+    }
+    // Sliding on the ground (slabs are smooth concrete): the distance since its last pose.
+    if (floor > 0 || low > HEAVY.snagGap) return;
+    const dx = t.x - h.p.pos.x;
+    const dz = t.z - h.p.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 1e-6) return;
+    h.slid += d;
+    if (h.slid < -DEBRIS.snagDistance[terrain] * Math.log(h.snagU)) return;
+    // Caught: stopped dead against it, where it reached it.
+    const over = h.slid + DEBRIS.snagDistance[terrain] * Math.log(h.snagU);
+    const dir = { x: dx / d, z: dz / d };
+    const at = { x: t.x - dir.x * over, y: t.y, z: t.z - dir.z * over };
+    b.setTranslation(at, true);
+    const along = v.x * dir.x + v.z * dir.z;
+    b.setLinvel({ x: v.x - Math.max(along, 0) * dir.x, y: v.y, z: v.z - Math.max(along, 0) * dir.z }, true);
+    h.pin = { x: dir.x, z: dir.z, s: at.x * dir.x + at.z * dir.z };
+    h.slid = 0;
+    h.snagU = snagDraw(h.p.id, ++h.snags);
+  }
+
+  /** On a swept slab whose wind still has it (as `carryOff` would take it then). */
+  private inSweep(h: Heavy): boolean {
+    const t = h.body.translation();
+    for (const { index } of this.sweeps) {
+      const b = this.buildings[index]!;
+      if (lyingOnSlab(b, t) || (h.source === index && overSlab(b, t))) return true;
+    }
+    return false;
+  }
+
+  /** The surface under a point: a slab top or the ground. */
+  private floorAt(t: Vec3): number {
+    for (const b of this.near(t.x, t.z)) if (overSlab(b, t)) return IMPACT.slabTop;
+    return 0;
+  }
+
+  /** Height of a body's lowest corner. */
+  private lowest(h: Heavy, t: Vec3, r: { x: number; y: number; z: number; w: number }): number {
+    const [L, W, T] = h.dims;
+    const rxY = 2 * (r.x * r.y + r.w * r.z);
+    const ryY = 1 - 2 * (r.x * r.x + r.z * r.z);
+    const rzY = 2 * (r.y * r.z - r.w * r.x);
+    return t.y - 0.5 * (Math.abs(rxY) * L + Math.abs(ryY) * T + Math.abs(rzY) * W);
   }
 
   /** Contacts with houses' walls, roofs and gables: impacts there (Spec 10), resting contact and

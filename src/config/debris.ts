@@ -221,4 +221,17 @@ export const HEAVY = {
    *  v2.3; Spec 09's DOD 10 survey uses the same height). A swept slab carries such pieces off,
    *  heavy ones moving slower than creepSpeed included. */
   sweptHeight: 1.5,
+  /** s: a swept slab's heavy pieces are woken and left to the wind this long before what still
+   *  lies there is carried off (Spec 04 v2.4): toppling walls and moving pieces settle first. */
+  sweepGraceS: 2,
+  /** m/s: a failing wall panel or garage door's top edge starts tipping over at this speed (the
+   *  point model's fall speed, Spec 04). */
+  toppleSpeed: 1.5,
+  /** Snagging (Spec 04 v2.4, the point model's mean free paths `DEBRIS.snagDistance`): a body
+   *  slides on the ground while its lowest corner is within `snagGap` m of it; a pinned one is
+   *  free once lifted `snagClear` m clear (over its obstacle) or moving away faster than
+   *  `snagRelease` m/s. */
+  snagGap: 0.05,
+  snagClear: 0.5,
+  snagRelease: 0.05,
 } as const;

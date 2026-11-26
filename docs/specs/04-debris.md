@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v2.3) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
+Status: Approved (v2.4) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
 
 ## Purpose
 
@@ -130,7 +130,8 @@ house is what you saw fail:
 | Window pane | 2 glass shards at the pane |
 | Garage door | one door panel, 12 kg/m² |
 | Wall panel | one wall panel of its size, 25 kg/m², tipping in its fall direction |
-| Partition | 2 studs and 2 wall chunks |
+| Partition | 2 studs and 2 wall chunks (shards: 10 studs, 5 chunks), and the wall itself as panels of at most 4 m where it stood, tipping over in the wind's direction (v2.4) |
+| Core room | 2 studs and 3 chunks, and its four walls as panels, tipping over in the wind's direction (v2.4) |
 | Slab swept | 4 studs and 6 chunks; everything lying on the slab is carried off (v2.3) |
 
 Pieces with house-specific sizes compute drag and lift from their own dimensions (same
@@ -144,7 +145,8 @@ downwind at 0.3 × the wind's horizontal speed. It tears away and tumbles into t
 holding friction (and it isn't a launched roof piece), it doesn't fly: it drops beside or onto the house (a wall panel falls flat
 in its fall direction; roof pieces land on the slab) and goes straight into the debris field.
 That's where much of a destroyed house's material ends up. If the active pool is completely
-full of flying pieces, a component piece is placed as rubble rather than dropped.
+full of flying pieces, a component piece is placed as rubble rather than dropped. Heavy pieces
+(v2.4) are never placed: they fall from where the component stood (see Heavy pieces).
 
 **Mass bookkeeping:** every component has a mass, and each house's failed mass is split into
 rubble, ground debris, flying debris and lofted debris.
@@ -173,13 +175,20 @@ step on the sim thread, the same treatment the detail zone gives its members abo
   the houses near it (Spec 10's town colliders, with holes at broken windows and doors; a
   detailed house as its stand-in), and the other heavy pieces: it lands, slides, catches,
   leans and stacks with contact friction 0.6. Light pieces don't meet it.
-- **Its own house:** it starts where the component was (or where it fell, for rubble), with
-  the launch velocity above. For its first 0.5 s it passes the walls and roof of its own house
+- **Its own house:** it starts where the component was, with the launch velocity above, and
+  falls from there (v2.4: never placed where it would land). A wall panel or garage door tips
+  about its base edge in its fall direction, its top edge starting at 1.5 m/s; a roof piece
+  whose bearing wall fell drops from the roof. For its first 0.5 s it passes the walls and roof of its own house
   that it overlaps when made (it is tearing away from them), and only while it still overlaps
   them; the rest of its house and its own slab stop it from the start.
 - **Hits:** contact with a house's wall, roof or gable is an impact on that surface (Spec 10),
   with the body's mass and the normal speed from the contact impulse, ignoring the source house
   for the first 0.5 s and resting contact.
+- **Snagging (v2.4):** a body sliding on the ground (not a slab) catches on a fence, tree,
+  shrub, curb or other debris as light pieces do: with probability 1 − e^(−d/λ) over a slide of
+  d, λ = 30 m open, 15 m suburban, 8 m urban (each body's distances drawn from its own seeded
+  stream). A snag stops its horizontal motion into the obstacle and pins it there: it moves
+  again only away from it (the wind swung round), or once it is lifted 0.5 m clear (over it).
 - **Rest:** a body still (below 0.1 m/s and 0.1 rad/s) for 0.5 s that the wind can't move is
   put to sleep (the detail zone's rubble rule: the wind would keep nudging it awake). It stays
   put until the wind on it could lift it or push it past friction (μ 0.6), then wakes. It is
@@ -192,7 +201,9 @@ step on the sim thread, the same treatment the detail zone gives its members abo
 - **Bookkeeping:** it is a piece like any other (mass ledger, rendering, pass-through checks);
   the point model skips it while it is rigid.
 - **Swept slab (v2.3):** when a town house's slab is swept (DOD 10), what lies on it is carried
-  off (counted as swept mass): its own rubble, any house's pieces lying there in the permanent
+  off (counted as swept mass). From v2.4 heavy pieces lying on it are first woken and given 2 s
+  (walls still toppling and pieces still moving settle, and the wind gets its chance); those
+  still lying on it then are carried off. What is carried off: its own rubble, any house's pieces lying there in the permanent
   debris field (retired heavy ones included), heavy pieces at rest or creeping on it (below
   3 m/s) in the heavy world, and its own heavy pieces still falling or sliding over its slab
   (any speed, below its roof's top), including those that failed in the same step as the sweep. Light pieces still in the active pool are left to the point
@@ -211,6 +222,20 @@ appeared for 0.13 s, then moves, always 0.13 s behind; its hits damage houses 0.
 seed and inputs → same results in-process, in a worker, or lagging by a varying amount.
 
 Decisions:
+- **Heavy pieces fall where they stood, and snag (v2.4):** at the user's report that walls
+  vanished or reappeared flat on the ground: failed walls were placed straight where they
+  would land (a point-model shortcut). As rigid bodies they can tip over instead. Snagging is
+  the point model's rule for sliding debris; the heavy world's ground was a flat plane with
+  nothing to catch on.
+- **No suction lift on heavy pieces lying flat (v2.4, the user's choice):** tried with the point
+  model's sheet rule (C_L·A = 0.2·L·W at the 0.2 m wind, at the upwind quarter, only on
+  contact). It tipped panels into the wind in EF3+ winds and they flew with the storm: in the
+  alignment patch 3% of failed mass within 5 m and 58% of heavy mass still moving at the end,
+  even with snagging; an EF5 grew to ~4,500 moving bodies, about twice the cost at the peak.
+  The flight is likely physical (wind-borne debris studies, e.g. Wills et al. 2002, put loose
+  panels' flight threshold lower still), but the detailed houses' loose members lack it too.
+  The user chose rubble near houses and speed. Without it a panel lying flat gets no lift
+  (zero angle of attack), so the swept slab's carry-off after 2 s remains.
 - **A swept slab takes heavy pieces too (v2.3):** since v2.0 heavy rubble left the rubble list
   the sweep clears, so EF5 slabs rated DOD 10 kept their wall panels and roof sections. A flat
   panel on a slab shows the wind little area, and the 400-body cap retires sleepers to the
@@ -368,10 +393,20 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
   to the debris field before or during the 8-step lag, and any house's pieces in the permanent
   debris field, and the house's own heavy pieces over its slab below its roof's top at any speed — and
   their mass counts as swept; another house's heavy piece moving above 3 m/s and pieces beside
-  the slab stay.
+  the slab stay. From v2.4 heavy pieces lying on it are given 2 s of wind first.
 - **DEB-27**: Flying pieces beyond 1.5 core radii are advanced every other step by twice the
   step: a cloud of pieces far from the core ends up where it does stepped every step (mean
   position within 2% of the distance travelled), and each piece is stepped on half the steps.
+- **DEB-29**: A heavy wall panel that fails starts upright where it stood and tips about its
+  base edge in its fall direction, coming to rest flat on the slab (fell in) or leaning off its
+  edge (fell out) with no jump between steps of more than its speed allows.
+- **DEB-31**: A failed interior wall (partition or core room) is released as wall-sized panels
+  where it stood (at most 4 m long each; partitions as drawn, the core room's four walls) whose
+  mass with its shards is the wall's (20 kg/m²), each starting upright and tipping in the
+  wind's direction across it, as exterior walls do.
+- **DEB-30**: A heavy body sliding on the ground snags at the terrain's mean free path (within
+  10% over many draws), stops dead against its obstacle, stays pinned while pushed into it, and
+  is free again once moving away from it or lifted 0.5 m clear.
 - **DEB-08**: Same seed and same failures → identical debris trajectories.
 
 ## Simplifications / out of scope
@@ -385,6 +420,13 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- v2.4: heavy pieces fall from where the component stood (walls and garage doors tip over)
+  instead of being placed, and snag while sliding on the ground (DEB-29, DEB-30); interior
+  walls are released as wall panels where they stood, not just studs and chunks (DEB-31); a swept
+  slab's heavy pieces get 2 s before what still lies there is carried off, and retired ones are
+  handed back to the heavy world for it. Found by the user: walls vanished, or reappeared flat
+  on the ground, and interior walls just disappeared. Suction lift on lying heavy panels was
+  tried and dropped (see Decisions).
 - v2.3: a swept slab carries off every piece lying on it, heavy ones included (DEB-28): since
   v2.0 heavy rubble wasn't on the list the sweep cleared, so DOD 10 slabs kept their panels.
 - v2.2: pieces far from the core advanced at 30 Hz (DEB-27), for speed (an EF5 was very slow).

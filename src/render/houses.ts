@@ -7,7 +7,7 @@ import { LUMBER } from "../config/structure";
 import * as THREE from "three";
 import { IMPACT } from "../config/impacts";
 import { LAYOUT } from "../config/buildings";
-import { faceTangent, LOCAL_NORMALS, panelCenter, sectionGeometry, toWorld } from "../core/damage/layout";
+import { CORE_ROOM, faceTangent, interiorWalls, LOCAL_NORMALS, panelCenter, sectionGeometry, toWorld } from "../core/damage/layout";
 import type { Building } from "../core/damage/types";
 
 /** DOD color bands: 1–2 yellow, 3–4 orange, 5–6 red-orange, 7–8 red, 9–10 purple. */
@@ -151,17 +151,14 @@ export function houseInstances(b: Building, damageColors: boolean): HouseDraw {
     const stripped = b.panels.some((p, i) => p.face === face && b.siding[i]!.failed);
     d.gables.push({ p: w(x, SLAB + H, 0), q: yawQ(b.yaw), s: [0.15, b.roofRise, b.depth], color: stripped ? HOUSE_COLORS.sheathing : tint ?? b.wallColor });
   }
-  const parts: [number, number, number, number][] = [
-    [0, b.depth / 6, b.width * 0.8, 0.12],
-    [-b.width / 6, 0, 0.12, b.depth * 0.8],
-  ];
+  // Interior walls where the debris model releases them (Spec 04 v2.4).
   b.partitions.forEach((pt, i) => {
     if (pt.failed) return;
-    const [x, z, sx, sz] = parts[i]!;
-    d.partitions.push({ p: w(x, SLAB + H / 2, z), q: yawQ(b.yaw), s: [sx, H, sz], color: HOUSE_COLORS.drywall });
+    for (const iw of interiorWalls(b, "partition", i))
+      d.partitions.push({ p: w(iw.x, SLAB + H / 2, iw.z), q: yawQ(b.yaw), s: iw.alongX ? [iw.len, H, 0.12] : [0.12, H, iw.len], color: HOUSE_COLORS.drywall });
   });
   // Interior core room (closet/bath): a small solid box near the center.
-  if (!b.coreRoom.failed) d.partitions.push({ p: w(b.width / 6, SLAB + H / 2, -b.depth / 8), q: yawQ(b.yaw), s: [2.2, H, 2.0], color: HOUSE_COLORS.drywall });
+  if (!b.coreRoom.failed) d.partitions.push({ p: w(CORE_ROOM.x(b), SLAB + H / 2, CORE_ROOM.z(b)), q: yawQ(b.yaw), s: [CORE_ROOM.sx, H, CORE_ROOM.sz], color: HOUSE_COLORS.drywall });
   if (swept) {
     for (let i = 0; i < BOLTS; i++) {
       const a = (i / BOLTS) * Math.PI * 2;

@@ -20,10 +20,10 @@ export class LagSweeps {
   sent(house: Building, n: number): void {
     this.list.push({ house, n });
   }
-  /** A piece retired in step `n` at `pos`: was it lying on a slab swept after that? */
-  catches(pos: Vec3, n: number): boolean {
-    for (const s of this.list) if (s.n > n && lyingOnSlab(s.house, pos)) return true;
-    return false;
+  /** A piece retired in step `n` at `pos`: the house whose slab it lay on, swept after that, or null. */
+  catches(pos: Vec3, n: number): Building | null {
+    for (const s of this.list) if (s.n > n && lyingOnSlab(s.house, pos)) return s.house;
+    return null;
   }
   /** Results through step `n` are applied: sweeps the engine saw by then can't catch more. */
   applied(n: number): void {

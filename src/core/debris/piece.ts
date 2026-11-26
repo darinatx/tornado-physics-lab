@@ -48,6 +48,8 @@ export interface Piece {
   settleNow?: boolean;
   /** Carried off with a swept slab it lay on (Spec 04 v2.3): hidden, counted as swept mass. */
   swept?: boolean;
+  /** rad/s: a heavy piece's spin as it is handed to the heavy-debris world (a wall tipping over). */
+  angVel?: Vec3;
   /** Sim time it has been advanced to (far pieces are advanced every other step). */
   steppedTo?: number;
   /** Where its source house stands (m), for spreading representative copies (Spec 10). */

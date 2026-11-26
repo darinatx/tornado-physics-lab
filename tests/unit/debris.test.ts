@@ -45,6 +45,8 @@ describe("Spec 04 — debris", () => {
   test("DEB-11: resting pieces left behind move to the permanent debris field", () => {
     const f = new DebrisField(8);
     f.spawnFrom(exactHouse(), rec("partition"));
+    // (Its wall panels, Spec 04 v2.4, may already lie in the debris field as rubble.)
+    const n0 = f.settled.length;
     const n = f.pieces.length;
     for (const p of f.pieces) {
       p.resting = true;
@@ -55,9 +57,9 @@ describe("Spec 04 — debris", () => {
     const before = f.pieces.map((p) => ({ ...p.pos }));
     f.step(1 / 60, away, "open", true, 0);
     expect(f.pieces.length).toBe(0);
-    expect(f.settled.length).toBe(n);
-    expect(f.stats.settled).toBe(n);
-    expect(f.settled.map((p) => p.pos)).toEqual(before);
+    expect(f.settled.length).toBe(n0 + n);
+    expect(f.stats.settled).toBe(n0 + n);
+    expect(f.settled.slice(n0).map((p) => p.pos)).toEqual(before);
     // Near the tornado, resting pieces stay in the active pool.
     const g = new DebrisField(8);
     g.spawnFrom(exactHouse(), rec("roofCover"));
@@ -150,7 +152,8 @@ describe("Spec 04 — debris", () => {
     for (const part of ["siding", "roofCover", "window", "partition"] as const) {
       const before = field.pieces.length + field.settled.length;
       field.spawnFrom(b, rec(part, 0));
-      const added = [...field.pieces, ...field.settled].slice(before);
+      // (A partition's wall itself also comes down as panels: Spec 04 v2.4, DEB-31.)
+      const added = [...field.pieces, ...field.settled].slice(before).filter((p) => p.def.label !== "Interior wall");
       expect(added.length).toBe(SPAWN_TABLE[part].reduce((a, [, n]) => a + n, 0));
       for (const p of added) {
         expect(Math.abs(p.pos.x - b.x)).toBeLessThanOrEqual(b.width / 2 + 0.6);

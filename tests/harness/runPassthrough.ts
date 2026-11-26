@@ -20,6 +20,8 @@ export interface PassThroughRun {
   wallS: number;
   /** Most debris pieces in flight or sliding at once. */
   peakPieces: number;
+  /** The sim at the end (diagnostics). */
+  sim: import("../../src/sim/loop").Sim;
 }
 
 export interface PassThroughOptions {
@@ -76,5 +78,5 @@ export async function runPassThrough(opts: PassThroughOptions = {}): Promise<Pas
       monitor.observe(sim.time, rubble, { moveChecks: false });
     }
   }
-  return { monitor, simS: sim.time, wallS: (performance.now() - t0) / 1000, peakPieces };
+  return { monitor, simS: sim.time, wallS: (performance.now() - t0) / 1000, peakPieces, sim };
 }

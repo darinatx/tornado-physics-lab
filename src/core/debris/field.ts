@@ -7,12 +7,13 @@ import { DEBRIS, DEBRIS_COLORS, DEBRIS_KINDS, HEAVY, SPAWN_TABLE, TURBULENCE, sh
 import type { DebrisKind, DebrisKindDef } from "../../config/debris";
 import { createRng } from "../math/rng";
 import type { Vec3 } from "../math/vec";
-import { faceTangent, LOCAL_NORMALS, panelCenter, sectionGeometry, toWorld } from "../damage/layout";
+import { faceTangent, interiorWalls, LOCAL_NORMALS, panelCenter, sectionGeometry, toWorld } from "../damage/layout";
 import type { Building, FailureRecord, QueuedImpact } from "../damage/types";
 import type { TerrainClass, TornadoState } from "../wind/types";
 import { windAt } from "../wind/windField";
 import { bumpKick, isSliding, restingForces, snag, stepPiece, supportHeight, wakeIfForced } from "./piece";
 import { IMPACT } from "../../config/impacts";
+import { DRYWALL_COLOR, PARTITION_AREAL } from "../../config/structure";
 import { clipEnvelope, clipSlab, hasEnvelope, insideLocal, lyingOnSlab, overSlab, planesOf, slabHalf, surfaceAt } from "../impact/envelope";
 import type { EnvelopeHit, Extent, ImpactTargets, Surface } from "../impact/envelope";
 import { resolveImpact } from "../impact/impact";
@@ -85,7 +86,8 @@ function realCount(b: Building, rec: FailureRecord, kind: DebrisKind): number {
     case "siding": return (b.panels[rec.index]!.len * b.wallHeight) / 0.95;
     case "roofCover": return sectionGeometry(b, b.nx, b.sections[rec.index]!).area / 0.33;
     case "window": return 30;
-    case "partition": return kind === "stud" ? 10 : 25;
+    // Shards; the wall itself is released as panels (Spec 04 v2.4).
+    case "partition": return kind === "stud" ? 10 : 5;
     case "sweep": return kind === "stud" ? 10 : 60;
     default: return 1;
   }
@@ -188,7 +190,8 @@ export class DebrisField {
   /** Release the pieces for one component failure (Spec 04 v1.4). */
   spawnFrom(b: Building, rec: FailureRecord, time = rec.time): void {
     const rng = this.rng;
-    const out: { p: Piece; rubble?: () => boolean | void; launched?: boolean }[] = [];
+    // `topple`: a standing piece that tips over about its base edge, toward `d` (its height `h`).
+    const out: { p: Piece; rubble?: () => boolean | void; launched?: boolean; topple?: { d: Vec3; h: number } }[] = [];
     const H = b.wallHeight;
     const up: Vec3 = { x: 0, y: 1, z: 0 };
     this.releaseLodged(b, rec);
@@ -251,6 +254,7 @@ export class DebrisField {
       p.vel = { x: fall * 1.5 * nw.x, y: 0, z: fall * 1.5 * nw.z };
       out.push({
         p,
+        topple: { d: { x: fall * nw.x, y: 0, z: fall * nw.z }, h: H },
         rubble: () => {
           if (fall < 0) {
             // Fell inward: flat on the slab.
@@ -347,23 +351,65 @@ export class DebrisField {
       const nw = dirWorld(b, n.x, 0, n.z);
       const def = sheet("Garage door", LAYOUT.garageWidth, LAYOUT.garageHeight, 0.05, AREAL_MASS.garageDoor * LAYOUT.garageWidth * LAYOUT.garageHeight);
       const p = this.makePiece(b, "garageDoor", def, toWorld(b, c.x + n.x * 0.1, c.y, c.z + n.z * 0.1), quatFromBasis(xw, nw, up), DEBRIS_COLORS.garagePanel!, 1, time);
-      out.push({ p, rubble: () => {
+      // It falls in (as its rubble lies).
+      out.push({ p, topple: { d: { x: -nw.x, y: 0, z: -nw.z }, h: LAYOUT.garageHeight }, rubble: () => {
         p.pos = toWorld(b, c.x - n.x * 1.5, 0, c.z - n.z * 1.5);
         p.q = quatFromBasis(xw, up, cross(xw, up));
       } });
+    } else if (rec.part === "partition" || rec.part === "coreRoom") {
+      // The wall itself, as panels of at most 4 m where it stood, carrying its mass less the
+      // shards above; each tips over in the wind's direction across it (Spec 04 v2.4).
+      const walls = interiorWalls(b, rec.part, rec.index);
+      const wallMass = walls.reduce((a, w) => a + PARTITION_AREAL * w.len * H, 0);
+      const shards = out.reduce((a, { p }) => a + p.def.mass * p.represents, 0);
+      const f = Math.max(wallMass - shards, 0) / wallMass;
+      for (const w of walls) {
+        const n = Math.ceil(w.len / 4 - 1e-9);
+        const seg = w.len / n;
+        const nw0 = dirWorld(b, w.alongX ? 0 : 1, 0, w.alongX ? 1 : 0);
+        const side = nw0.x * rec.wind.x + nw0.z * rec.wind.z < 0 ? -1 : 1;
+        const nw = { x: side * nw0.x, y: 0, z: side * nw0.z };
+        // Box X (length) along the wall, Y (thickness) along nw, Z (height) up: X = Y × Z.
+        const xw = cross(nw, up);
+        const nl = { x: side * (w.alongX ? 0 : 1), z: side * (w.alongX ? 1 : 0) };
+        for (let i = 0; i < n; i++) {
+          const u = -w.len / 2 + (i + 0.5) * seg;
+          const lx = w.x + (w.alongX ? u : 0);
+          const lz = w.z + (w.alongX ? 0 : u);
+          const def = sheet("Interior wall", seg, H, 0.12, PARTITION_AREAL * seg * H * f);
+          const p = this.makePiece(b, "wallPanel", def, toWorld(b, lx, SLAB + H / 2, lz), quatFromBasis(xw, nw, up), DRYWALL_COLOR, 1, time);
+          p.vel = { x: 1.5 * nw.x, y: 0, z: 1.5 * nw.z };
+          out.push({
+            p,
+            topple: { d: nw, h: H },
+            // Point model: flat on the slab, fallen downwind.
+            rubble: () => {
+              p.pos = toWorld(b, lx + nl.x * (H / 2), 0, lz + nl.z * (H / 2));
+              p.q = quatFromBasis(xw, up, cross(xw, up));
+              return false;
+            },
+          });
+        }
+      }
     } else if (rec.part === "sweep") {
       // The slab is swept: its rubble goes with it, and everything else lying on it in the
       // permanent debris field, other houses' pieces and retired heavy ones included (Spec 04
       // v2.3). Heavy pieces still in the heavy-debris world are swept there.
+      // Heavy ones go back to the wind first (v2.4): the heavy world gives them 2 s.
       const take = (r: Piece) => {
         if (r.hidden) return;
+        if (this.isHeavy(r)) {
+          this.retake(r, b, time);
+          return;
+        }
         r.hidden = true;
         r.swept = true;
         this.massSwept += r.def.mass * r.represents;
       };
       for (const r of this.rubbleOf.get(b.id) ?? []) take(r);
       const reach = (Math.hypot(b.width, b.depth) / 2 + IMPACT.slabMargin + 1) ** 2;
-      for (const r of this.settled) {
+      for (let i = 0, n = this.settled.length; i < n; i++) {
+        const r = this.settled[i]!;
         const dx = r.pos.x - b.x;
         const dz = r.pos.z - b.z;
         if (dx * dx + dz * dz < reach && !r.hidden && lyingOnSlab(b, r.pos)) take(r);
@@ -372,7 +418,7 @@ export class DebrisField {
     }
 
     // Rubble or flight: can the wind at failure move it at all? (DEB-15)
-    for (const { p, rubble, launched } of out) {
+    for (const { p, rubble, launched, topple } of out) {
       const m = p.def.mass * p.represents;
       this.massSpawned += m;
       this.massBySource.set(b.id, (this.massBySource.get(b.id) ?? 0) + m);
@@ -380,14 +426,18 @@ export class DebrisField {
       // can't move them, or if the active pool is completely full of flying pieces.
       const poolFull = this.pieces.length >= this.cap && !this.pieces.some((q) => q.resting);
       // Heavy pieces are rigid bodies (Spec 04 v2.0): from where they fell, or moving.
-      if (this.heavy && p.represents === 1 && p.def.mass >= HEAVY.minKg) {
-        if (rubble && !launched && !this.canMove(p, rec.wind)) {
-          if (!rubble()) p.pos.y = (overSlab(b, p.pos) ? IMPACT.slabTop : 0) + p.def.dims[2] / 2;
-          p.vel = { x: 0, y: 0, z: 0 };
-        }
+      // They fall from where the component stood, never placed where they'd land (v2.4): a wall
+      // or garage door tips about its base edge (top edge at HEAVY.toppleSpeed: ω = (s/h)·(up × d),
+      // its center moving at s/2 along d); a piece that collapsed drops from where it was.
+      if (this.isHeavy(p)) {
+        if (topple) {
+          const k = HEAVY.toppleSpeed / topple.h;
+          p.angVel = { x: k * topple.d.z, y: 0, z: -k * topple.d.x };
+          p.vel = { x: (HEAVY.toppleSpeed / 2) * topple.d.x, y: 0, z: (HEAVY.toppleSpeed / 2) * topple.d.z };
+        } else if (rubble && !launched && !this.canMove(p, rec.wind)) p.vel = { x: 0, y: 0, z: 0 };
         p.rigid = true;
         this.pieces.push(p);
-        this.heavy.take(p, b, time);
+        this.heavy!.take(p, b, time);
         continue;
       }
       if (rubble && ((!launched && !this.canMove(p, rec.wind)) || poolFull)) {
@@ -407,6 +457,31 @@ export class DebrisField {
       }
       this.add(p);
     }
+  }
+
+  /** A heavy piece: a rigid body in the heavy-debris world, when there is one (Spec 04 v2.0). */
+  private isHeavy(p: Piece): boolean {
+    return !!this.heavy && p.represents === 1 && p.def.mass >= HEAVY.minKg;
+  }
+
+  /**
+   * Hand a heavy piece resting in the debris field (or just retired to it) back to the heavy-debris
+   * world where it lies (Spec 04 v2.4: a swept slab's wind gets it). The old piece is hidden and
+   * a new one, the same object, takes its place.
+   */
+  retake(r: Piece, b: Building, time: number): Piece {
+    r.hidden = true;
+    this.settledVersion++;
+    const p: Piece = {
+      ...r, id: this.nextId++, pos: { ...r.pos }, vel: { x: 0, y: 0, z: 0 }, q: [...r.q] as Q, gust: { x: 0, y: 0, z: 0 },
+      resting: false, grounded: false, hidden: false, restedAt: Infinity, rigid: true,
+    };
+    delete p.settleNow;
+    delete p.swept;
+    delete p.angVel;
+    this.pieces.push(p);
+    this.heavy!.take(p, b, time);
+    return p;
   }
 
   /** Whether wind w can lift a piece or push it past its holding friction. */

@@ -119,7 +119,7 @@ export function createSim(
         }
         const key = heavyKey++;
         heavyPieces.set(key, p);
-        heavyTakes.push({ key, label: p.def.label, dims: [p.def.dims[0], p.def.dims[1], p.def.dims[2]], mass: p.def.mass, pos: { ...p.pos }, q: [p.q[0], p.q[1], p.q[2], p.q[3]], vel: { ...p.vel }, source: indexById.get(b.id) ?? -1, time });
+        heavyTakes.push({ key, label: p.def.label, dims: [p.def.dims[0], p.def.dims[1], p.def.dims[2]], mass: p.def.mass, pos: { ...p.pos }, q: [p.q[0], p.q[1], p.q[2], p.q[3]], vel: { ...p.vel }, ...(p.angVel ? { angVel: { ...p.angVel } } : {}), source: indexById.get(b.id) ?? -1, time });
         p.resting = false;
         p.grounded = false;
       },
@@ -187,12 +187,15 @@ export function createSim(
           if (st === HEAVY_STATE.lost) p.hidden = true;
           // Carried off with a swept slab: by the engine, or (retired before the engine learned
           // of the sweep) here (Spec 04 v2.3).
-          if (st === HEAVY_STATE.swept || (st === HEAVY_STATE.retired && lagSweeps.catches(p.pos, r.n))) {
+          if (st === HEAVY_STATE.swept) {
             p.hidden = true;
             p.swept = true;
             debris.massSwept += p.def.mass * p.represents;
           }
           heavyPieces.delete(P[o]!);
+          // Retired before the engine learned its slab was swept: back to the wind (v2.4).
+          const on = st === HEAVY_STATE.retired ? lagSweeps.catches(p.pos, r.n) : null;
+          if (on) debris.retake(p, on, curr.time);
         }
       }
       // Its hits on houses, in a fixed order.

@@ -117,3 +117,32 @@ export function sectionGeometry(b: Pick<HouseSpec, "width" | "depth" | "wallHeig
 export function panelMass(b: Pick<HouseSpec, "wallHeight">, p: WallPanel): number {
   return AREAL_MASS.wallPanel * p.len * b.wallHeight;
 }
+
+/** An interior wall in house-local coordinates: center, length (m), and whether it runs along X. */
+export interface InteriorWall {
+  x: number;
+  z: number;
+  len: number;
+  alongX: boolean;
+}
+
+/** Core room (closet or bath, Spec 03): a 2.2 × 2.0 m box, center in house-local coordinates. */
+export const CORE_ROOM = { x: (b: { width: number }) => b.width / 6, z: (b: { depth: number }) => -b.depth / 8, sx: 2.2, sz: 2.0 };
+
+/**
+ * The walls of interior component `part` (Spec 04 v2.4; as drawn, Spec 06): partition 0 runs
+ * along X at z = depth/6 (0.8 × width), partition 1 along Z at x = −width/6 (0.8 × depth); the
+ * core room is its box's four walls.
+ */
+export function interiorWalls(b: Pick<HouseSpec, "width" | "depth">, part: "partition" | "coreRoom", index: number): InteriorWall[] {
+  if (part === "partition")
+    return index === 0 ? [{ x: 0, z: b.depth / 6, len: b.width * 0.8, alongX: true }] : [{ x: -b.width / 6, z: 0, len: b.depth * 0.8, alongX: false }];
+  const cx = CORE_ROOM.x(b);
+  const cz = CORE_ROOM.z(b);
+  return [
+    { x: cx, z: cz - CORE_ROOM.sz / 2, len: CORE_ROOM.sx, alongX: true },
+    { x: cx, z: cz + CORE_ROOM.sz / 2, len: CORE_ROOM.sx, alongX: true },
+    { x: cx - CORE_ROOM.sx / 2, z: cz, len: CORE_ROOM.sz, alongX: false },
+    { x: cx + CORE_ROOM.sx / 2, z: cz, len: CORE_ROOM.sz, alongX: false },
+  ];
+}

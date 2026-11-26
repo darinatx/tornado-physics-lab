@@ -25,6 +25,8 @@ export interface HeavyTake {
   pos: Vec3;
   q: [number, number, number, number];
   vel: Vec3;
+  /** rad/s, if it starts spinning (a wall tipping over). */
+  angVel?: Vec3;
   /** Index of the house it came from (−1: none). */
   source: number;
   time: number;
@@ -132,6 +134,7 @@ function stub(t: HeavyTake): Piece {
     def,
     pos: { ...t.pos },
     vel: { ...t.vel },
+    ...(t.angVel ? { angVel: { ...t.angVel } } : {}),
     q: [...t.q] as [number, number, number, number],
     spin: 1,
     resting: false,
