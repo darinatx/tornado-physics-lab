@@ -17,6 +17,11 @@ export const TRACK_COLOR = {
   flatten: 0.18,
   /** Straw tint of crops flattened well past lodging (broken stalks), mottled. */
   straw: 0.22,
+  /** Flattened lawn: the shift toward pale, yellowish green (blade undersides and thatch) and
+   *  the strength of its lay lines. Lawn is brighter than crops, so lightening alone barely shows. */
+  lawnPale: 0.45,
+  lawnStreak: 0.16,
+  lawnPaleColor: "#a6ad72",
   /** Darkest a debris mark draws (fraction toward the mark colour). */
   markMax: 0.55,
   soilColor: "#5d4733",
@@ -169,7 +174,10 @@ vec3 trackTint(vec3 base, vec2 wxz, float lawn) {
     float a = t.g * 6.2831853;
     vec2 across = vec2(-sin(a), cos(a));
     float streak = 0.5 + 0.5 * sin(dot(wxz, across) * 7.85);
-    c *= 1.0 + lay * (${TRACK_COLOR.flatten.toFixed(3)} + 0.07 * (streak - 0.5));
+    c *= 1.0 + lay * (1.0 - lawn) * (${TRACK_COLOR.flatten.toFixed(3)} + 0.07 * (streak - 0.5));
+    // Flattened lawn: paler and yellower, with clear lay lines.
+    float lawnLay = lay * lawn;
+    c = mix(c, vec3(${hexVec(TRACK_COLOR.lawnPaleColor)}) * (1.0 + ${TRACK_COLOR.lawnStreak.toFixed(2)} * (streak - 0.5)), ${TRACK_COLOR.lawnPale.toFixed(2)} * lawnLay);
     // Broken stalks: a faint straw mottle over ~6 m patches, crops only.
     float mott = trackHash(floor(wxz / 6.0));
     c = mix(c, vec3(${hexVec(TRACK_COLOR.strawColor)}), ${TRACK_COLOR.straw.toFixed(3)} * smoothstep(0.75, 1.0, lay) * mott * (1.0 - lawn));

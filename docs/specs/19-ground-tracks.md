@@ -105,7 +105,9 @@ per cell, not the states, so transitions follow each cell's own strength:
 - **flattened:** how far the peak wind went past the cell's own lodging threshold (from 85% of
   it, full at 135%): the vegetation lightens (up to 18%) with streaks along the stored
   direction, so the convergent rows show; well-flattened crops (not lawn) take a faint straw
-  mottle over ~6 m patches (broken stalks);
+  mottle over ~6 m patches (broken stalks); flattened lawn shifts toward pale, yellowish green
+  (blade undersides and thatch, up to 45%) with clear lay lines, since lightening alone doesn't
+  show on bright mowed grass;
 - **soil showing:** rises smoothly with the dose against the cell's own erodibility (from 25%
   of the thinning dose to the bare-soil dose), so a scoured core fades out through a fringe of
   thinned, part-exposed ground; toward soil colour with slight patch variation;
@@ -238,5 +240,7 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
   soil fringe (from 25% of the thinning dose). Then, after the user saw a too-smooth straight
   edge on a strong track's right side: the 3·R_max cap replaced by the physical active radius
   (within 10·R_max), with a coarse far zone (one sample per 32 m, every eighth pass) to stay
-  within the cost (TERR-20 restated).
+  within the cost (TERR-20 restated). Then, after the user saw no change on suburban lawns (the
+  sim had pushed over 59% of an EF2's core lawn and scoured 72% of an EF4's): flattened lawn
+  drawn paler and yellower with lay lines.
 - v0.1 (2026-11-26): drafted at the user's request (another session's design).
