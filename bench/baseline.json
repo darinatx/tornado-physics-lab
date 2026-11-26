@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "commit": "1238a17 + Spec 18 harness (physics identical to main: BENCH-02)",
+  "date": "2026-11-26T21:03:13.599Z",
+  "machine": {
+    "cpu": "Apple M5",
+    "cores": 10,
+    "node": "v25.8.2"
+  },
+  "runs": 2,
+  "scenes": [
+    {
+      "id": "ef4-town",
+      "steps": 2400,
+      "ms": {
+        "total": 8.92682009375007,
+        "damage": 1.9285198174999716,
+        "debris": 2.489677592499931,
+        "heavy": 4.506893614166599,
+        "detail": 8.568916667172743e-05,
+        "other": 0.001643380416897493
+      },
+      "counts": {
+        "flying": 3143,
+        "resting": 1,
+        "heavy": 991,
+        "damaged": 1986,
+        "detailed": 0
+      },
+      "fingerprint": "32eb3aa0"
+    },
+    {
+      "id": "detail-core",
+      "steps": 2400,
+      "ms": {
+        "total": 50.69498366291744,
+        "damage": 1.6869276204159056,
+        "debris": 3.0335143425002147,
+        "heavy": 2.2069332941659376,
+        "detail": 43.605525860001286,
+        "other": 0.08390343416763812
+      },
+      "counts": {
+        "flying": 3019,
+        "resting": 3,
+        "heavy": 429,
+        "damaged": 844,
+        "detailed": 30
+      },
+      "fingerprint": "3d53bcf8"
+    }
+  ]
+}

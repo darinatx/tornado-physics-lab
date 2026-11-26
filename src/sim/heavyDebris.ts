@@ -49,6 +49,9 @@ interface Heavy {
   ccd: boolean;
   /** Wind at it, as last sampled. */
   wind: Vec3 | null;
+  /** Linear and angular velocity read this step, before world.step (null: not read). */
+  v?: Vec3 | null;
+  av?: Vec3 | null;
   /** Moving slower than the rubble speeds since (s), or null. */
   stillSince: number | null;
   /** Asleep since (s), or null while awake. */
@@ -269,20 +272,29 @@ export class HeavyDebris implements HeavySink {
     for (const h of this.bodies) {
       const body = h.body;
       const asleep = body.isSleeping();
-      if (asleep && !checkSleepers) continue;
+      if (asleep && !checkSleepers) {
+        h.v = STILL;
+        h.av = STILL;
+        continue;
+      }
       body.resetForces(false);
       body.resetTorques(false);
       const com = body.worldCom();
       const tr = body.translation();
       const r = body.rotation();
       const q: [number, number, number, number] = [r.x, r.y, r.z, r.w];
+      // Velocities read once per step (each read allocates through Rapier's JS glue) and reused
+      // below and in the CCD pass; nothing changes them before world.step (Spec 18 profiling).
       const v = asleep ? STILL : body.linvel();
+      const av = asleep ? STILL : body.angvel();
+      h.v = v;
+      h.av = av;
       // The wind at a piece changes over tenths of a second: sampled every other step (and at
       // once for a new body).
       if (!h.wind || asleep || (this.stepCount + h.k) % 2 === 0) h.wind = windAt(com, s, terrain);
       const w = h.wind;
       if (asleep && Math.hypot(w.x, w.y, w.z) < 0.5) continue;
-      const { force: F, torque: Tq } = rigidAero({ t: tr, q, com, v, w: asleep ? STILL : body.angvel() }, h.plates, () => w, w, this.forces);
+      const { force: F, torque: Tq } = rigidAero({ t: tr, q, com, v, w: av }, h.plates, () => w, w, this.forces);
       // Could the wind lift it or push it past friction?
       const Wt = h.mass * GRAVITY;
       const holds = F.y < Wt && Math.hypot(F.x, F.z) < HEAVY.friction * (Wt - F.y);
@@ -291,9 +303,7 @@ export class HeavyDebris implements HeavySink {
       } else {
         // Still for a moment, and the wind can't move it: put it to sleep (the wind would keep
         // nudging it awake otherwise; the detail zone's rubble rule).
-        const v = body.linvel();
-        const om = body.angvel();
-        if (Math.hypot(v.x, v.y, v.z) < DETAIL.rubbleSpeed && Math.hypot(om.x, om.y, om.z) < DETAIL.rubbleSpin) {
+        if (Math.hypot(v.x, v.y, v.z) < DETAIL.rubbleSpeed && Math.hypot(av.x, av.y, av.z) < DETAIL.rubbleSpin) {
           h.stillSince ??= this.time;
           if (holds && this.time - h.stillSince >= DETAIL.rubbleAfterS) {
             body.sleep();
@@ -311,8 +321,9 @@ export class HeavyDebris implements HeavySink {
     const dt = this.world.timestep;
     for (const h of this.bodies) {
       if (h.body.isSleeping()) continue;
-      const v = h.body.linvel();
-      const w = h.body.angvel();
+      // As read in the aero pass (a body woken there was asleep: zero velocity).
+      const v = h.v ?? h.body.linvel();
+      const w = h.av ?? h.body.angvel();
       const radius = Math.hypot(h.dims[0], h.dims[1], h.dims[2]) / 2;
       const reach = (Math.hypot(v.x, v.y, v.z) + Math.hypot(w.x, w.y, w.z) * radius) * dt * HEAVY.ccdMargin;
       h.body.setSoftCcdPrediction(Math.max(HEAVY.softCcd, reach));

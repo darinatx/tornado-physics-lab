@@ -456,9 +456,21 @@ export function createSim(
     prev = curr;
     const pre = makeSnapshot();
     const damageStep = stepCount % DAMAGE_STEP_INTERVAL === 0;
+    const T = config.timing;
+    let t0 = T ? performance.now() : 0;
     if (stepCount % DETAIL.stepEvery === 0) detailStep(pre);
+    if (T) {
+      const t1 = performance.now();
+      T.detail += t1 - t0;
+      t0 = t1;
+    }
     if (damageStep) {
       world.update(dt * DAMAGE_STEP_INTERVAL, pre.tornado, pre.terrain, pre.time, (b, rec) => debris.spawnFrom(b, rec));
+    }
+    if (T) {
+      const t1 = performance.now();
+      T.damage += t1 - t0;
+      t0 = t1;
     }
     if (stepCount % DEBRIS.stepInterval === 0) {
       // Detailed houses as of the newest detail step whose results are certain to be in.
@@ -477,10 +489,14 @@ export function createSim(
       config.inject?.debris?.(pre.time, debris);
       // Heavy pieces first, so the debris field's counts see where they are now.
       if (heavy) {
+        const th = T ? performance.now() : 0;
         heavyStep(pre);
         applyHeavy(heavyN - 1 - HEAVY.lagSteps);
+        if (T) T.heavy += performance.now() - th;
       }
+      const td = T ? performance.now() : 0;
       debris.step(dt * DEBRIS.stepInterval, pre.tornado, pre.terrain, damageStep, pre.time, pre.cloudBase, world);
+      if (T) T.debris += performance.now() - td;
       if (observers.size) taps.debrisStep?.(pre.time);
     }
     curr = makeSnapshot();
@@ -557,9 +573,19 @@ export function createSim(
           acc = Math.min(acc, dt);
           break;
         }
+        const T = config.timing;
+        const t0 = T ? performance.now() : 0;
         step();
         acc -= dt;
-        if (detail) applyDetail();
+        if (detail) {
+          const ta = T ? performance.now() : 0;
+          applyDetail();
+          if (T) T.detail += performance.now() - ta;
+        }
+        if (T) {
+          T.total += performance.now() - t0;
+          T.steps++;
+        }
       }
       if (acc < 0) acc = 0;
       const alpha = Math.min(acc / dt, 1 - 1e-9);

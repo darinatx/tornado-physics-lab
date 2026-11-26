@@ -107,6 +107,9 @@ export interface SimConfig {
   /** The lab (Spec 13): the detail set enters at the first detail step, all at once, wherever
    *  the tornado is, and never leaves. */
   detailPinned?: boolean;
+  /** Benchmark timing (Spec 18): wall-clock ms per section, accumulated. Read-only: nothing in
+   *  the physics reads it. */
+  timing?: StepTiming;
   /** Read-only observers (Spec 08 v1.5). More can be added with `sim.observe`. */
   taps?: SimTaps;
   /** Turbulent debris dispersion (Spec 13; default on). Off: gusts held at zero (replay tests). */
@@ -120,6 +123,21 @@ export interface SimConfig {
     debris?(time: number, field: DebrisField): void;
     detail?(time: number): DetailLaunch[];
   };
+}
+
+/** Wall-clock time per section of the physics step (ms, accumulated; Spec 18). `steps` counts
+ *  physics steps; `total` covers each step and the detail results applied after it. */
+export interface StepTiming {
+  steps: number;
+  total: number;
+  damage: number;
+  debris: number;
+  heavy: number;
+  detail: number;
+}
+
+export function newStepTiming(): StepTiming {
+  return { steps: 0, total: 0, damage: 0, debris: 0, heavy: 0, detail: 0 };
 }
 
 /** Observers: they see what happens and must not change it. */
