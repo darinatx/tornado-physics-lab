@@ -78,7 +78,8 @@ Final sign-off (tag `phase-6-done`):
       rechecked, BL-006 run, BL-007 to BL-012 new)
 - [ ] Slice D: benchmark harness specced and built (`npm run bench`, baseline saved);
       profiling report with before/after numbers; cheap wins done, the rest in the backlog
-- [ ] Every Phase 6 backlog item decided by the user (fix, defer, accept); "fix" items fixed
+- [x] Every Phase 6 backlog item decided by the user (fix, defer, accept); "fix" items fixed
+      (2026-11-26: all eleven deferred, none to fix; see `docs/backlog.md`)
 - [ ] User's final sign-off; tag `phase-6-done`
 
 ## Slice A notes
