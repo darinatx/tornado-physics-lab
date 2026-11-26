@@ -1,6 +1,6 @@
 # Phase 6 — Debris Impacts
 
-Status: In progress (started 2026-11-24)
+Status: Done (started 2026-11-24; final sign-off 2026-11-26)
 
 ## Goal
 
@@ -76,13 +76,13 @@ Final sign-off (tag `phase-6-done`):
       `npm run verify`, the validation tests, reference missile tests on detailed houses, frame
       cost of impact checks; findings in `docs/backlog.md` (run 2026-11-26: BL-001 to BL-003
       rechecked, BL-006 run, BL-007 to BL-012 new)
-- [ ] Slice D: benchmark harness specced and built (`npm run bench`, baseline saved);
+- [x] Slice D: benchmark harness specced and built (`npm run bench`, baseline saved);
       profiling report with before/after numbers; cheap wins done, the rest in the backlog
       (on its own branch from `main`, `phase-6-bench`: the phase branch merged into `main`
       at preliminary sign-off and closed, 2026-11-26)
 - [x] Every Phase 6 backlog item decided by the user (fix, defer, accept); "fix" items fixed
       (2026-11-26: all eleven deferred, none to fix; see `docs/backlog.md`)
-- [ ] User's final sign-off; tag `phase-6-done`
+- [x] User's final sign-off (2026-11-26); tag `phase-6-done` on `main` (BL-013 to BL-016 deferred, parked)
 
 ## Slice D notes
 
