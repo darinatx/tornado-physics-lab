@@ -88,6 +88,10 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    named phase, or accept as a documented limitation in its spec); "fix" items are fixed (usual
    rules) → final sign-off → tag `phase-N-done`.
 
+**Push at each gate.** Right after tagging `phase-N-prelim` or `phase-N-done`, recommend pushing
+`main` and the new tag to GitHub (`origin`), so the phase is backed up online. Say what will be
+pushed (branch, tag, number of commits), and push only when the user says yes.
+
 ### Backlog
 
 `docs/backlog.md` holds what validation found. Each item gets the user's decision before its
