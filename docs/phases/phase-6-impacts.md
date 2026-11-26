@@ -55,9 +55,10 @@ Preliminary sign-off (lets Phase 7 start; tag `phase-6-prelim`):
 
 Final sign-off (tag `phase-6-done`):
 
-- [ ] Slice C, validation, in its own session alongside Phase 7 (CLAUDE.md Phase loop step 6):
+- [x] Slice C, validation, in its own session alongside Phase 7 (CLAUDE.md Phase loop step 6):
       `npm run verify`, the validation tests, reference missile tests on detailed houses, frame
-      cost of impact checks; findings in `docs/backlog.md`
+      cost of impact checks; findings in `docs/backlog.md` (run 2026-11-26: BL-001 to BL-003
+      rechecked, BL-006 run, BL-007 to BL-012 new)
 - [ ] Every Phase 6 backlog item decided by the user (fix, defer, accept); "fix" items fixed
 - [ ] User's final sign-off; tag `phase-6-done`
 
