@@ -256,8 +256,14 @@ bounce, pass through broken windows, or perforate and lodge (below).
 - A light piece's body in its first half second (still on Rapier) is checked the same way after
   the physics step and pushed out. (Full CCD was tried for these bodies and dropped: Rapier's
   time-of-impact search could hang on a body wedged between shapes.)
-- "Out" is away from the house a surface belongs to (in a thin layer — siding, sheathing,
-  glass — the raw contact normal can point into the house), and never downward.
+- "Out" for a body is the side of the surface it was on before the step: the surface's normal
+  toward where it was then (a piece inside a house, in through an opening, is pushed back in,
+  not out through a standing wall). Only a piece that already overlapped the surface then (or a
+  light piece on the debris model, which goes back to where it was unless it already overlapped)
+  falls back to away from the house the surface belongs to (in a thin layer — siding,
+  sheathing, glass — the raw contact normal can point into the house), never downward.
+- Each push moves the body's colliders with it at once, so a body moves out only as far as it
+  overlapped (to within the 1 cm step).
 - Fixed things (the ground, slabs, standing houses, stand-ins) are one collision group that only
   meets moving pieces, and slab colliders reach 0.5 m into the ground: a sheet sliding flat along
   the ground otherwise met the slab's bottom edge right at the ground and slipped under it.
@@ -418,6 +424,15 @@ n + lead, which they are certain to have reached):
   family, 10.5 kg·m/s, β 0.3 (NAHB 2002 2×4 tests), instead of sharing 0.4 with compact
   pieces; compact unchanged (estimate). IMP-12 now checks against those tests. Windows had
   been breaking 4× too easily for shingles and ~25× for lumber.
+- v0.14: light bodies pushed clear go back out the side they came from, and only as far as they
+  overlapped (IMP-01, IMP-17). A detail-zone shingle in through a fallen back-wall panel of town
+  house #1855 tipped 4 cm into the standing panel beside it from inside; the push-out took
+  "away from the house" as out and dragged it through that panel to the outside. And the push
+  loop never moved the body's colliders (Rapier moves them with their body only at the next
+  step), so every check saw the same overlap and every push ran the full 40 cm. Now each
+  body's collider poses are recorded before the step, out is the surface's normal toward that
+  pose (away from the house only if it already overlapped then), and colliders follow each
+  push.
 - v0.13: soft CCD look-ahead scales with each body's speed and spin (1.5× its reach per step,
   at least 0.5 m). A fixed 0.5 m let a gable chunk at 31 m/s (0.52 m per step) end a step 12 cm
   into a neighbor's wall, and a tumbling wall section sink 3 cm into a slab edge (IMP-17).
