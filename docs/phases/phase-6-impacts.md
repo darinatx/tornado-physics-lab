@@ -40,16 +40,26 @@ elsewhere. Pieces stop passing through standing houses.
 - [13 — Structure lab v2](../specs/13-structure-lab.md): new; approved 2026-11-25 (LAB-01 to LAB-15)
 - [09 — Structure](../specs/09-structure.md): slice B
 
-## Exit criteria (whole phase)
+## Exit criteria
 
-- [ ] Slice A: IMP-01 to IMP-13 pass; demo reviewed by the user
-- [ ] Slice B: spec written and approved; detail-zone impacts; determinism across worker counts
+Preliminary sign-off (lets Phase 7 start; tag `phase-6-prelim`):
+
+- [x] Slice A: IMP-01 to IMP-13 pass; demo reviewed by the user
+- [x] Slice B: detail-zone impacts (glass, perforations, roof and siding tear-off, damage both
+      ways); determinism across worker counts
 - [x] Wind tunnel stage 1: TUN-01 to TUN-10 pass
-- [ ] Structure lab v2: Spec 13 approved; LAB-01 to LAB-15 pass; lab demo reviewed by the user
-- [ ] Slice C: validation passes; frame cost of impact checks measured
-- [ ] All tests pass; `npm run verify` passes
-- [ ] Specs updated, simplifications note and retro written
-- [ ] User sign-off; commit tagged `phase-6-done`
+- [x] Structure lab v2: Spec 13 approved; LAB-01 to LAB-20 pass; lab demo reviewed by the user
+- [x] `npm run verify:fast` passes
+- [x] Specs updated, simplifications note and retro written
+- [x] User's preliminary sign-off (2026-11-26); tag `phase-6-prelim`
+
+Final sign-off (tag `phase-6-done`):
+
+- [ ] Slice C, validation, in its own session alongside Phase 7 (CLAUDE.md Phase loop step 6):
+      `npm run verify`, the validation tests, reference missile tests on detailed houses, frame
+      cost of impact checks; findings in `docs/backlog.md`
+- [ ] Every Phase 6 backlog item decided by the user (fix, defer, accept); "fix" items fixed
+- [ ] User's final sign-off; tag `phase-6-done`
 
 ## Slice A notes
 
@@ -313,3 +323,79 @@ siding in the first second); a mature pass starts calm at every house, neighbors
   Every step checks out against its source; no single physical cause left to fix. Median DOD
   in this setup 6.5 against DI 2's 8–9; DI 2 averages over orientation, this case holds the
   wind square to the ridge from start to eye.
+
+## Simplifications note
+
+Impacts (Spec 10):
+- Pieces don't hit each other. Debris that gets inside a house falls to the slab without hitting
+  interior walls.
+- Hits between town debris and detailed houses, in either direction, take effect up to 0.25 s
+  late. That fixed lag keeps runs deterministic across worker counts.
+- Component houses: partly stripped siding and partly torn shingles aren't drawn until the
+  component fails. Drawn marks were tried and removed at the user's request.
+- Roof hits don't push a component house's roof sections down, since its checks are for uplift.
+  Hits don't weaken connections they don't break (no fatigue).
+- A torn shingle hit on a detailed house removes one shingle patch, about 0.7 m², against the
+  component model's 0.5 m².
+- A light piece pushed out of a house goes back toward its last clear pose within 0.5 m, and
+  slabs always push it up. This is a correction step, not a contact solve.
+
+Structure (Spec 09):
+- Gable-end studs (above the end walls' top plates) aren't checked for bending, because their
+  span varies along the gable. They still fail at their connections.
+- The tornado factor (×1.15) applies to the roof's external pressure only. Walls use the
+  straight-line coefficients.
+- An accepted stall (BL-004): with the track square to the ridge from start to eye, one seed in
+  eight stops at DOD 4 in a neighborhood EF5. This is a real cascade that DI 2 averages out
+  over orientation.
+
+Structure lab (Spec 13):
+- The neighborhood ring uses the component model only. More detailed houses means more lab
+  houses, up to 12 in one physics group, even where town would use two street rows.
+- Neighbor density scales the town layout's spacing (0.25× to 1.75×). It doesn't change lot
+  occupancy or the house mix.
+- Upwind donors are hidden 4 km away. Their pieces enter as real debris.
+- A statistical neighbor debris stream was tried and removed. It gave 93 hits where real
+  neighbors gave 317.
+- Launched real members aren't steered after release and start 4 m out. Reference missiles use
+  the arrival solver.
+- Replay is exact only for each piece's first hit while it is off the ground, with dispersion
+  off. Recorded detailed members replay without spin.
+- The wind tunnel is uniform in plan: no swirl, no core passage. Stage 2's tornado replay is
+  BL-005.
+
+## Retro
+
+The user's live review of the lab found most of what got fixed. Examples:
+- Launched debris didn't damage roofs.
+- Rebuilt houses kept their damage, because the detail layer cached the old house.
+- A full-strength tornado start stripped every house in the first second.
+- Damage marks floated on walls that had already fallen.
+- The detailed house stayed far more intact than its neighbors in an EF5.
+None of these appeared in tests, so the lab and its probe earned their cost as tools for
+looking.
+
+As in Phase 5, the EF5 gap traced to missing physics rather than a strength to tune:
+- Stud bending was a failure mode the model didn't have.
+- Tornado roof pressure was missing. The literature's 2–3× rise includes the pressure drop at
+  the core, which the sim already models, so only about 1.15× was new.
+- The strong-house sweep calibration was off: 1.6, corrected to (220/200)² = 1.21.
+Recalibrating would have hidden all three.
+
+One measurement misled us. Peak wind froze once a house was swept, so swept houses looked as
+if they failed at lower winds than they did. That biased the DOD 10 check. Each house's true
+peak fixed it. Lesson: check what an instrument records before trusting it.
+
+A statistical stand-in for neighbors failed its own check (93 hits against 317). Real neighbors
+with a density setting cost more but are correct. A stand-in has to be validated against the
+real thing before it replaces it.
+
+Zero pass-through took several rounds. The last edge cases were ambiguous definitions: what
+"inside a house" means, and which way to push a piece out. These needed exact geometric rules
+(under the roof's outer surface, 0.15 m clear of the walls, slabs always up), not tolerances.
+IMP-19 still fails on town debris and is logged as BL-001, high.
+
+Process: validation kept turning into open-ended fixing and held up the phase. This led to the
+two-stage gate. Preliminary sign-off moves on; validation runs in its own session and records
+to `docs/backlog.md`; final sign-off waits on the user's decision on each item. Phase 6 is the
+first phase to use it.

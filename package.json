@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "trace": "tsx scripts/check-trace.ts",
     "verify": "npm run typecheck && npm run test && npm run trace",
+    "verify:fast": "npm run typecheck && npm run test:fast && npm run trace",
     "test:fast": "vitest run tests/unit",
     "check:passthrough": "tsx scripts/check-passthrough.ts",
     "check:alignment": "tsx scripts/check-alignment.ts",

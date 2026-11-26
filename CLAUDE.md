@@ -20,6 +20,7 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
 | `src/config/` | Every tunable constant, with units and a source comment. |
 | `tests/unit/` | One file per spec, named after it (e.g. `wind-field.test.ts`). |
 | `tests/validation/` | Checks against published reference values (EF DODs, analytic solutions). |
+| `docs/backlog.md` | Bugs and suggestions found by validation, to revisit when the user chooses. |
 
 **Dependency rule:** `ui → render → sim → core`. `core` imports nothing outside `core` and `config`.
 
@@ -42,8 +43,11 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
 6. **Determinism.** All randomness goes through a seeded RNG. The same seed and inputs give
    the same run.
 7. **Fixed physics timestep.** Rendering interpolates; physics never uses frame delta directly.
-8. **Phase gates.** Don't start phase N+1 until every exit criterion in phase N is checked
-   and the user has signed off. Tag the commit `phase-N-done`.
+8. **Phase gates, in two steps.** **Preliminary sign-off** lets phase N+1 start: every
+   preliminary exit criterion checked, the user signs off, tag `phase-N-prelim`. **Final
+   sign-off** closes phase N: its validation has run and every backlog item from it has a
+   decision from the user (fix, defer to a named phase, or accept as a documented
+   limitation), with the "fix" items fixed; tag `phase-N-done`. See Phase loop.
 
 ## Phase loop
 
@@ -51,9 +55,29 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    realism, and approve them (see rule 1).
 2. **Plan**: fill in the phase doc (deliverables, exit criteria).
 3. **Build**: tests from acceptance criteria, then implementation.
-4. **Verify**: `npm run verify` (typecheck + tests + trace), then run the app and walk the demo checklist.
-5. **Gate**: update specs to match, write the retro and simplifications note → user watches
-   the demo and signs off → tag.
+4. **Verify**: `npm run verify:fast` (typecheck + unit tests + trace), then run the app and walk
+   the demo checklist.
+5. **Preliminary gate**: update specs to match, write the retro and simplifications note →
+   user watches the demo and gives preliminary sign-off → tag `phase-N-prelim`. Unit tests
+   and the trace must pass (`npm run verify:fast`); validation tests don't block (bugs are
+   fixed along the way in the phase's slices). The next phase can start.
+6. **Validate (its own session, alongside the next phase)**: a separate session runs the
+   phase's validation: `npm run verify`, the validation tests, the phase's validation slice
+   and any checks it adds against published data. It **records, it doesn't fix**: every bug
+   and suggestion goes in `docs/backlog.md` (ID, phase, what, evidence, severity, suggested
+   fix). It may add validation tests and measurements; it changes no model code, so it can't
+   collide with the next phase's work.
+7. **Final gate**: the user decides each open backlog item from the phase (fix, defer to a
+   named phase, or accept as a documented limitation in its spec); "fix" items are fixed (usual
+   rules) → final sign-off → tag `phase-N-done`.
+
+### Backlog
+
+`docs/backlog.md` holds what validation found. Each item gets the user's decision before its
+phase's final gate: **fix** (before the final gate), **defer** (to a named phase, where it
+joins that phase's plan), or **accept** (written into the relevant spec's simplifications).
+Fixing one follows the usual rules (spec change first, tests first). Close an item by moving
+it to "Done" with the commit that fixed it, or the spec that records it as accepted.
 
 ## Commands
 
@@ -61,4 +85,5 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
 - `npm run test`: unit and validation tests (a few minutes; full tornado runs)
 - `npm run test:fast`: unit tests only (seconds), for everyday work
 - `npm run trace`: check that every acceptance criterion has a test
-- `npm run verify`: everything required for a phase gate
+- `npm run verify`: everything, validation tests included (the validation session runs it)
+- `npm run verify:fast`: typecheck + unit tests + trace (must pass at every gate)
