@@ -170,7 +170,9 @@ export const CLASS_LABEL: Record<ConstructionClass, string> = {
 export const CLASS_FACTORS: Record<ConstructionClass, Partial<Record<Part, number>>> = {
   weak: { roofBay: 0.7, anchorage: 0.6, sweep: 0.6, wallPanel: 0.85, partition: 0.85, coreRoom: 0.85 },
   standard: {},
-  strong: { roofBay: 1.6, anchorage: 1.6, sweep: 1.6, wallPanel: 1.3, partition: 1.3, coreRoom: 1.3, window: 1.4, garage: 1.5, roofDeck: 1.3 },
+  // Sweep: DI 2 rates well-built houses at the upper bound, 220 mph for DOD 10 against 200
+  // expected, so (220/200)² on the lateral pressure (Spec 03 v2.3).
+  strong: { roofBay: 1.6, anchorage: 1.6, sweep: 1.21, wallPanel: 1.3, partition: 1.3, coreRoom: 1.3, window: 1.4, garage: 1.5, roofDeck: 1.3 },
 };
 
 /** Layout geometry (m). */

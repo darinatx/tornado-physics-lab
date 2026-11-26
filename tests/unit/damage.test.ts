@@ -109,6 +109,12 @@ describe("Spec 03 — damage (component houses)", () => {
     expect(strong).toBeGreaterThan(standard);
   }, 120000);
 
+  test("DMG-15: strong houses are swept clean (DOD 10) at a median peak within ±5% of DI 2's upper bound", () => {
+    const dod10 = DI2_DODS.find((r) => r.dod === 10)!;
+    const m = kmMedian(passSamples(randomHouses(400, 515, "strong"))[10]!);
+    expect(Math.abs(m / dod10.upper - 1), `strong DOD 10: ${m} vs ${dod10.upper}`).toBeLessThan(0.05);
+  }, 120000);
+
   test("DMG-06: under 1% of standard houses damaged below 50 mph", () => {
     let damaged = 0;
     const houses = randomHouses(1000, 5);

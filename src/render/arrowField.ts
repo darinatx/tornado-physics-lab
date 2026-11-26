@@ -40,11 +40,13 @@ export function computeArrowField(
   terrain: TerrainClass,
   opts: ArrowFieldOptions,
   out: ArrowField,
+  /** Where the grid is centered (default the tornado's center; the lab uses its block). */
+  center: { x: number; z: number } = s.center,
 ): void {
   const { spacing, range, height } = opts;
   // Snap to the world grid so arrows don't slide as the tornado moves.
-  const x0 = Math.round((s.center.x - range) / spacing) * spacing;
-  const z0 = Math.round((s.center.z - range) / spacing) * spacing;
+  const x0 = Math.round((center.x - range) / spacing) * spacing;
+  const z0 = Math.round((center.z - range) / spacing) * spacing;
   const p = { x: 0, y: height, z: 0 };
   let k = 0;
   for (let i = 0; i < out.side; i++) {

@@ -1,6 +1,6 @@
 # Spec 03 — Damage Model
 
-Status: Approved (v2.2) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
+Status: Approved (v2.3) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
 
 ## Purpose
 
@@ -129,7 +129,7 @@ v1.0 and found biased; see the changelog.)
 |---|---|---|
 | Weak (older, toe-nailed roof, few anchors) | 25% | roof bays ×0.7, anchorage and slab sweep ×0.6, walls, partitions and core room ×0.85 |
 | Standard | 55% | ×1 |
-| Strong (hurricane straps, anchor bolts, impact windows) | 20% | roof bays ×1.6, anchorage and slab sweep ×1.6, walls, partitions and core room ×1.3, windows ×1.4, garage ×1.5, deck ×1.3 |
+| Strong (hurricane straps, anchor bolts, impact windows) | 20% | roof bays ×1.6, anchorage ×1.6, slab sweep ×1.21, walls, partitions and core room ×1.3, windows ×1.4, garage ×1.5, deck ×1.3 |
 
 ### Survey rating
 
@@ -167,6 +167,8 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
   value.
 - **DMG-05**: Weak houses reach DOD 6 at a lower median speed than standard ones, and strong
   houses at a higher one.
+- **DMG-15**: Strong houses reach DOD 10 in tornado passes at a Kaplan–Meier median peak wind
+  within ±5% of the DI 2 upper bound (220 mph).
 - **DMG-06**: Below 50 mph steady wind, fewer than 1% of standard houses show any damage.
 - **DMG-07**: Same seed → identical layouts, capacities and damage histories.
 - **DMG-08**: The EF estimate uses the lower bound for weak houses, the expected value for
@@ -203,6 +205,10 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
 
 ## Changelog
 
+- v2.3: strong houses' slab sweep ×1.21, was ×1.6 (DMG-15). DI 2 rates well-built houses at the
+  upper bound, 220 mph for DOD 10 against 200 expected: (220/200)² on the lateral pressure. At
+  ×1.6 the median was ~250 mph and in town passes only 15–31% of strong houses at 220–239 mph
+  were swept (found by the user: too few swept slabs in an EF5 through strong houses).
 - v2.2: closest approach to the core edge recorded per house (DMG-14), at the user's request.
 
 - v2.1: debris impacts (Spec 10): queued impacts are applied at the start of each evaluation

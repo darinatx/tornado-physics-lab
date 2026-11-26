@@ -39,6 +39,8 @@ export interface SimRenderer {
   /** Put the camera at a point looking at another (stops following the tornado). */
   setView(position: Vec3, target: Vec3): void;
   setLayers(l: Layers): void;
+  /** Center the wind-arrow grid on a fixed point (the lab's block), or on the tornado (null). */
+  setArrowCenter(c: { x: number; z: number } | null): void;
   pick(ndcX: number, ndcY: number): Vec3 | null;
   /** The detailed-house member under the cursor, and where on it (Spec 13 member inspector). */
   pickMember(ndcX: number, ndcY: number): { house: number; member: number; point: Vec3 } | null;
@@ -136,6 +138,7 @@ export function createRenderer(
   // Detailed houses, and a dashed ring around the detail spot.
   const detail = createDetailLayer();
   let memberStyle: MemberStyle | null = null;
+  let arrowCenter: { x: number; z: number } | null = null;
   let styleDirty = false;
   let styledAt = 0;
   scene.add(detail.group);
@@ -294,7 +297,7 @@ export function createRenderer(
       // Arrows.
       arrows.visible = layers.arrows;
       if (layers.arrows) {
-        computeArrowField(s, curr.terrain, fieldOpts, field);
+        computeArrowField(s, curr.terrain, fieldOpts, field, arrowCenter ?? s.center);
         for (let k = 0; k < field.count; k++) {
           const v = field.speed[k]!;
           const len = arrowLength(v, RENDER.maxArrowLength);
@@ -420,6 +423,9 @@ export function createRenderer(
       controls.target.set(target.x, target.y, target.z);
       camera.position.set(position.x, position.y, position.z);
       controls.update();
+    },
+    setArrowCenter(c) {
+      arrowCenter = c ? { x: c.x, z: c.z } : null;
     },
     setLayers(l) {
       layers = { ...l };

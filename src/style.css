@@ -398,3 +398,9 @@ body {
   margin-top: 6px;
   font-size: 12px;
 }
+
+.pin-card .pin-log {
+  max-height: 22vh;
+  overflow-y: auto;
+  font-size: 12px;
+}

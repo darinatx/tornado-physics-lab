@@ -20,6 +20,9 @@ import { createLab, roofWind, standoffFrom } from "./sim/lab";
 import type { Lab, LabSetup, LabWind, ReplaySpec } from "./sim/lab";
 import type { Aim } from "./sim/launcher";
 import { createProbeUI } from "./ui/probe";
+import { computeReadout, mountReadout } from "./ui/readout";
+import type { SimSnapshot } from "./sim/types";
+import { stressOffered, stressStyle } from "./ui/stressView";
 import { buildControlDefs } from "./ui/controls";
 import { defaultParams } from "./sim/types";
 import type { TornadoParams } from "./sim/types";
@@ -39,6 +42,10 @@ const app = document.getElementById("app")!;
 const ui = {
   // Setup
   houses: 1,
+  // Construction mix of the lab houses (Spec 13 v0.9), at most LAB.maxHouses together.
+  nWeak: 0,
+  nStandard: 1,
+  nStrong: 0,
   cls: "standard" as LabSetup["cls"],
   surroundings: "neighborhood" as LabSetup["surroundings"],
   density: 1,
@@ -47,7 +54,8 @@ const ui = {
   // Donors are always built: the launcher's real members come from them (Spec 13 v0.4).
   donors: true,
   // Wind
-  mode: "steady" as "steady" | "pass",
+  // Tornado pass by default; it waits in calm air until "Send tornado" (Spec 13 v0.8).
+  mode: "pass" as "steady" | "pass",
   mph: 60,
   dir: 30,
   rampS: 0,
@@ -69,9 +77,8 @@ const ui = {
   // Time and view
   speed: 1,
   cutaway: false,
-  utilization: false,
+  arrows: false,
   follow: false,
-  ringLog: false,
 };
 
 let lab: Lab;
@@ -98,7 +105,11 @@ const view = createRenderer(
   () => (lab ? { pieces: lab.sim.debris.settled, dropped: lab.sim.debris.settledDropped, version: lab.sim.debris.settledVersion } : { pieces: [], dropped: 0, version: 0 }),
   () => (lab ? { view: lab.sim.detail, spot: null } : null),
 );
-view.setLayers({ arrows: false, funnel: true, tracers: true, debris: true });
+function applyLayers(): void {
+  view.setLayers({ arrows: ui.arrows, funnel: true, tracers: true, debris: true });
+  // Around the lab houses, wherever the tornado is.
+  view.setArrowCenter({ x: 0, z: 0 });
+}
 
 const leftCol = document.createElement("div");
 leftCol.className = "left-col";
@@ -106,6 +117,10 @@ document.body.appendChild(leftCol);
 const bottomCol = document.createElement("div");
 bottomCol.className = "bottom-col";
 document.body.appendChild(bottomCol);
+// The town's tornado readout during a pass (Spec 13 v0.7); a wind box in steady wind.
+const readoutBox = document.createElement("div");
+leftCol.appendChild(readoutBox);
+const readout = mountReadout(readoutBox);
 const info = document.createElement("div");
 info.className = "readout";
 leftCol.appendChild(info);
@@ -113,9 +128,8 @@ const memberCard = document.createElement("div");
 memberCard.className = "pin-dock member-card";
 memberCard.hidden = true;
 leftCol.appendChild(memberCard);
-const log = document.createElement("div");
-log.className = "pin-dock lab-log";
-leftCol.appendChild(log);
+/** Each lab house's connection failures, newest first (shown in its component details). */
+const failLog = new Map<number, string[]>();
 const status = document.createElement("div");
 status.className = "detail-status";
 bottomCol.appendChild(status);
@@ -155,12 +169,37 @@ app.addEventListener("pointerup", (e) => {
     fire(target.house, { point: local });
     return;
   }
-  if (hit && lab.block.includes(hit.house)) {
+  if (hit && stressed.has(hit.house)) {
     inspected = hit;
     consumed = true;
   }
 });
-const probe = createProbeUI(app, view, (x, z) => lab?.sim.world.buildingAt(x, z) ?? null, () => consumed, { dock: leftCol, hint: bottomCol });
+/** Lab houses showing the component stress view (Spec 13 v0.7). */
+const stressed = new Set<number>();
+const probe = createProbeUI(app, view, (x, z) => lab?.sim.world.buildingAt(x, z) ?? null, () => consumed, { dock: leftCol, hint: bottomCol }, {
+  label: (b) => {
+    const i = lab ? lab.sim.world.buildings.indexOf(b) : -1;
+    if (i < 0 || !stressOffered(lab.sim.detail, lab.block, i)) return null;
+    return stressed.has(i) ? "Hide component details" : "Show component details";
+  },
+  run: (b) => {
+    const i = lab.sim.world.buildings.indexOf(b);
+    if (stressed.has(i)) {
+      stressed.delete(i);
+      if (inspected?.house === i) inspected = null;
+    } else stressed.add(i);
+    applyStyle();
+  },
+}, (b) => {
+  // A lab house in its component details: the color scale and its connection failures.
+  const i = lab ? lab.sim.world.buildings.indexOf(b) : -1;
+  if (!stressed.has(i)) return null;
+  const rows = failLog.get(i) ?? [];
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return `<div class="p-row p-dim">Members colored by their most loaded connection: green unloaded, yellow half, red failing. Click a member for its connections.</div>
+    <div class="p-row"><b>Connection failures</b> (${rows.length ? "newest first" : "none yet"})</div>
+    <div class="pin-log">${rows.map((r) => `<div class="p-row">${esc(r)}</div>`).join("")}</div>`;
+});
 
 /** Fire the chosen missile at a lab house (reference missiles at their standard's speed; town
  *  pieces at 25 m/s), in square to the surface at a clicked point. */
@@ -198,9 +237,12 @@ const MEMBER_MISSILES: [MemberKind, string][] = [
 
 // --- Build -----------------------------------------------------------------
 function setupNow(): LabSetup {
-  return { houses: ui.houses, cls: ui.cls, surroundings: ui.surroundings, model: ui.model, seed: ui.seed, donors: ui.donors, density: ui.density };
+  return { houses: ui.houses, cls: ui.cls, mixCounts: { weak: ui.nWeak, standard: ui.nStandard, strong: ui.nStrong }, surroundings: ui.surroundings, model: ui.model, seed: ui.seed, donors: ui.donors, density: ui.density };
 }
+/** In pass mode, has the user sent the tornado for this build? Until then the air is calm. */
+let sent = false;
 function windNow(): LabWind {
+  if (ui.mode === "pass" && !sent) return { kind: "steady", keys: [{ t: 0, mph: 0, dirDeg: 0 }] };
   return ui.mode === "steady"
     ? { kind: "steady", keys: [{ t: 0, mph: ui.mph, dirDeg: ui.dir }] }
     : { kind: "pass", presetId: ui.preset, headingDeg: ui.heading, offset: ui.offset, lifecycle: ui.lifecycle, params: { ...tornado } };
@@ -219,20 +261,20 @@ function loadPreset(id: string): void {
 }
 loadPreset(ui.preset);
 
-const failSeen = new Set<FailureRecord>();
 let detachLog: (() => void) | null = null;
 
-async function build(r?: ReplaySpec): Promise<void> {
+async function build(r?: ReplaySpec, send = false): Promise<void> {
   if (building) return;
   building = true;
+  // Only the send button starts a tornado; any other rebuild in pass mode waits in calm air.
+  sent = send;
   replay = r;
   stopRecording(false);
   detachLog?.();
   lab?.dispose();
-  log.innerHTML = "";
-  log.hidden = true;
-  failSeen.clear();
+  failLog.clear();
   inspected = null;
+  stressed.clear();
   ui.streaming = false;
   lab = await createLab(setupNow(), windNow(), {
     workers: true,
@@ -245,7 +287,9 @@ async function build(r?: ReplaySpec): Promise<void> {
       if (!lab.block.includes(house)) return;
       const m = f.con !== undefined ? lab.sim.detail.houses.get(house)?.framing.members[lab.sim.detail.houses.get(house)!.framing.connections[f.con]!.from] : undefined;
       const why = Number.isFinite(f.load) ? `${(f.load / 1000).toFixed(1)} kN > ${(f.capacity / 1000).toFixed(1)} kN` : "broken by an impact";
-      logRow(`${lab.block.length > 1 ? `House ${house + 1} · ` : ""}${Math.round(f.mph)} mph · ${f.label}${m ? ` (${LABELS[m.kind] ?? m.kind})` : ""} · ${why}`);
+      const rows = failLog.get(house) ?? failLog.set(house, []).get(house)!;
+      rows.unshift(`${Math.round(f.mph)} mph · ${f.label}${m ? ` (${LABELS[m.kind] ?? m.kind})` : ""} · ${why}`);
+      if (rows.length > 60) rows.length = 60;
     },
   });
   // Frame the view once, when the lab opens; rebuilds keep whatever view you have.
@@ -268,15 +312,6 @@ function frameCamera(): void {
   const dir = { x: s.velocity.x / v, z: s.velocity.z / v };
   const back = 70 + (ui.houses > 1 ? span : 0);
   view.setView({ x: dir.x * back - dir.z * 20, y: 5, z: dir.z * back + dir.x * 20 }, { x: -dir.x * 10, y: 24, z: -dir.z * 10 });
-}
-
-function logRow(text: string): void {
-  const row = document.createElement("div");
-  row.className = "p-row";
-  row.textContent = text;
-  log.prepend(row);
-  log.hidden = false;
-  while (log.childElementCount > 14) log.lastElementChild!.remove();
 }
 
 // --- Recording and files ---------------------------------------------------
@@ -319,8 +354,33 @@ const gui = new GUI({ title: "Structure lab", width: 300 });
 const tip = (c: Controller, t: string) => ((c.domElement.title = t), c);
 
 const fSetup = gui.addFolder("Houses");
-tip(fSetup.add(ui, "houses", 1, LAB.maxHouses, 1).name("Lab houses (more = slower)").onFinishChange(() => void build()), "Detailed houses in a block at 28 m lots, all in one physics world.");
-fSetup.add(ui, "cls", { Weak: "weak", Standard: "standard", Strong: "strong" }).name("Construction").onChange(() => void build());
+// How many lab houses of each construction class (together at most LAB.maxHouses): the block
+// fills weak, then standard, then strong. More houses = slower.
+const MIX_KEYS = ["nWeak", "nStandard", "nStrong"] as const;
+const mixCtls: Controller[] = [];
+/** Each slider's range ends at the room left: the limit less the other two counts. */
+function fitMixRanges(): void {
+  MIX_KEYS.forEach((key, k) => {
+    const others = MIX_KEYS.filter((o) => o !== key).reduce((a, o) => a + ui[o], 0);
+    mixCtls[k]?.max(Math.max(LAB.maxHouses - others, 0)).updateDisplay();
+  });
+}
+const mixChanged = (key: "nWeak" | "nStandard" | "nStrong") => () => {
+  const others = (["nWeak", "nStandard", "nStrong"] as const).filter((k) => k !== key).reduce((a, k) => a + ui[k], 0);
+  // Within the limit: this slider stops at what fits; at least one house in all.
+  ui[key] = Math.min(ui[key], LAB.maxHouses - others);
+  if (ui[key] + others === 0) ui[key] = 1;
+  ui.houses = ui.nWeak + ui.nStandard + ui.nStrong;
+  fitMixRanges();
+  void build();
+};
+for (const [key, label, help] of [
+  ["nWeak", "Weak houses", "Older houses: toe-nailed roofs, few anchors."],
+  ["nStandard", "Standard houses", "Typical construction."],
+  ["nStrong", "Strong houses", "Hurricane straps, anchor bolts, impact windows."],
+] as const)
+  mixCtls.push(tip(fSetup.add(ui, key, 0, LAB.maxHouses, 1).name(label).onFinishChange(mixChanged(key)), `${help} The lab holds up to ${LAB.maxHouses} houses in all (more = slower).`));
+fitMixRanges();
 tip(fSetup.add(ui, "surroundings", { Neighborhood: "neighborhood", "Open field": "open" }).name("Surroundings").onChange(() => (densityCtl.enable(ui.surroundings === "neighborhood"), void build())), "Neighborhood: the town's houses on every lot within 130 m, which shed debris onto the block (suburban terrain).");
 const densityCtl = tip(
   fSetup.add(ui, "density", LAB_LAYOUT.minDensity, LAB_LAYOUT.maxDensity, 0.05).name("Neighbor density (× town)").onFinishChange(() => void build()),
@@ -352,7 +412,7 @@ const passCtls = [
   fWind.add(ui, "heading", 0, 359, 1).name("Heading toward (deg)"),
   fWind.add(ui, "offset", -400, 400, 5).name("Block right of track (m)"),
   tip(fWind.add(ui, "lifecycle", { "Full lifecycle": "full", "Mature throughout": "mature" }).name("Lifecycle"), "Full: spin-up, mature, rope-out, timed so it passes the block mid-mature. Mature: full strength the whole way, starting where every house's roof wind is under 50 mph."),
-  fWind.add({ go: () => void build() }, "go").name("🌪 Rebuild and send tornado"),
+  tip(fWind.add({ go: () => void build(undefined, true) }, "go").name("🌪 Send tornado"), "Rebuilds the houses and starts the tornado; until then the air is calm."),
 ];
 // The tornado's settings, from the preset; changing one makes it custom (Spec 13 v0.4).
 const fTornado = gui.addFolder("Tornado settings");
@@ -440,37 +500,12 @@ fTime.add({ go: () => {
   gui.controllersRecursive().forEach((c) => c.updateDisplay());
 } }, "go").name("⏭ Step (1/60 s)");
 fTime.add(ui, "cutaway").name("Cutaway (hide roof)").onChange(applyStyle);
-tip(fTime.add(ui, "utilization").name("Utilization colors").onChange(applyStyle), "Attached members colored by their most loaded connection: load / capacity, green 0 → red 1.");
+tip(fTime.add(ui, "arrows").name("Wind arrows").onChange(applyLayers), "Ground-level wind arrows, as in the main simulator: direction and speed (color) at 10 m.");
 fTime.add(ui, "follow").name("Follow tornado").onChange((v: boolean) => view.setFollow(v));
-fTime.add(ui, "ringLog").name("Log neighborhood failures");
 gui.add({ back: () => (location.search = "") }, "back").name("← Back to simulator");
 
-function utilColor(u: number): number {
-  const k = Math.max(0, Math.min(1, u));
-  const r = Math.round(255 * Math.min(1, 2 * k));
-  const g = Math.round(255 * Math.min(1, 2 * (1 - k)));
-  return (r << 16) | (g << 8) | 40;
-}
 function applyStyle(): void {
-  if (!ui.cutaway && !ui.utilization) return view.setMemberStyle(null);
-  const style: MemberStyle = (house, member) => {
-    const h = lab?.sim.detail.houses.get(house);
-    if (!h || !lab.block.includes(house)) return null;
-    const ins = lab.sim.detail.inspection.get(house);
-    const attached = ins ? ins.attached[member] === 1 : true;
-    const out: { hidden?: boolean; color?: number } = {};
-    if (ui.cutaway && attached && ROOF_KINDS.has(h.framing.members[member]!.kind)) out.hidden = true;
-    if (ui.utilization && attached && ins) {
-      let u = 0;
-      for (const c of h.framing.supportsOf[member]!) {
-        const cap = h.framing.connections[c]!.capacity;
-        if (cap > 0) u = Math.max(u, ins.loads[c]! / cap);
-      }
-      out.color = utilColor(u);
-    }
-    return out;
-  };
-  view.setMemberStyle(style);
+  view.setMemberStyle(lab ? stressStyle(lab.sim.detail, lab.block, stressed, ui.cutaway, ROOF_KINDS) : null);
 }
 
 // --- Frame loop ------------------------------------------------------------
@@ -493,10 +528,17 @@ function frame(now: number): void {
     if (slowTimer <= 0) {
       slowTimer = 0.2;
       updateInfo();
-      if (ui.ringLog) ringFailures();
     }
   }
   requestAnimationFrame(frame);
+}
+
+/** The snapshot with the donors left out of the damage tally: they're hidden, 4 km away, and
+ *  only supply members for the launcher (Spec 13 v0.7). */
+function withoutDonors(snap: SimSnapshot): SimSnapshot {
+  const hist = [...snap.damageHistogram];
+  for (const i of [lab.donors.same, lab.donors.other]) if (i !== undefined) hist[lab.sim.world.buildings[i]!.dod]!--;
+  return { ...snap, damageHistogram: hist };
 }
 
 function updateInfo(): void {
@@ -513,14 +555,23 @@ function updateInfo(): void {
   }
   const many = lab.block.length > 1;
   const steady = !!s.tunnel;
-  const passLine = steady ? "" : sim.snapshot.phase === "dissipated" ? `<div class="phase">Tornado has passed · calm</div>` : `<div class="phase">Tornado ${Math.round(near)} m ${many ? "from the nearest house" : "away"} · core radius ${Math.round(s.rMax)} m</div>`;
-  info.innerHTML = `<div class="ef" style="font-size:28px">${Math.round(roof)} mph</div>
-    <div class="phase">${many ? "strongest wind at roof height" : "wind at roof height"}${steady ? ` · steady ${Math.round(msToMph(s.tunnel!.u10))} mph at 10 m` : ""}</div>${passLine}
+  // A pass: the town's readout; steady wind: the wind itself.
+  readoutBox.hidden = steady;
+  if (!steady) readout.update(computeReadout(withoutDonors(sim.snapshot)));
+  const waiting = ui.mode === "pass" && !sent && !replay;
+  info.hidden = !steady;
+  const head = waiting
+    ? `<div class="ef" style="font-size:24px">Tornado ready</div><div class="phase">Calm until you press 🌪 Send tornado (Wind panel).</div>`
+    : steady
+    ? `<div class="ef" style="font-size:28px">${Math.round(roof)} mph</div><div class="phase">${many ? "strongest wind at roof height" : "wind at roof height"} · steady ${Math.round(msToMph(s.tunnel!.u10))} mph at 10 m</div>`
+    : `<div class="phase">${sim.snapshot.phase === "dissipated" ? "Tornado has passed" : `Tornado ${Math.round(near)} m ${many ? "from the nearest lab house" : "from the lab house"}`} · roof wind there ${Math.round(roof)} mph</div>`;
+  info.innerHTML = `${head}
     <div class="phase">${lab.block.length} lab house${many ? "s" : ""}${lab.ring.length ? ` · ${lab.ring.length} neighbors` : ""}${replay ? " · replay" : ""} · t = ${sim.time.toFixed(1)} s</div>
     <div class="phase">${broken} ${lab.setup.model === "component" ? "component failures" : "connections broken"} · ${lab.launcher.launched.length} launched${recorder ? ` · recording ${recorder.count} pieces` : ""}</div>`;
   const lag = sim.detailLagging;
   status.hidden = !lag && ui.speed !== 0;
   status.textContent = ui.speed === 0 ? "Paused" : `Slow motion while they come apart${simRate.rate !== null ? ` · ${rateText(simRate.rate)}` : ""}`;
+  if (recorder) recordCtl.name(`⏹ Stop and save the recording (${recorder.count} pieces)`);
   updateMemberCard();
 }
 
@@ -540,17 +591,7 @@ function updateMemberCard(): void {
   memberCard.querySelector<HTMLButtonElement>(".pin-clear")!.onclick = () => (inspected = null);
 }
 
-function ringFailures(): void {
-  for (const i of lab.ring) {
-    const b = lab.sim.world.buildings[i]!;
-    for (const f of allFailures(b)) {
-      if (failSeen.has(f)) continue;
-      failSeen.add(f);
-      logRow(`Neighbor ${i - lab.block.length + 1} · ${Math.round(f.mph)} mph · ${f.part} ${f.index}${f.cause ? ` (${f.cause})` : ""}`);
-    }
-  }
-}
-
+applyLayers();
 window.addEventListener("resize", () => view.resize(app.clientWidth, app.clientHeight));
 void build().then(() => requestAnimationFrame(frame));
 if (import.meta.env.DEV) Object.assign(window, { lab: () => lab, labUi: ui, labView: view, labStyle: applyStyle });

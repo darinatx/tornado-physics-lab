@@ -45,6 +45,9 @@ export interface LabSetup {
   /** 1–12. */
   houses: number;
   cls: ConstructionClass;
+  /** Construction mix (Spec 13 v0.9): weak, standard and strong counts, filled in that order;
+   *  overrides `houses` and `cls` when given (total capped at 12). */
+  mixCounts?: { weak: number; standard: number; strong: number };
   surroundings: "neighborhood" | "open";
   seed: number;
   donors: boolean;
@@ -167,8 +170,20 @@ const headingDir = (deg: number) => ({ x: Math.cos(deg * DEG), z: -Math.sin(deg 
 const mix = (seed: number, i: number, k: number) => ((seed * 0x9e3779b1) ^ (i * 0x85ebca77) ^ (k * 0xc2b2ae3d)) >>> 0;
 
 /** The block: N houses in ⌈√N⌉ columns at lot spacing, centered on the origin. */
-export function labBlockSpecs(setup: Pick<LabSetup, "houses" | "cls" | "seed" | "specs">): HouseSpec[] {
-  const n = Math.max(1, Math.min(LAB.maxHouses, Math.round(setup.houses)));
+/** The block's classes, in grid order: the mix (weak, then standard, then strong), capped at
+ *  the lab's limit, or `houses` of `cls`. */
+export function blockClasses(setup: Pick<LabSetup, "houses" | "cls" | "mixCounts">): ConstructionClass[] {
+  const m = setup.mixCounts;
+  const list: ConstructionClass[] = m
+    ? [...Array<ConstructionClass>(Math.max(0, Math.round(m.weak))).fill("weak"), ...Array<ConstructionClass>(Math.max(0, Math.round(m.standard))).fill("standard"), ...Array<ConstructionClass>(Math.max(0, Math.round(m.strong))).fill("strong")]
+    : Array<ConstructionClass>(Math.max(1, Math.round(setup.houses))).fill(setup.cls);
+  if (!list.length) list.push(setup.cls);
+  return list.slice(0, LAB.maxHouses);
+}
+
+export function labBlockSpecs(setup: Pick<LabSetup, "houses" | "cls" | "seed" | "specs" | "mixCounts">): HouseSpec[] {
+  const classes = blockClasses(setup);
+  const n = classes.length;
   const cols = Math.ceil(Math.sqrt(n));
   const rows = Math.ceil(n / cols);
   const out: HouseSpec[] = [];
@@ -176,7 +191,7 @@ export function labBlockSpecs(setup: Pick<LabSetup, "houses" | "cls" | "seed" | 
     const x = ((i % cols) - (cols - 1) / 2) * LAB.lotSpacing;
     const z = (Math.floor(i / cols) - (rows - 1) / 2) * LAB.lotSpacing;
     const rng = createRng(mix(setup.seed, i, 1));
-    out.push({ ...randomHouseSpec(i, rng, x, z, 0, setup.cls), ...LAB_LAYOUT.house, drawSeed: mix(setup.seed, i, 2), ...setup.specs?.[i], id: i });
+    out.push({ ...randomHouseSpec(i, rng, x, z, 0, classes[i]), ...LAB_LAYOUT.house, drawSeed: mix(setup.seed, i, 2), ...setup.specs?.[i], id: i });
   }
   return out;
 }

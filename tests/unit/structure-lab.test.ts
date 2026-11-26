@@ -527,3 +527,62 @@ describe("Spec 13 v0.6: neighbor density", () => {
     lab.dispose();
   });
 });
+
+describe("Spec 13 v0.7: lab inspection", () => {
+  test("LAB-19: the stress view is offered exactly for lab houses, and colors their attached members by highest connection utilization", async () => {
+    const { stressOffered, stressStyle, utilColor, memberUtilization } = await import("../../src/ui/stressView");
+    const lab = await createLab(setup({ houses: 2, surroundings: "neighborhood", donors: true }), { kind: "steady", keys: [{ t: 0, mph: 110, dirDeg: 0 }] }, { passThrough: false });
+    lab.advance(1);
+    const view = lab.sim.detail;
+    // Offered for lab houses only: not the neighbors, not the donors.
+    expect(lab.block.every((i) => stressOffered(view, lab.block, i))).toBe(true);
+    expect(lab.ring.some((i) => stressOffered(view, lab.block, i))).toBe(false);
+    expect(stressOffered(view, lab.block, lab.donors.same!)).toBe(false);
+    // Nothing shown, nothing styled.
+    expect(stressStyle(view, lab.block, new Set(), false, new Set())).toBeNull();
+    // House 0 in the view: each attached member's color is its utilization's.
+    const style = stressStyle(view, lab.block, new Set([0]), false, new Set())!;
+    const h = view.houses.get(0)!;
+    const ins = view.inspection.get(0)!;
+    let colored = 0;
+    for (const m of h.framing.members) {
+      const s = style(0, m.id);
+      if (ins.attached[m.id] !== 1) {
+        expect(s).toBeNull();
+        continue;
+      }
+      let u = 0;
+      for (const c of h.framing.supportsOf[m.id]!) if (h.framing.connections[c]!.capacity > 0) u = Math.max(u, ins.loads[c]! / h.framing.connections[c]!.capacity);
+      expect(memberUtilization(view, 0, m.id)).toBeCloseTo(u, 12);
+      expect(s!.color).toBe(utilColor(u));
+      colored++;
+    }
+    expect(colored).toBeGreaterThan(100);
+    // The other lab house keeps its own colors.
+    for (const m of view.houses.get(1)!.framing.members.slice(0, 50)) expect(style(1, m.id)).toBeNull();
+    // The scale: green at 0, yellow at 0.5, red at 1 and beyond.
+    expect(utilColor(0)).toBe(0x00ff28);
+    expect(utilColor(0.5)).toBe(0xffff28);
+    expect(utilColor(1)).toBe(0xff0028);
+    expect(utilColor(3)).toBe(0xff0028);
+    lab.dispose();
+  }, 60000);
+});
+
+describe("Spec 13 v0.9: construction mix", () => {
+  test("LAB-20: w weak, s standard and t strong houses fill the grid in that order, capped at the limit; a house depends only on seed, place and class", async () => {
+    const { blockClasses } = await import("../../src/sim/lab");
+    const specs = labBlockSpecs({ houses: 1, cls: "standard", seed: 3, mixCounts: { weak: 2, standard: 3, strong: 4 } });
+    expect(specs.length).toBe(9);
+    expect(specs.map((s) => s.cls)).toEqual(["weak", "weak", "standard", "standard", "standard", "strong", "strong", "strong", "strong"]);
+    // Capped at the lab's limit.
+    expect(blockClasses({ houses: 1, cls: "standard", mixCounts: { weak: 10, standard: 10, strong: 10 } }).length).toBe(LAB.maxHouses);
+    // Same lot, same house whatever its class (only the class differs).
+    const allStd = labBlockSpecs({ houses: 9, cls: "standard", seed: 3 });
+    specs.forEach((s, i) => expect({ ...s, cls: "standard" }).toEqual(allStd[i]));
+    // The lab builds it, with each class's capacities.
+    const lab = await createLab({ ...setup({ model: "component" }), mixCounts: { weak: 1, standard: 1, strong: 1 } }, calm, { passThrough: false });
+    expect(lab.block.map((i) => lab.sim.world.buildings[i]!.cls)).toEqual(["weak", "standard", "strong"]);
+    lab.dispose();
+  });
+});

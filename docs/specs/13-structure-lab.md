@@ -1,6 +1,6 @@
 # Spec 13 — Structure Lab (v2)
 
-Status: Approved (v0.6) — scope approved by the user 2026-11-25. Supersedes Spec 09's
+Status: Approved (v0.9) — scope approved by the user 2026-11-25. Supersedes Spec 09's
 "Structure lab (slice A)" section.
 
 ## Purpose
@@ -35,6 +35,9 @@ renderer, camera and inspector**. So whatever the lab shows is what the town doe
     rural road (46 m lots). They take damage, shed
     debris, block and catch debris, all through the town code. Terrain is suburban.
   - **Open field:** nothing but the block. Terrain is open.
+- **Construction mix:** how many of the block's houses are weak, standard and strong (Spec 03
+  classes), together 1–12; the grid fills in that order (weak first). Each house's capacities
+  are its class's, its own draw from the lab seed as before.
 - **Block model** (setup option): detailed (default) or component. A component block compares
   the two models in the same lab, and is what LAB-14 replays onto.
 - **Donors:** Spec 12's stripped donor houses, which exist only as sources for launched detailed
@@ -86,6 +89,9 @@ field for steady wind):
     at the nearest distance (at least 2·R_max) where the roof wind at **every house in the
     layout**, the neighbors included, is under 50 mph.
   Choosing a mode shows its settings; nothing starts until its button is pressed.
+- **Default:** the lab opens in tornado-pass mode with the houses built in calm air; the tornado
+  starts only on "Send tornado" (which rebuilds the houses). Any other rebuild in pass mode
+  returns to calm air and waits again.
 
 Decisions:
 - **Live edits as keyframes:** dragging a slider mid-run stays deterministic and recordable;
@@ -194,15 +200,26 @@ Decisions:
   by default. The start view frames the block; on a pass, it looks up the track from beyond
   the block, as now.
 - **Cutaway:** hides roof members that are still attached (view only), as now.
-- **Inspector:** the Spec 07 probe and pins on any house.
-- **Member inspector** (lab houses): click a member to see its kind, mass, and every
+- **Wind arrows** (option, off by default): the main simulator's ground-level wind arrows, the
+  grid centered on the block (in town it follows the tornado).
+- **Inspector:** the Spec 07 probe and pins on any house, exactly as in town (hover summary,
+  click to pin, the pinned card's graph and failure list); the lab's own clicks (aiming) come
+  first only while aiming.
+- **Readout:** the Spec 07 tornado readout (EF, speeds, lifecycle phase, damage tally of the lab
+  houses and neighbors; the hidden donors aren't counted) during a pass, as in town; in steady wind a wind box (10 m and roof-height wind). A line under it gives
+  the lab's counts (houses, connections broken, launches).
+- **Component details** (lab houses): a pinned lab house's card has "Show component details",
+  which colors that house's attached members by their highest connection utilization (green 0 →
+  yellow → red 1), makes clicks on its members open the member inspector, and lists its
+  connection failures in the card, newest first (house, wind, label, member, load > capacity);
+  "Hide" ends all three. Several houses can show it at once. There is no separate failure log
+  (neighbors' cards list what failed on them, as in town). In a pass the readout is the only
+  box; in steady wind a wind box (10 m and roof wind, the lab's counts) takes its place.
+- **Member inspector** (lab houses in the stress view): click a member to see its kind, mass, and every
   connection with its live load, capacity and utilization (load / capacity), plus when and in
   what wind it failed. These are the engine's own values, sent with the detail step's state.
-- **Utilization colors** (toggle): attached members colored by their highest connection
-  utilization, 0 → 1, read from the same values.
-- **Failure log:** every connection failure in the lab houses (house, wind, label, member,
-  load > capacity) and, in a neighborhood, component failures of the ring houses (off by
-  default).
+- **Utilization colors:** the stress view's colors, from the same values.
+- **Failure log:** in each lab house's component details (above).
 
 ### Time
 
@@ -309,6 +326,13 @@ worker backends, as `src/main.ts` uses them.
 - **LAB-18**: Neighbor density: at density d the neighborhood ring has d × the houses per area of
   the town's pattern within reach (±15% over the ring), at 1 exactly the town's lots; no two houses
   (ring or block) overlap, and none reaches into a lab lot.
+- **LAB-19**: Lab inspection: a pinned house's card offers the stress view exactly for lab
+  houses (detailed); in it each attached member's color is its highest connection utilization on
+  the green–yellow–red scale, members of other houses keep their own colors, and a member click
+  opens the member inspector only for a house in the stress view.
+- **LAB-20**: Construction mix: a block of w weak, s standard and t strong houses has w + s + t
+  houses (capped at 12), the first w weak, the next s standard and the last t strong; a house's
+  spec and draws depend only on its seed, position in the grid and class.
 - **LAB-08**: Launcher: a reference missile aimed at a pane hits that pane, in still air and in
   steady wind (its impact is in the record with the missile's mass, and its normal speed within
   5% of the standard's: the 10 m path arcs a few degrees). Missile presets match their standards' mass
@@ -340,12 +364,22 @@ worker backends, as `src/main.ts` uses them.
 
 - The neighborhood ring is component-model only. More detailed houses means more lab houses.
 - One physics group for the block, even when it spans what in town would be two street rows.
-- No saved runs or replay in the app beyond the record export (Phase 13).
+- No saved runs or replay in the app beyond the record export (Phase 14).
 - A recorded detailed member replays without spin.
 - Replay is exact only for each piece's first hit, and only with dispersion off (see Debris
   replay).
 
 ## Changelog
+
+- v0.9 (2026-11-26, the user's request): the block's construction mix (LAB-20), weak, standard
+  and strong counts within the 12-house limit.
+
+- v0.8 (2026-11-26, the user's request): opens in tornado-pass mode, waiting in calm air until
+  "Send tornado".
+
+- v0.7 (2026-11-26, the user's request): the town's probe and tornado readout in the lab; the
+  component stress view per pinned lab house (LAB-19) replaces the global utilization toggle and
+  the always-on member clicks.
 
 - v0.6 (2026-11-26, the user's choice): neighbor density for the real neighborhood (LAB-18); the
   v0.5 stream removed. A neighbor's piece born inside the capture box (next-door walls stand

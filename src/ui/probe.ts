@@ -104,7 +104,8 @@ const edgeAt = (x: number, z: number, snap: SimSnapshot): number | null =>
   snap.phase === "dissipated" ? null : Math.hypot(x - snap.tornado.center.x, z - snap.tornado.center.z) - snap.tornado.rMax;
 
 interface Pin {
-  action?: HTMLButtonElement;
+  actions: { btn: HTMLButtonElement; act: PinAction }[];
+  detail?: HTMLElement;
   point: Vec3;
   color: number;
   history: History;
@@ -218,6 +219,11 @@ function setHtml(el: HTMLElement, html: string): void {
   }
 }
 
+export interface PinAction {
+  label: (b: Building) => string | null;
+  run: (b: Building) => void;
+}
+
 export interface ProbeUI {
   update(snap: SimSnapshot, probeHeight: number): void;
 }
@@ -230,9 +236,14 @@ export function createProbeUI(
   interceptClick: (p: Vec3) => boolean = () => false,
   /** Where the pin dock and the key hint go (layout columns, Spec 07 v1.10). */
   hosts: { dock: HTMLElement; hint: HTMLElement } = { dock: document.body, hint: document.body },
-  /** A button on a pinned house's card (Spec 13: record the debris reaching it). */
-  pinAction?: { label: (b: Building) => string; run: (b: Building) => void },
+  /** Buttons on a pinned house's card (Spec 13: record the debris reaching it, the component
+   *  stress view); a label of null hides the button for that house. */
+  pinAction?: PinAction | PinAction[],
+  /** Extra HTML under a pinned house's buttons (Spec 13: the lab house's failure log in its
+   *  component details); null shows nothing. */
+  pinDetail?: (b: Building) => string | null,
 ): ProbeUI {
+  const pinActions = pinAction ? (Array.isArray(pinAction) ? pinAction : [pinAction]) : [];
   const tooltip = document.createElement("div");
   tooltip.className = "probe-tip";
   tooltip.hidden = true;
@@ -296,6 +307,7 @@ export function createProbeUI(
     card.style.setProperty("--pin", hex(color));
     card.innerHTML = PIN_CARD_HTML;
     const pin: Pin = {
+      actions: [],
       point,
       color,
       history: new History(Math.round(HISTORY_MAX_SECONDS / HISTORY_INTERVAL), HISTORY_INTERVAL),
@@ -307,17 +319,23 @@ export function createProbeUI(
       legendDp: card.querySelector<HTMLElement>(".lg-dp b")!,
       legendSpan: card.querySelector<HTMLElement>(".lg-span")!,
     };
-    if (pinAction) {
+    for (const act of pinActions) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "pin-act";
       btn.hidden = true;
       btn.onclick = () => {
         const b = buildingAt(point.x, point.z);
-        if (b) pinAction.run(b);
+        if (b) act.run(b);
       };
       card.appendChild(btn);
-      pin.action = btn;
+      pin.actions.push({ btn, act });
+    }
+    if (pinDetail) {
+      const box = document.createElement("div");
+      box.className = "pin-detail";
+      card.appendChild(box);
+      pin.detail = box;
     }
     card.querySelector<HTMLButtonElement>(".pin-x")!.onclick = () => {
       pins.splice(pins.indexOf(pin), 1);
@@ -371,12 +389,11 @@ export function createProbeUI(
         pin.legendDp.textContent = `${airPressureMb(r.pressureDeficit).toFixed(1)} mb`;
         pin.legendSpan.textContent = `0–${Math.round(snap.lifetime)} s`;
         drawGraph(pin.canvas, pin.history, pin.color, snap.lifetime);
-        if (pin.action) {
-          pin.action.hidden = !house;
-          if (house) {
-            const label = pinAction!.label(house);
-            if (pin.action.textContent !== label) pin.action.textContent = label;
-          }
+        if (pin.detail) setHtml(pin.detail, (house && pinDetail!(house)) || "");
+        for (const { btn, act } of pin.actions) {
+          const label = house ? act.label(house) : null;
+          btn.hidden = label === null;
+          if (label !== null && btn.textContent !== label) btn.textContent = label;
         }
       }
 
