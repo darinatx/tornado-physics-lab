@@ -147,7 +147,7 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
   the core" when ≤ 0; after dissipation it shows "dissipated" in place of the live distance
   and keeps the closest; it has no failure list, and the pinned inspector has the summary, then
   the graph, then the failure list.
-- **INST-14**: The panel starts with damage colors and repeat-on-dissipation off.
+- **INST-14**: The panel starts with damage colors, repeat-on-dissipation and follow off.
 - **INST-15**: Air pressure is shown in millibars as the background pressure (1013.25 mb)
   minus the pressure drop: `airPressureMb(Δp) = (101,325 Pa − Δp) / 100`.
 - **INST-16**: The sim rate is sim time advanced ÷ real time over the last 1 s of frames,
@@ -184,6 +184,7 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 - v1.15 (Phase 7): the terrain dropdown is gone (the town sets the roughness); the probe shows
   the ground's class, z₀ and β; a Ground roughness display toggle (Spec 17, TERR-10, TERR-14).
+- v1.14: follow starts off (INST-14), at the user's request (Spec 06 v1.13).
 - v1.13: after dissipation the building summary stops showing a live distance to the core
   edge (it kept climbing as the dissipated state drifted on with the storm) and shows
   "dissipated · closest N m" (INST-13).

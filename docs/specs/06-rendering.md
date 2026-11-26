@@ -13,22 +13,21 @@ Phase 1 scope:
 - **Scene:** a 6 km × 6 km ground plane with a faint 100 m grid for scale (Y-up, meters), sky-colored background, a sun light
   and an ambient light.
 - **Camera:** a perspective camera that can go anywhere above the ground, from street level
-  (eye height, 1.7 m) to the whole map. It starts over the city on the side the tornado is
-  coming toward: on the track 1 km inside the town from where the track enters it (at least
-  1.5 km ahead of the tornado), 30% of that distance off to the right of the track, 150 m up,
-  looking back at the approaching tornado (aimed at 15% of the cloud-base height on its
-  axis, so the town fills the foreground). Mouse, as in map apps: drag (one finger) to slide over the ground, right-drag (or
-  Ctrl/⌘/Shift + drag) to turn the camera in place, like turning your head (left/right, and
-  up/down to 85° from level), scroll to zoom toward the cursor (down to 2 m from the point
-  you look at). Keyboard: W/A/S/D fly forward, left, back and right along the ground in the
-  direction you face, the arrow keys turn in place (90°/s), E/Q (or Page Up/Down) rise and
-  sink, Shift is 4× faster;
-  flying speed scales with height (~1.2 m/s per metre above the ground, 10–1,000 m/s), so you
-  creep along a street and cross the town quickly from high up. The camera and the point it
-  orbits never go below 1.7 m and 0 m. Keys are ignored while typing in a panel field. Sliding
-  or flying turns off "Camera follows tornado" (turning and zooming keep it). With follow on,
-  the camera is carried along as the tornado moves, keeping the view you chose; turning it on
-  brings the tornado back to the middle of the view. A hint line lists the controls.
+  (eye height, 1.7 m) to the whole map. It starts over the town center, 100 m up, facing where
+  the tornado spawns (REND-17). Mouse, as in map apps: drag (one finger) to slide over the
+  ground, right-drag (or Ctrl/⌘/Shift + drag) to turn the camera in place, like turning your
+  head (left/right, and up/down to 85° from level), scroll to zoom toward the cursor (down to
+  2 m from the point you look at). Keyboard: W/S forward and back level along the ground, A/D
+  left and right, ↑/↓ (or Page Up/Down) height, ←/→ turn in place (90°/s), Q/E tilt down and
+  up, Shift 4× faster (REND-14, REND-15); flying speed scales with height (~1.2 m/s per metre
+  above the ground, 10–1,000 m/s), so you creep along a street and cross the town quickly from
+  high up. The camera and the point it looks at never go below 1.7 m and 0 m. The keys work
+  whatever has focus except a text field being typed in (REND-16). **Follow** ("Camera follows
+  tornado", off to start): turning it on turns the camera to the core without moving it, then
+  carries it along with the tornado (REND-19). While following, the camera always faces the
+  core: zoom heads straight at it, ↑/↓ keep facing it, and anything that would point the camera
+  elsewhere (sliding, W/A/S/D, turning in place) turns follow off, so the checkbox is ticked
+  exactly when the camera is following and facing the core. A hint line lists the controls.
 - **Wind arrows:** one `InstancedMesh` of arrows on a world-fixed grid (so arrows don't slide)
   within ±arrowRange of the tornado, sampled at the arrow height (Spec 07). Each arrow points along the horizontal wind, its length scales with speed
   (capped), and its color follows the EF band of its speed (gray below EF0).
@@ -168,11 +167,9 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
   right axis, pitch stays within ±85° of level, and the look point never goes below the
   ground (looking down, it lands where the view meets the ground). Keys: ←/→ turn left/right,
   Q/E tilt down/up; right-drag turns too.
-- **REND-17**: The starting view frames the tornado: the camera is 30 m up, looking at the
-  axis at 40% of the cloud-base height, from ahead of it on its track and 30% to the right, at
-  the nearest distance (at least 300 m) where the funnel from the ground to the cloud base
-  fills no more than 80% of the view's height and a 4·R_max-wide debris cloud (R_max at
-  maturity: the core is wider while it spins up) no more than 60% of its width.
+- **REND-17**: The starting view is over the center of town, 100 m up, facing where the
+  tornado spawns: looking at its axis at 40% of the cloud-base height (if it spawns within
+  1 m of the town center, along its heading). Follow is off to start.
 - **REND-16**: Held keys never stick: a key-up always releases its key (whatever has focus or
   modifiers), pressing ⌘, Ctrl or Alt releases every flying and turning key (macOS sends no
   key-up for keys released while ⌘ is held), and so does the page losing focus or visibility.
@@ -182,6 +179,13 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 - **REND-18**: A new run (restart, preset, repeat) never moves the camera: it stays where it
   is, looking where it was. Follow stays as it was, carrying the camera with the new tornado's
   motion from there (the jump to the new start point is not a move to follow).
+- **REND-19**: Turning follow on never moves the camera: it stays where it is and turns,
+  over 0.6 s (eased), to look at the core's center on the ground, the middle of the R_max
+  ring (if it is within 1 m of the axis, it keeps its heading and looks out along it). From then on it moves
+  with the tornado, by the tornado's motion, so its angle to the tornado stays the same. While
+  following it keeps facing the core: zooming goes straight toward the look point (not the
+  cursor), height changes keep the look point on the axis, and moving along the ground or
+  turning in place turns follow off.
 - **REND-13**: The tracer count follows the total emission, within [2,000, 40,000]: a larger
   or stronger tornado gets more tracers, a tornado lifting no dust none, and the count drops as
   the tornado weakens.
@@ -196,10 +200,25 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 
 ## Decisions
 
-1. **Start distance from framing, not the town (v1.11):** the camera is placed by what it has to
-   show (ground to cloud base, the debris cloud's width) rather than the town's edge, so it is
-   never kilometres away. Follow mode (on by default) keeps the offset, so the tornado doesn't
-   run into the camera.
+1. **Start over the town, facing the spawn (v1.13, replacing v1.11's framing on the
+   tornado):** at the user's request: you see the town and the tornado coming toward it, and
+   follow starts off. 100 m up clears the houses and trees and shows the town's layout; the
+   look point sits partway up the funnel so the tornado is in view rather than the ground at
+   its foot.
+5. **Follow turns to the core rather than moving the camera (v1.14):** at the user's request:
+   v1.13 kept the view angle by sliding the camera until its old look point sat on the core,
+   which jumped the camera by however far that point was from the tornado (kilometres, after
+   flying around). The camera now stays put and turns to the core, eased so the view doesn't
+   snap.
+6. **Follow means facing the core (v1.15):** found by the user: turning in place or zooming
+   toward the cursor while following left the camera aimed away with follow still ticked, so
+   clicking the box turned follow off instead of re-aiming. Anything that aims the camera away
+   now ends follow (as moving already did), and zoom goes straight at the core while following.
+7. **Follow aims at the core's ground center (v1.16):** found by the user: aiming at the axis
+   40% of the way up to the cloud base put the ring's far edge in the middle of the screen from
+   a low camera (the raised point lines up with the far side of the ring), not its center. The
+   ground center is the core's center wherever the camera is; the funnel rises above it. The
+   start view keeps its raised aim, since it looks at the spawn from far off to show the funnel.
 2. **Forward is level (v1.12, replacing v1.11's forward along the view):** at the user's
    request, W/S keep the height and ↑/↓ set it, like walking or a drone holding altitude, so
    looking down while moving doesn't lose height. The heading is the view's direction along the
@@ -215,6 +234,21 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 
 - v1.17 (Phase 7): ground drawn by cover (farmland, lawn, pavement) without section-line roads,
   and the ground roughness layer (Spec 17, TERR-12, TERR-14).
+- v1.16: follow aims at the core's center on the ground, the middle of the R_max ring, not
+  40% of the way up the axis (REND-19). Found by the user: from a low camera the ring's far
+  edge sat in the middle of the screen.
+
+- v1.15: while following, the camera keeps facing the core: turning in place ends follow and
+  zoom heads straight at the core (REND-19). The camera description is brought up to date
+  with the v1.12–v1.14 controls.
+
+- v1.14: turning follow on no longer jumps the camera: it stays put and turns to face the
+  core over 0.6 s (REND-19 rewritten). Found by the user.
+
+- v1.13: at the user's request: the camera starts over the town center, 100 m up, facing the
+  spawn point, with follow off (REND-17 rewritten); turning follow on keeps the angle and
+  moves the camera to look at the core (REND-19).
+
 - v1.12: new key layout at the user's request: W/S forward and back level, A/D left and right,
   ↑/↓ height, ←/→ turn, Q/E tilt (REND-14, REND-15). The keys work after clicking in the side
   panel (REND-16). A new run no longer moves the camera (REND-18): follow mode carried it

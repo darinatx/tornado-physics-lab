@@ -29,7 +29,6 @@ const view = createRenderer(
     const f = sim.detailFocus;
     return { view: sim.detail, spot: f ? { ...f, r: sim.detailSpotRadius } : null };
   },
-  () => sim.params.rMax,
 );
 // Layout columns (Spec 07 v1.10): panels in a column stack, so they can never cover each other.
 const leftCol = document.createElement("div");
