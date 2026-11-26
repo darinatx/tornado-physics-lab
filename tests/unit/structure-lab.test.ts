@@ -1,6 +1,6 @@
 /**
  * Spec 13 — Structure lab on the real sim: layout, terrain, winds, determinism, launcher,
- * member inspector, record export, replay frames. (Pass-through, cost, recording and replay
+ * member inspector, record export, replay frames. (Terrain is Spec 17's: TERR-11.) (Pass-through, cost, recording and replay
  * accuracy over a real pass are in tests/validation/structure-lab.test.ts.)
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -116,14 +116,6 @@ describe("Spec 13 lab: layout", () => {
     alone.dispose();
   });
 
-  test("LAB-03: terrain is suburban in a neighborhood and open in a field", async () => {
-    const a = await createLab(setup({ surroundings: "neighborhood", model: "component" }), calm);
-    expect(a.sim.snapshot.terrain).toBe("suburban");
-    const b = await createLab(setup({ model: "component" }), calm);
-    expect(b.sim.snapshot.terrain).toBe("open");
-    a.dispose();
-    b.dispose();
-  });
 });
 
 describe("Spec 13 lab: wind", () => {

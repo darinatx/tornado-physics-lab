@@ -1,6 +1,6 @@
 # Phase 7 — Terrain from the Town
 
-Status: Spec review (drafted 2026-11-26). Starts now; Phase 6 has its preliminary sign-off.
+Status: In progress (build started 2026-11-26)
 
 ## Goal
 
@@ -58,13 +58,35 @@ setting any more; the structure lab can override it.
 - [ ] With the layer on, the track behind the core fades toward smooth as houses come down
 - [ ] In the lab, an override turns the layer uniform; Auto shows the surroundings
 
+## Slice notes
+
+- **A and B built together (2026-11-26).** Spec 17 v1.0; TERR-01 to TERR-14 pass.
+  - Default town (seed 1): z₀ 0.18–0.22 m inside (β ≈ 0.20, suburban), farmland 0.03 m. Wind
+    from the fields: β 0.115 at the edge, 0.16 at 200 m, 0.19 at 500 m, 0.197 at 750 m; from
+    the town side 0.19 at the edge. Flattened 600 m square: z₀ 0.05 m at its centre.
+    (`npx tsx scripts/terrain-field.ts`)
+  - Cost (TERR-13): build ~60 ms; update ~11 ms median (all houses read by revision, local
+    z₀ by summed-area tables, 16 fetch sweeps); `windAt` over the field ~1.5× a class near the
+    ground; layer refresh 6–10 ms. A 100 m density window read street crossings as near-open,
+    so the window is one block (200 m).
+  - The town used to run as open country (the old default), so near-ground winds in town are
+    now lower for the same tornado (swirl at 10 m: 0.5^0.20 against 0.5^0.11, about 6% less over the interior).
+  - INST-10 found a pre-existing stats gap: far-field pieces skipped on alternate steps, and
+    airborne heavy pieces, were left out of the fastest/highest stats. Fixed (Spec 04 v2.6).
+  - Phase 6 validation was running in its own worktree (from `cacaedf`) while this slice
+    changed `src/core`, `src/sim` and `src/config`; the user chose to let it continue
+    (2026-11-26). Its results describe the pre-terrain code: rerun its checks that involve
+    near-ground wind or debris in town on this code.
+  - `npm run bench` (rule 9) doesn't exist yet; it's to be specced once Phase 6 validation
+    finishes. No benchmark run for this slice.
+
 ## Exit criteria
 
 Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 
-- [ ] Spec 17 approved; Specs 01, 04, 05, 06, 07, 12, 13 updated
-- [ ] Slice A: TERR-01 to TERR-09, TERR-13 pass
-- [ ] Slice B: TERR-10 to TERR-12, TERR-14 pass; demo reviewed by the user
+- [x] Spec 17 approved (v1.0); Specs 01, 04, 05, 06, 07, 12, 13 updated
+- [x] Slice A: TERR-01 to TERR-09, TERR-13 pass
+- [ ] Slice B: TERR-10 to TERR-12, TERR-14 pass (done); demo reviewed by the user
 - [ ] `npm run verify:fast` passes
 - [ ] Specs updated, simplifications note and retro written
 - [ ] User's preliminary sign-off; tag `phase-7-prelim`

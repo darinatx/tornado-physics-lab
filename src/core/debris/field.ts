@@ -9,7 +9,7 @@ import { createRng } from "../math/rng";
 import type { Vec3 } from "../math/vec";
 import { faceTangent, interiorWalls, LOCAL_NORMALS, panelCenter, sectionGeometry, toWorld } from "../damage/layout";
 import type { Building, FailureRecord, QueuedImpact } from "../damage/types";
-import type { TerrainClass, TornadoState } from "../wind/types";
+import type { TornadoState } from "../wind/types";
 import { windAt } from "../wind/windField";
 import { bumpKick, isSliding, restingForces, snag, stepPiece, supportHeight, wakeIfForced } from "./piece";
 import { IMPACT } from "../../config/impacts";
@@ -20,6 +20,8 @@ import { resolveImpact } from "../impact/impact";
 import { bounce, floorUnder, halfExtentAlong, unbury } from "../impact/contact";
 import type { Missile } from "../impact/impact";
 import type { Piece } from "./piece";
+import { tableAt } from "../terrain/roughness";
+import type { Terrain } from "../terrain/roughness";
 
 export interface DebrisStats {
   airborne: number;
@@ -546,7 +548,7 @@ export class DebrisField {
   farRmax: number = DEBRIS.farStepRmax;
   private stepNo = 0;
 
-  step(dt: number, s: TornadoState, terrain: TerrainClass, checkResting: boolean, time = 0, cloudBase = Infinity, targets?: ImpactTargets): void {
+  step(dt: number, s: TornadoState, terrain: Terrain, checkResting: boolean, time = 0, cloudBase = Infinity, targets?: ImpactTargets): void {
     this.lastTime = time;
     this.stepNo++;
     if (targets) this.targets = targets;
@@ -563,7 +565,12 @@ export class DebrisField {
       // Moving in the heavy-debris world (Spec 04 v2.0).
       if (p.rigid) {
         if (p.resting) resting++;
-        else airborne++;
+        else {
+          airborne++;
+          // In the stats as it stands (INST-10), though the heavy engine moves it.
+          maxSpeed = Math.max(maxSpeed, Math.hypot(p.vel.x, p.vel.y, p.vel.z));
+          maxHeight = Math.max(maxHeight, p.pos.y);
+        }
         continue;
       }
       // Retired from it: it stays where it lies, in the permanent debris field.
@@ -603,6 +610,9 @@ export class DebrisField {
       const far = Math.hypot(p.pos.x - s.center.x, p.pos.z - s.center.z) > this.farRmax * s.rMax;
       if (far && (this.stepNo + (p.stepPhase ?? p.id)) % 2 === 1 && p.steppedTo !== undefined && p.steppedTo >= time - 1e-9) {
         airborne++;
+        // Not stepped this time, but airborne all the same: in the stats (INST-10).
+        maxSpeed = Math.max(maxSpeed, Math.hypot(p.vel.x, p.vel.y, p.vel.z));
+        maxHeight = Math.max(maxHeight, p.pos.y);
         continue;
       }
       const pdt = p.steppedTo === undefined ? dt : Math.min(Math.max(time + dt - p.steppedTo, dt), 2 * dt);
@@ -628,7 +638,7 @@ export class DebrisField {
       if (isSliding(p)) {
         const d = Math.hypot(p.vel.x, p.vel.z) * pdt;
         // Chance to catch on an obstacle grows with distance slid (mean free path by terrain).
-        if (this.rng() < 1 - Math.exp(-d / DEBRIS.snagDistance[terrain])) {
+        if (this.rng() < 1 - Math.exp(-d / tableAt(DEBRIS.snagDistance, terrain, p.pos.x, p.pos.z))) {
           // Laid flat on whatever it was sliding on: the slab top or the ground.
           const base = targets ? floorUnder(p, targets) : 0;
           p.pos.y -= base;
@@ -636,7 +646,7 @@ export class DebrisField {
           p.pos.y += base;
         } else {
           // Rough ground: a bump may hop it into the wind (Spec 04 v1.7).
-          bumpKick(p, d, DEBRIS.bumpSpacing[terrain], this.rng);
+          bumpKick(p, d, tableAt(DEBRIS.bumpSpacing, terrain, p.pos.x, p.pos.z), this.rng);
         }
       }
       // Nothing stays buried in a slab (a bounce at a wall's base, tumbling, snagging, spawning).
@@ -834,12 +844,12 @@ export class DebrisField {
 
 
   /** Exact discrete Ornstein–Uhlenbeck update of a piece's gust, scaled to the local wind. */
-  private updateGust(p: Piece, w: { x: number; y: number; z: number }, dt: number, terrain: TerrainClass): void {
+  private updateGust(p: Piece, w: { x: number; y: number; z: number }, dt: number, terrain: Terrain): void {
     if (!this.dispersion) {
       p.gust.x = p.gust.y = p.gust.z = 0;
       return;
     }
-    const sigma = TURBULENCE.intensity[terrain] * Math.hypot(w.x, w.z);
+    const sigma = tableAt(TURBULENCE.intensity, terrain, p.pos.x, p.pos.z) * Math.hypot(w.x, w.z);
     const a = Math.exp(-dt / TURBULENCE.timeScale);
     const b = Math.sqrt(1 - a * a) * sigma;
     p.gust.x = a * p.gust.x + b * this.normal();

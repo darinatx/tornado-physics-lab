@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.13) — Phases 1–4
+Status: Approved (v1.15) — Phases 1–4
 
 ## Purpose
 
@@ -16,10 +16,11 @@ Phase 1 scope:
   restarts the run. Editing any slider afterwards switches the label to "Custom".
 - **Parameter panel, in plain language:**
   - *Basic* (open): strength, size, forward speed, heading, cloud base height.
-  - *Display*: wind arrows, funnel, dust, probe height.
+  - *Display*: wind arrows, funnel, dust, ground roughness (Spec 17), probe height.
   - *Run*: sim speed, camera follow, repeat (off by default), restart.
   - Damage colors are off by default.
-  - *Advanced physics* (collapsed): every other Spec 01 parameter.
+  - *Advanced physics* (collapsed): every other Spec 01 parameter. There is no terrain
+    setting: the ground roughness comes from the town (Spec 17).
 
   Every control has a hover tooltip explaining what it does in everyday terms.
 - **Inspect probe:** hovering over the ground shows a tooltip with the conditions at that spot,
@@ -28,6 +29,8 @@ Phase 1 scope:
   - its parts: around the tornado, inward/outward, up/down;
   - air pressure (mb) and its drop below the background (see Decisions 2);
   - wind pressure on a surface, q = ½ρV² (Pa and lb/ft²), which Spec 03 will use for damage;
+  - the ground (Spec 17): terrain class, roughness length z₀ upwind-weighted and at the spot,
+    and the power-law exponent β the wind feels there;
   - distance from the center, and whether the spot is inside the core and left or right of
     the path.
 
@@ -87,7 +90,7 @@ function buildControlDefs(): ControlDef[];
 function createPanel(sim: Sim, onFollowChange: (follow: boolean) => void): Panel;
 
 // src/core/wind/probe.ts
-function probeAt(p: Vec3, s: TornadoState, terrain: TerrainClass): ProbeReading;   // pure
+function probeAt(p: Vec3, s: TornadoState, terrain: Terrain): ProbeReading;   // pure; Terrain: Spec 17
 
 // src/config/presets.ts
 const PRESETS: Preset[];   // { id, name, ef, description, params: Partial<TornadoParams> }
@@ -179,6 +182,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.15 (Phase 7): the terrain dropdown is gone (the town sets the roughness); the probe shows
+  the ground's class, z₀ and β; a Ground roughness display toggle (Spec 17, TERR-10, TERR-14).
 - v1.13: after dissipation the building summary stops showing a live distance to the core
   edge (it kept climbing as the dissipated state drifted on with the storm) and shows
   "dissipated · closest N m" (INST-13).

@@ -3,9 +3,10 @@
  * Pure state; no Three.js. Uses its own seeded RNG (visual only).
  */
 import { windAt } from "../core/wind/windField";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TornadoState } from "../core/wind/types";
 import { RENDER } from "../config/render";
 import { createRng } from "../sim/rng";
+import type { Terrain } from "../core/terrain/roughness";
 
 /** y value for hidden (dead) tracers, far below the ground. */
 export const HIDDEN_Y = -1e4;
@@ -48,7 +49,7 @@ export interface DustSurvey {
 }
 
 /** Survey the dust-lifting area on a polar grid around the center (ground wind at 3 m). */
-export function surveyDust(s: TornadoState, terrain: TerrainClass, ut: number): DustSurvey {
+export function surveyDust(s: TornadoState, terrain: Terrain, ut: number): DustSurvey {
   const range = RENDER.dustRangeRmax * s.rMax;
   const nDir = 24;
   const nR = 80;
@@ -113,7 +114,7 @@ export class TracerField {
     this.life[i] = 0;
   }
 
-  private trySpawn(i: number, s: TornadoState, terrain: TerrainClass): void {
+  private trySpawn(i: number, s: TornadoState, terrain: Terrain): void {
     const a = this.rng() * Math.PI * 2;
     const emission = this.opts.area === "emission";
     // Uniform over the lifting area (emission), or the old core ring (lab).
@@ -151,7 +152,7 @@ export class TracerField {
   private highest = 0;
 
   /** Advance all tracers by dt seconds of sim time. */
-  update(dt: number, s: TornadoState, terrain: TerrainClass, cloudBase: number): void {
+  update(dt: number, s: TornadoState, terrain: Terrain, cloudBase: number): void {
     const maxY = 0.8 * cloudBase;
     const emission = this.opts.area === "emission";
     // Where dust lifts and how much, 4 times a second (the tornado changes over seconds).

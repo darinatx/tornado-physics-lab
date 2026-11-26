@@ -1,6 +1,6 @@
 # Spec 12 — Wind Tunnel (Test Harness)
 
-Status: Approved (v0.2) — Stage 1 (headless tunnel, launcher, record, checks, parallel runner).
+Status: Approved (v0.3) — Stage 1 (headless tunnel, launcher, record, checks, parallel runner).
 Stage 2 (tornado replay, ramp-to-failure fragility, reference missile tests, timestep
 convergence, viewer) is outlined at the end.
 
@@ -39,7 +39,8 @@ A tunnel flow replaces the tornado for the whole sim: town damage, debris and th
 all read it through the same `windAt` and `pressureDeficit` (Spec 01).
 
 ```
-U(z)  = U10 · envFactor(z, terrain)            = U10 · (z / 10 m)^β below 10 m, U10 above (Spec 01)
+U(z)  = U10 · envFactor(z, terrain)            = U10 · (z / 10 m)^β below 10 m, U10 above (Spec 01;
+        over a roughness field, β at the point for the tunnel's direction, Spec 17)
 wind  = U(z) · (cos θ, 0, −sin θ) + (0, w · min(z / 10 m, 1), 0)
 deficit = Δp (Pa, uniform over the tunnel)
 ```
@@ -226,6 +227,8 @@ boundaries. Values live in `src/config/tunnel.ts`.
 
 ## Changelog
 
+- v0.3 (Phase 7): over a roughness field (Spec 17) the power law uses the β at each point for
+  the tunnel's direction; a class is unchanged.
 - v0.2: the launcher (`src/sim/launcher.ts`), the record (`src/sim/runRecord.ts`) and the
   pass-through checker (`src/sim/passThrough.ts`) moved into the sim so the structure lab
   (Spec 13) uses the same ones; the tunnel's behavior and record are unchanged. Launches can

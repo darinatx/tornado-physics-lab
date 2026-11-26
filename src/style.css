@@ -404,3 +404,24 @@ body {
   overflow-y: auto;
   font-size: 12px;
 }
+
+/* Ground roughness legend (Spec 17). */
+.rough-legend {
+  background: rgba(20, 24, 30, 0.82);
+  color: #e6e9ee;
+  border-radius: 6px;
+  padding: 8px 10px 10px;
+  font-size: 11px;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.rough-legend .rl-title { font-weight: 600; margin-bottom: 6px; }
+.rough-legend .rl-dim { font-weight: 400; opacity: 0.7; }
+.rough-legend .rl-bar { position: relative; height: 10px; border-radius: 2px; }
+.rough-legend .rl-bar i { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: #fff; }
+.rough-legend .rl-classes, .rough-legend .rl-ticks { position: relative; height: 15px; margin-top: 3px; }
+.rough-legend .rl-ticks { height: 26px; opacity: 0.75; font-size: 10px; }
+.rough-legend .rl-classes span { position: absolute; text-align: center; }
+.rough-legend .rl-ticks span { position: absolute; transform: translateX(-50%); text-align: center; white-space: nowrap; line-height: 1.15; }

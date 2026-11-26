@@ -1,6 +1,6 @@
 # Spec 05 — City Generation
 
-Status: Approved (v0.5) — Phase 2 scope: a test neighborhood of houses. The full city arrives in Phase 4.
+Status: Approved (v0.6) — Phase 2 scope: a test neighborhood of houses. The full city arrives in Phase 4.
 
 ## Purpose
 
@@ -53,8 +53,11 @@ interface Neighborhood {
 ## Simplifications / out of scope
 
 - Houses only; no trees, cars, power lines or other building types until Phase 4.
-- The whole map uses one terrain roughness (Spec 01). Phase 7 (Spec 17) replaces it with roughness worked out from the buildings and ground cover.
+- Ground cover (Spec 17): lawn over the neighborhood's square (lots and streets alike; no roads
+  yet), farmland around it. The terrain roughness is worked out from the buildings and this
+  cover (Spec 17), not set for the whole map.
 
 ## Changelog
 
+- v0.6 (Phase 7): the layout's ground cover for Spec 17 (`townCover`).
 - v0.5: Phase 2 test neighborhood.

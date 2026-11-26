@@ -28,6 +28,8 @@ export interface Layers {
   funnel: boolean;
   tracers: boolean;
   debris: boolean;
+  /** Ground roughness tint (Spec 17), off by default. */
+  roughness?: boolean;
 }
 
 export interface SimRenderer {
@@ -317,6 +319,8 @@ export function createRenderer(
       ring.position.set(s.center.x, 2, s.center.z);
 
       env.update(s.center, steady ? 60 : s.rMax, curr.cloudBase);
+      env.ground.setCover(curr.groundCover);
+      env.ground.setRoughness(!!layers.roughness, curr.terrain, curr.tornado, curr.time);
       houses.sync(getBuildings(), damageColors);
       const det = getDetail();
       if (det) {

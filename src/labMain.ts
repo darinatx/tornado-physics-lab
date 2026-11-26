@@ -29,6 +29,7 @@ import type { TornadoParams } from "./sim/types";
 import type { MemberKind } from "./core/structure/framing";
 import { rateText, SimRateMeter } from "./ui/simRate";
 import "./style.css";
+import { mountRoughnessLegend } from "./ui/roughnessLegend";
 
 const LABELS: Record<string, string> = {
   wallFrame: "wall frame", wallSheet: "wall sheathing", pane: "window", garageDoor: "garage door", rafterPair: "rafters",
@@ -49,6 +50,8 @@ const ui = {
   cls: "standard" as LabSetup["cls"],
   surroundings: "neighborhood" as LabSetup["surroundings"],
   density: 1,
+  // Terrain (Spec 17): Auto follows the surroundings; a class overrides it.
+  terrain: "auto" as NonNullable<LabSetup["terrain"]>,
   model: "detail" as NonNullable<LabSetup["model"]>,
   seed: 3,
   // Donors are always built: the launcher's real members come from them (Spec 13 v0.4).
@@ -78,6 +81,7 @@ const ui = {
   speed: 1,
   cutaway: false,
   arrows: false,
+  roughness: false,
   follow: false,
 };
 
@@ -105,8 +109,10 @@ const view = createRenderer(
   () => (lab ? { pieces: lab.sim.debris.settled, dropped: lab.sim.debris.settledDropped, version: lab.sim.debris.settledVersion } : { pieces: [], dropped: 0, version: 0 }),
   () => (lab ? { view: lab.sim.detail, spot: null } : null),
 );
+let roughLegend: ReturnType<typeof mountRoughnessLegend> | null = null;
 function applyLayers(): void {
-  view.setLayers({ arrows: ui.arrows, funnel: true, tracers: true, debris: true });
+  view.setLayers({ arrows: ui.arrows, funnel: true, tracers: true, debris: true, roughness: ui.roughness });
+  roughLegend?.setVisible(ui.roughness);
   // Around the lab houses, wherever the tornado is.
   view.setArrowCenter({ x: 0, z: 0 });
 }
@@ -128,6 +134,7 @@ const memberCard = document.createElement("div");
 memberCard.className = "pin-dock member-card";
 memberCard.hidden = true;
 leftCol.appendChild(memberCard);
+roughLegend = mountRoughnessLegend(leftCol);
 /** Each lab house's connection failures, newest first (shown in its component details). */
 const failLog = new Map<number, string[]>();
 const status = document.createElement("div");
@@ -237,7 +244,7 @@ const MEMBER_MISSILES: [MemberKind, string][] = [
 
 // --- Build -----------------------------------------------------------------
 function setupNow(): LabSetup {
-  return { houses: ui.houses, cls: ui.cls, mixCounts: { weak: ui.nWeak, standard: ui.nStandard, strong: ui.nStrong }, surroundings: ui.surroundings, model: ui.model, seed: ui.seed, donors: ui.donors, density: ui.density };
+  return { houses: ui.houses, cls: ui.cls, mixCounts: { weak: ui.nWeak, standard: ui.nStandard, strong: ui.nStrong }, surroundings: ui.surroundings, model: ui.model, seed: ui.seed, donors: ui.donors, density: ui.density, terrain: ui.terrain };
 }
 /** In pass mode, has the user sent the tornado for this build? Until then the air is calm. */
 let sent = false;
@@ -281,6 +288,8 @@ async function build(r?: ReplaySpec, send = false): Promise<void> {
     passThrough: false,
     ...(r ? { replay: r } : {}),
   });
+  // A replay in its recorded wind keeps the recording's terrain (Spec 17).
+  terrainCtl.enable(lab.terrain !== "recorded");
   // Lab houses' connection failures, as they arrive.
   detachLog = lab.sim.observe({
     detailFailure: (house, f) => {
@@ -381,10 +390,14 @@ for (const [key, label, help] of [
 ] as const)
   mixCtls.push(tip(fSetup.add(ui, key, 0, LAB.maxHouses, 1).name(label).onFinishChange(mixChanged(key)), `${help} The lab holds up to ${LAB.maxHouses} houses in all (more = slower).`));
 fitMixRanges();
-tip(fSetup.add(ui, "surroundings", { Neighborhood: "neighborhood", "Open field": "open" }).name("Surroundings").onChange(() => (densityCtl.enable(ui.surroundings === "neighborhood"), void build())), "Neighborhood: the town's houses on every lot within 130 m, which shed debris onto the block (suburban terrain).");
+tip(fSetup.add(ui, "surroundings", { Neighborhood: "neighborhood", "Open field": "open" }).name("Surroundings").onChange(() => (densityCtl.enable(ui.surroundings === "neighborhood"), void build())), "Neighborhood: the town's houses on every lot within 130 m, which shed debris onto the block.");
 const densityCtl = tip(
   fSetup.add(ui, "density", LAB_LAYOUT.minDensity, LAB_LAYOUT.maxDensity, 0.05).name("Neighbor density (× town)").onFinishChange(() => void build()),
   "How closely the neighbors are packed. 1 = the town's lots (about 6.5 houses per hectare); 0.25 = a rural road with 46 m lots; 1.75 = dense infill. Houses keep their size; only the spacing changes.",
+);
+const terrainCtl = tip(
+  fSetup.add(ui, "terrain", { "Auto (from surroundings)": "auto", "Open country": "open", Suburban: "suburban", Urban: "urban" }).name("Terrain").onChange(() => void build()),
+  "How rough the ground is, which slows the wind near the ground. Auto works it out from the houses around the block, as in the town; the others set it everywhere, to test a house as if it stood in that terrain. A replay in its recorded wind keeps the recording's terrain.",
 );
 tip(fSetup.add(ui, "model", { "Detailed (members)": "detail", "Component (town model)": "component" }).name("Lab house model").onChange(() => void build()), "Compare the two house models in the same wind.");
 fSetup.add(ui, "seed", 1, 9999, 1).name("Seed").onFinishChange(() => void build());
@@ -501,6 +514,7 @@ fTime.add({ go: () => {
 } }, "go").name("⏭ Step (1/60 s)");
 fTime.add(ui, "cutaway").name("Cutaway (hide roof)").onChange(applyStyle);
 tip(fTime.add(ui, "arrows").name("Wind arrows").onChange(applyLayers), "Ground-level wind arrows, as in the main simulator: direction and speed (color) at 10 m.");
+tip(fTime.add(ui, "roughness").name("Ground roughness").onChange(applyLayers), "Tints the ground by how rough it is to the wind (z₀ weighted over the ground upwind), as in the main simulator. With a Terrain override it is one even colour.");
 fTime.add(ui, "follow").name("Follow tornado").onChange((v: boolean) => view.setFollow(v));
 gui.add({ back: () => (location.search = "") }, "back").name("← Back to simulator");
 

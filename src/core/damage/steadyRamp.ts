@@ -6,11 +6,12 @@ import { DAMAGE_STEP_INTERVAL } from "../../config/buildings";
 import { SIM_DEFAULTS } from "../../config/sim";
 import { MS_PER_MPH } from "../../config/units";
 import { pressureDeficit } from "../wind/pressure";
-import type { TerrainClass, TornadoState } from "../wind/types";
+import type { TornadoState } from "../wind/types";
 import { windAt } from "../wind/windField";
 import { mphToMs } from "../wind/efScale";
 import { updateBuilding } from "./building";
 import type { Building } from "./types";
+import type { Terrain } from "../terrain/roughness";
 
 /** First speed (mph) at which the house reaches DOD ≥ d, for d = 0..10 (Infinity if never). */
 export function steadyRamp(b: Building, dirRad: number, fromMph = 30, toMph = 280): number[] {
@@ -34,7 +35,7 @@ export function steadyRamp(b: Building, dirRad: number, fromMph = 30, toMph = 28
 export function tornadoPass(
   b: Building,
   s: TornadoState,
-  terrain: TerrainClass = "open",
+  terrain: Terrain = "open",
   lateralOffset = 0,
 ): number[] {
   const first = new Array<number>(11).fill(Infinity);

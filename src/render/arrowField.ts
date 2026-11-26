@@ -3,7 +3,8 @@
  * preallocated buffers, so the renderer only has to turn them into instance matrices.
  */
 import { windAt } from "../core/wind/windField";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TornadoState } from "../core/wind/types";
+import type { Terrain } from "../core/terrain/roughness";
 
 export interface ArrowFieldOptions {
   spacing: number;
@@ -37,7 +38,7 @@ export function createArrowField(opts: ArrowFieldOptions): ArrowField {
 
 export function computeArrowField(
   s: TornadoState,
-  terrain: TerrainClass,
+  terrain: Terrain,
   opts: ArrowFieldOptions,
   out: ArrowField,
   /** Where the grid is centered (default the tornado's center; the lab uses its block). */

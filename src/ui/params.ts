@@ -99,16 +99,6 @@ export function createPanel(
   controllers.push(
     tip(
       advanced
-        .add(values, "terrain", { "Open country": "open", Suburban: "suburban", Urban: "urban" })
-        .name("Ground roughness")
-        .onChange((v: "open" | "suburban" | "urban") => {
-          sim.setParams({ terrain: v });
-          markCustom();
-        }),
-      "Rougher ground (towns, cities) slows the wind near the ground more than open fields.",
-    ),
-    tip(
-      advanced
         .add(values, "rotation", { "Counter-clockwise (normal)": 1, "Clockwise (rare)": -1 })
         .name("Spin direction")
         .onChange((v: number) => {
@@ -157,6 +147,10 @@ export function createPanel(
     "Tint houses by damage rating: yellow (minor) → orange → red → purple (swept away). Off shows their real colors.",
   );
   tip(display.add(state, "arrows").name("Wind arrows").onChange(emit), "Arrows showing wind direction and speed at 10 m, colored by EF rating.");
+  tip(
+    display.add(state, "roughness").name("Ground roughness").onChange(emit),
+    "Tints the ground by how rough it is to the wind (roughness length z₀, weighted over the ground upwind): fields are smooth, the neighborhood rough. Rougher ground slows the wind near the ground. The edge of town shows as a gradient that shifts with the wind direction, and flattened areas fade toward smooth.",
+  );
   tip(
     display.add(state, "probeHeight", 2, 200, 1).name("Probe height (m)").onChange(emit),
     "Height above the ground where the inspect probe measures. Hover over the ground to inspect; click to pin.",

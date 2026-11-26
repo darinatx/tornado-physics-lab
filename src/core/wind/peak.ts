@@ -4,14 +4,15 @@
  */
 import { EF_REFERENCE_HEIGHT } from "../../config/wind";
 import { windAt } from "./windField";
-import type { TerrainClass, TornadoState } from "./types";
+import type { TornadoState } from "./types";
+import type { Terrain } from "../terrain/roughness";
 
 const RADIUS_FACTORS = [0.6, 0.7, 0.8, 0.9, 0.95, 1.0, 1.05, 1.1, 1.2, 1.4, 1.7, 2.0];
 const ANGLES = 48;
 
 export function peakGroundSpeed(
   s: TornadoState,
-  terrain: TerrainClass,
+  terrain: Terrain,
   height = EF_REFERENCE_HEIGHT,
 ): number {
   let best = Math.hypot(s.velocity.x, s.velocity.z);

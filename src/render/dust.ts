@@ -3,9 +3,10 @@
  * at the base of the tornado. Shared by the simulator and the structure lab.
  */
 import * as THREE from "three";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TornadoState } from "../core/wind/types";
 import { DEFAULT_TRACER_OPTIONS, TracerField } from "./tracers";
 import type { TracerOptions } from "./tracers";
+import type { Terrain } from "../core/terrain/roughness";
 
 function dustSprite(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
@@ -24,7 +25,7 @@ function dustSprite(): THREE.CanvasTexture {
 export interface DustLayer {
   readonly points: THREE.Points;
   /** Advance to sim time t (s); time going backwards (a restart) clears the dust. */
-  update(t: number, s: TornadoState, terrain: TerrainClass, cloudBase: number): void;
+  update(t: number, s: TornadoState, terrain: Terrain, cloudBase: number): void;
   clear(): void;
 }
 

@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.12) — Phases 1–4
+Status: Approved (v1.17) — Phases 1–4
 
 ## Purpose
 
@@ -59,7 +59,10 @@ Phase 1 scope:
   They use their own seeded RNG (visual only). Heavy debris with inertia is Spec 04. (The
   structure lab keeps a fixed count around the core: it's viewed from tens of metres.)
 - **Storm environment:** a cloud deck at the cloud base, visible from below; a lowered wall
-  cloud around the tornado; overcast storm lighting and fog; procedurally textured farmland.
+  cloud around the tornado; overcast storm lighting and fog; the ground drawn by its cover
+  (Spec 17): farmland patchwork in open country, mowed lawn laid out as the town's lots over
+  the neighborhood, concrete for urban areas, blended at the edges, with no roads or section
+  lines; one ground material with the roughness layer tinted in.
   Lighting favors readability over a realistically dark storm, and a Brightness control
   (exposure 0.5–2×) lets the viewer adjust it.
 - **Component houses (Phase 4):** each house is drawn from its components (Spec 03): wall
@@ -84,7 +87,8 @@ Phase 1 scope:
   (wall panels, roof sections, deck sections, garage doors) are always drawn at their real size.
 - **R_max ring:** a faint ring on the ground at R_max.
 - **Layers:** arrows, funnel and tracers can each be toggled. Arrows are off by default, so the
-  first view is the storm itself; they're one click away for analysis.
+  first view is the storm itself; they're one click away for analysis. The ground roughness
+  layer (Spec 17, off by default) tints the ground by the upwind-weighted z₀, with a legend.
 - **Picking:** `pick(ndc)` returns the ground point under the cursor, for the probe (Spec 07).
 - **Probe markers:** a hover ring, and a colored pole for each pinned probe.
 - **Interpolation:** render positions are interpolated between the last two physics states
@@ -209,6 +213,8 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 
 ## Changelog
 
+- v1.17 (Phase 7): ground drawn by cover (farmland, lawn, pavement) without section-line roads,
+  and the ground roughness layer (Spec 17, TERR-12, TERR-14).
 - v1.12: new key layout at the user's request: W/S forward and back level, A/D left and right,
   ↑/↓ height, ←/→ turn, Q/E tilt (REND-14, REND-15). The keys work after clicking in the side
   panel (REND-16). A new run no longer moves the camera (REND-18): follow mode carried it

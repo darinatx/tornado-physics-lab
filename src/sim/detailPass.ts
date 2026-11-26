@@ -8,10 +8,11 @@ import type { Building } from "../core/damage/types";
 import { qconj, qrot } from "../core/structure/framing";
 import { surveyDetail } from "../core/structure/survey";
 import { pressureDeficit } from "../core/wind/pressure";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TornadoState } from "../core/wind/types";
 import { windAt } from "../core/wind/windField";
 import { STRUCT_DT, StructureWorld } from "./structureWorld";
 import type { WindSource } from "./structureWorld";
+import type { Terrain } from "../core/terrain/roughness";
 
 export interface DetailPassResult {
   /** For each DOD d (index), the peak roof-height wind (mph) felt when it first reached DOD ≥ d. */
@@ -27,7 +28,7 @@ export interface DetailPassResult {
 }
 
 /** Pass a tornado over a detailed house at the origin, offset sideways from the track. */
-export function detailPass(b: Building, s: TornadoState, terrain: TerrainClass = "open", lateralOffset = 0): DetailPassResult {
+export function detailPass(b: Building, s: TornadoState, terrain: Terrain = "open", lateralOffset = 0): DetailPassResult {
   const first = new Array<number>(11).fill(Infinity);
   const speed = Math.hypot(s.velocity.x, s.velocity.z);
   const dir = { x: s.velocity.x / speed, z: s.velocity.z / speed };

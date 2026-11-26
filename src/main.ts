@@ -12,6 +12,7 @@ import { createPanel } from "./ui/params";
 import { createProbeUI } from "./ui/probe";
 import { computeReadout, mountReadout } from "./ui/readout";
 import "./style.css";
+import { mountRoughnessLegend } from "./ui/roughnessLegend";
 
 const app = document.getElementById("app")!;
 // Member-level detail zone in a worker (Spec 09 slice B).
@@ -48,9 +49,11 @@ const detailStatus = document.createElement("div");
 detailStatus.className = "detail-status";
 detailStatus.hidden = true;
 bottomCol.appendChild(detailStatus);
+let roughLegend: ReturnType<typeof mountRoughnessLegend> | null = null;
 const panel = createPanel(sim, (state) => {
   view.setFollow(state.follow);
-  view.setLayers({ arrows: state.arrows, funnel: state.funnel, tracers: state.tracers, debris: state.debris });
+  view.setLayers({ arrows: state.arrows, funnel: state.funnel, tracers: state.tracers, debris: state.debris, roughness: state.roughness });
+  roughLegend?.setVisible(state.roughness);
   view.setDamageColors(state.damageColors);
   view.setDebrisScale(state.enlargeDebris ? 3 : 1);
   view.setBrightness(state.brightness);
@@ -71,6 +74,8 @@ view.onCameraMoved(() => {
   panel.state.follow = false;
 });
 const readout = mountReadout(leftCol);
+roughLegend = mountRoughnessLegend(leftCol);
+roughLegend.setVisible(panel.state.roughness);
 const recorders = new Map<Building, DebrisRecorder>();
 const probe = createProbeUI(app, view, (x, z) => sim.world.buildingAt(x, z), (p) => {
   if (!pickingSpot) return false;

@@ -1,6 +1,6 @@
 # Spec 13 — Structure Lab (v2)
 
-Status: Approved (v0.9) — scope approved by the user 2026-11-25. Supersedes Spec 09's
+Status: Approved (v1.0) — scope approved by the user 2026-11-25. Supersedes Spec 09's
 "Structure lab (slice A)" section.
 
 ## Purpose
@@ -33,8 +33,12 @@ renderer, camera and inspector**. So whatever the lab shows is what the town doe
     and every house keeps its real size; the same seed lays out the same houses in the same order.
     1.75× is about the densest that fits (lots ~17 m wide for houses up to 16 m); 0.25× is a
     rural road (46 m lots). They take damage, shed
-    debris, block and catch debris, all through the town code. Terrain is suburban.
-  - **Open field:** nothing but the block. Terrain is open.
+    debris, block and catch debris, all through the town code.
+  - **Open field:** nothing but the block.
+- **Terrain** (setup option, Spec 17 v1.0): Auto (default) builds the roughness field from the
+  surroundings as the town does (lawn under a neighborhood, farmland around and under an open
+  field, the houses' own roughness); Open, Suburban or Urban apply that class everywhere and draw
+  its ground (farmland, lawn, pavement).
 - **Construction mix:** how many of the block's houses are weak, standard and strong (Spec 03
   classes), together 1–12; the grid fills in that order (weak first). Each house's capacities
   are its class's, its own draw from the lab seed as before.
@@ -62,7 +66,7 @@ Decisions:
   measured debris stream keyed by local wind was tried (v0.5) and failed its check against real
   neighbors (3.4× too few hits), because debris arrival depends on where a house sits in the
   vortex, not only on its wind.
-- **Neighborhood by default, out to 130 m, suburban terrain.** The alignment work (Phase 6,
+- **Neighborhood by default, out to 130 m.** The alignment work (Phase 6,
   2026-11-25) showed that upwind houses as debris sources change a detailed house's outcome
   from DOD 4 to DOD 7–10 at the same wind. A house alone in a field is the exception, not
   the town's case. Component houses are cheap, so the ring costs little.
@@ -189,8 +193,10 @@ Decisions:
   step for each represented copy). The replay reads slightly slower (−4 to −12% per pass): the
   pieces that reached the box were partly picked by favorable gusts, and fresh gusts regress
   to the mean. Three passes keep the sampling noise (about 30 pieces each) inside ±10%.
-- **Terrain is part of the wind:** the recording keeps the terrain its wind blew over, and a
-  replay in the recorded wind uses it, even with no neighbors (open field).
+- **Terrain is part of the wind:** the recording keeps the terrain its wind blew over (a class,
+  or with a roughness field the target's local and upwind-weighted z₀ for each direction at each
+  field update, Spec 17), and a replay in the recorded wind uses it, even with no neighbors (open
+  field); the Terrain setting is locked while it runs.
 - **Target-frame storage:** one recording replays at any lab house, heading or yaw.
 
 ### View, camera and inspection
@@ -306,7 +312,6 @@ worker backends, as `src/main.ts` uses them.
   origin; with "neighborhood", component houses fill every town lot within 130 m of the
   block's edge and none overlaps the block; with "open", the sim holds only the block (and
   donors, if on).
-- **LAB-03**: Terrain follows the surroundings: suburban for neighborhood, open for open field.
 - **LAB-04**: Steady wind: the lab's wind equals the Spec 12 tunnel flow for its keyframes, and
   a mid-run slider change is a keyframe at that sim time (replaying the keys gives the same run).
 - **LAB-05**: Tornado pass, mature: starts at the nearest distance (≥ 2·R_max) where every
@@ -371,6 +376,9 @@ worker backends, as `src/main.ts` uses them.
 
 ## Changelog
 
+- v1.0 (2026-11-26, Phase 7): terrain from the surroundings' roughness field (Spec 17), with a
+  Terrain setting (Auto, Open, Suburban, Urban); LAB-03 retired, replaced by TERR-11; a
+  recording keeps the roughness at its target.
 - v0.9 (2026-11-26, the user's request): the block's construction mix (LAB-20), weak, standard
   and strong counts within the 12-house limit.
 

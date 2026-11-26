@@ -7,7 +7,9 @@ import type { DebrisKindDef } from "../config/debris";
 import type { Building } from "../core/damage/types";
 import type { Piece } from "../core/debris/piece";
 import type { Vec3 } from "../core/math/vec";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TornadoState } from "../core/wind/types";
+import { TerrainCache } from "../core/terrain/roughness";
+import type { TerrainMsg } from "../core/terrain/roughness";
 import { CITY } from "./city";
 import { HeavyDebris } from "./heavyDebris";
 import type { TownHit } from "./structureWorld";
@@ -36,7 +38,7 @@ export interface HeavyTake {
 export interface HeavyStep {
   n: number;
   tornado: TornadoState;
-  terrain: TerrainClass;
+  terrain: TerrainMsg;
   time: number;
   takes: HeavyTake[];
   /** Houses whose state changed since last sent. */
@@ -59,6 +61,8 @@ export interface HeavyResult {
 }
 
 export class HeavyEngine {
+  /** The roughness field as last received (Spec 17). */
+  private readonly terrains = new TerrainCache();
   readonly debris: HeavyDebris;
   private readonly copies: Building[];
   private readonly grid = new Map<string, Building[]>();
@@ -100,7 +104,7 @@ export class HeavyEngine {
     // Swept this step: what lies on its slab goes with it, its own pieces that failed in this
     // same step included (the sweep's own debris is all light: Spec 04 v2.3).
     for (const i of swept) this.debris.sweep(i);
-    this.debris.step(msg.tornado, msg.terrain, msg.time);
+    this.debris.step(msg.tornado, this.terrains.resolve(msg.terrain), msg.time);
     const out: number[] = [];
     for (const [key, p] of this.stubs) {
       const state = p.settleNow ? (p.swept ? HEAVY_STATE.swept : p.hidden ? HEAVY_STATE.lost : HEAVY_STATE.retired) : p.resting ? HEAVY_STATE.resting : HEAVY_STATE.moving;

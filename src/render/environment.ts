@@ -2,49 +2,8 @@
 import * as THREE from "three";
 import { RENDER } from "../config/render";
 import { createRng } from "../sim/rng";
-
-function farmlandTexture(seed: number): THREE.CanvasTexture {
-  const rng = createRng(seed);
-  const size = 1024;
-  const c = document.createElement("canvas");
-  c.width = c.height = size;
-  const g = c.getContext("2d")!;
-  const palette = ["#4f5d36", "#5b6a3c", "#6b6a40", "#58663a", "#7a6f48", "#4a5733", "#66734a", "#73694a"];
-  // Quarter-section style fields (1 km tile → ~8 × 8 fields), with slight jitter.
-  const n = 8;
-  const cell = size / n;
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      g.fillStyle = palette[Math.floor(rng() * palette.length)]!;
-      g.fillRect(i * cell, j * cell, cell + 1, cell + 1);
-      // Crop rows.
-      g.globalAlpha = 0.08;
-      g.strokeStyle = rng() > 0.5 ? "#000" : "#fff";
-      const vertical = rng() > 0.5;
-      for (let r = 0; r < cell; r += 6) {
-        g.beginPath();
-        if (vertical) {
-          g.moveTo(i * cell + r, j * cell);
-          g.lineTo(i * cell + r, (j + 1) * cell);
-        } else {
-          g.moveTo(i * cell, j * cell + r);
-          g.lineTo((i + 1) * cell, j * cell + r);
-        }
-        g.stroke();
-      }
-      g.globalAlpha = 1;
-    }
-  }
-  // Section-line roads.
-  g.fillStyle = "#8b8578";
-  g.fillRect(0, 0, size, 4);
-  g.fillRect(0, 0, 4, size);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
-}
+import { createGround } from "./ground";
+import type { Ground } from "./ground";
 
 function cloudTexture(seed: number): THREE.CanvasTexture {
   const rng = createRng(seed);
@@ -93,6 +52,7 @@ function radialFade(): THREE.CanvasTexture {
 
 export interface Environment {
   update(center: { x: number; z: number }, rMax: number, cloudBase: number): void;
+  readonly ground: Ground;
 }
 
 export function createEnvironment(scene: THREE.Scene): Environment {
@@ -105,13 +65,8 @@ export function createEnvironment(scene: THREE.Scene): Environment {
   sun.position.set(-3000, 1500, 2000); // low western light under the storm
   scene.add(sun);
 
-  const groundTex = farmlandTexture(7);
-  groundTex.repeat.set(RENDER.groundSize / 1000, RENDER.groundSize / 1000);
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(RENDER.groundSize, RENDER.groundSize).rotateX(-Math.PI / 2),
-    new THREE.MeshLambertMaterial({ map: groundTex, color: 0xb4b8ae }),
-  );
-  scene.add(ground);
+  // Ground by cover, with the roughness layer (Spec 17).
+  const ground = createGround(scene);
 
   // Cloud deck: a plane facing down, so it's visible from below only.
   const cloudTex = cloudTexture(11);
@@ -131,6 +86,7 @@ export function createEnvironment(scene: THREE.Scene): Environment {
   scene.add(wall);
 
   return {
+    ground,
     update(center, rMax, cloudBase) {
       deck.position.y = cloudBase;
       const wr = Math.max(4 * rMax, 600);

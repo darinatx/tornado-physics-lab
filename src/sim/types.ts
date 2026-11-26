@@ -4,6 +4,7 @@ import { LIFECYCLE_DEFAULTS, WIND_PARAMS } from "../config/wind";
 import type { DebrisStats } from "../core/debris/field";
 import type { Phase } from "../core/wind/lifecycle";
 import type { TerrainClass, TornadoState, TunnelFlow } from "../core/wind/types";
+import type { GroundCover, Terrain } from "../core/terrain/roughness";
 import type { HouseSpec, QueuedImpact } from "../core/damage/types";
 import type { DebrisField } from "../core/debris/field";
 import type { Piece } from "../core/debris/piece";
@@ -25,7 +26,9 @@ export interface TornadoParams {
   /** deg/s. */
   turnRate: number;
   rotation: 1 | -1;
-  terrain: TerrainClass;
+  /** Terrain (Spec 17): "auto" = the roughness field built from the buildings and ground cover;
+   *  a class = that class everywhere (the lab's override, tests). */
+  terrain: TerrainClass | "auto";
   /** Cloud base / lifting condensation level (m). Shapes the condensation funnel. */
   cloudBase: number;
   tUp: number;
@@ -48,7 +51,7 @@ export function defaultParams(): TornadoParams {
     heading: SIM_DEFAULTS.heading,
     turnRate: SIM_DEFAULTS.turnRate,
     rotation: 1,
-    terrain: "open",
+    terrain: "auto",
     cloudBase: ATMOSPHERE_PARAMS.cloudBase.default,
     ...LIFECYCLE_DEFAULTS,
   };
@@ -59,7 +62,10 @@ export interface SimSnapshot {
   readonly time: number;
   readonly step: number;
   readonly tornado: TornadoState;
-  readonly terrain: TerrainClass;
+  /** The terrain the wind blows over now: a class, or the roughness field (Spec 17). */
+  readonly terrain: Terrain;
+  /** What the ground is covered with, for drawing it (Spec 17); stable while unchanged. */
+  readonly groundCover: GroundCover | null;
   /** Cloud base height (m). */
   readonly cloudBase: number;
   readonly phase: Phase;
@@ -88,6 +94,11 @@ export interface SimConfig {
   detailHouses?: number;
   /** Wind tunnel (Spec 12): these houses instead of the generated town. */
   houses?: readonly HouseSpec[];
+  /** Ground cover for the roughness field (Spec 17). Default: the town's (lawn over the
+   *  neighborhood, farmland around), or farmland for explicit houses. */
+  cover?: GroundCover;
+  /** The lab's replay in recorded wind (Spec 17): the terrain at sim time t, replacing any other. */
+  terrainAt?: (t: number) => Terrain;
   /** Wind tunnel: the flow at sim time t, replacing the tornado everywhere. */
   tunnel?: (t: number) => TunnelFlow;
   /** Wind tunnel: exactly these houses enter the detail zone (once a spot is set), each in the
