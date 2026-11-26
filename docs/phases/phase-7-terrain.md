@@ -101,15 +101,16 @@ Reviewed by the user 2026-11-26: "demo looks good".
   - Benchmark: none run. `npm run bench` (rule 9) doesn't exist yet; it's Phase 6's slice D.
     Slices A and B get one run when it does (exit criterion above).
 
-Ground damage tracks (slice C):
+Ground damage tracks (slice C), reviewed by the user 2026-11-26 ("looks good", after the
+edge, lawn and cap fixes):
 
-- [ ] EF2 preset across the fields: crops lodged across the path, rows pointing inward from
+- [x] EF2 preset across the fields: crops lodged across the path, rows pointing inward from
       both sides; lawn pushed over where it crosses town; nothing scoured
-- [ ] EF1: a faint, patchy track, mostly on one side
-- [ ] EF4: crops gone in the core and lodged at the edges; a strip of bare soil; dense gouges
+- [x] EF1: a faint, patchy track, mostly on one side
+- [x] EF4: crops gone in the core and lodged at the edges; a strip of bare soil; dense gouges
       and drag streaks; the strip narrows through town
-- [ ] Same EF4 at half the forward speed: more bare soil
-- [ ] The marks stay after the core has passed; the roughness layer shows the track smoother
+- [x] Same EF4 at half the forward speed: more bare soil
+- [x] The marks stay after the core has passed; the roughness layer shows the track smoother
       than the fields around it
 
 - **C built (2026-11-26).** Spec 19 v1.0; TERR-15 to TERR-24 pass (TERR-19 in validation).
@@ -133,7 +134,7 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 - [x] Spec 17 approved (v1.0); Specs 01, 04, 05, 06, 07, 12, 13 updated
 - [x] Slice A: TERR-01 to TERR-09, TERR-13 pass
 - [x] Slice B: TERR-10 to TERR-12, TERR-14 pass; demo reviewed by the user (2026-11-26)
-- [ ] Slice C: Spec 19 approved; TERR-15 to TERR-24 pass; demo reviewed by the user
+- [x] Slice C: Spec 19 approved; TERR-15 to TERR-24 pass; demo reviewed by the user (2026-11-26)
 - [ ] Benchmark run for slices A, B and C against the baseline once `npm run bench` exists;
       any scene more than 10% slower explained, and fixed or logged
 - [ ] Slice D, profiling: hotspots listed with estimated and confirmed gains; cheap wins
