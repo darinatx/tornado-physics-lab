@@ -75,29 +75,44 @@ export function stateFor(cover: number, peak: number, dose: number, kv = 1, ks =
   return TRACK_STATE.standing;
 }
 
-/** A cell's own plant (kv) and soil (ks) strength factors, 1 ± variation, fixed by its global
- *  cell position (deterministic; no draw from any RNG stream). */
-export function cellStrength(gx: number, gz: number): { kv: number; ks: number } {
-  const h = (n: number) => {
-    let x = Math.imul(gx ^ 0x27d4eb2d, 0x165667b1) ^ Math.imul(gz + n, 0x9e3779b1);
-    x = Math.imul(x ^ (x >>> 15), 0x85ebca6b);
-    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
-    return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
-  };
-  // Smoothed over a 3-cell neighbourhood would need neighbours; patches come from mixing two
-  // scales instead: the 2 m cell and its 8 m block.
-  const v = TRACK.variation;
-  const mix = (a: number, b: number) => 0.6 * a + 0.4 * b;
-  const bx = Math.floor(gx / 4);
-  const bz = Math.floor(gz / 4);
-  const hb = (n: number) => {
-    let x = Math.imul(bx ^ 0x5bd1e995, 0x165667b1) ^ Math.imul(bz + n, 0x9e3779b1);
-    x = Math.imul(x ^ (x >>> 15), 0x85ebca6b);
-    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
-    return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
-  };
-  return { kv: 1 + v.plants * (2 * mix(hb(11), h(1)) - 1), ks: 1 + v.soil * (2 * mix(hb(23), h(2)) - 1) };
+/** Hash of an integer lattice point and channel to [0, 1). */
+function hash01(x: number, z: number, n: number): number {
+  let h = Math.imul(x ^ 0x27d4eb2d, 0x165667b1) ^ Math.imul(z + n * 0x632be5ab, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
+
+/** Smooth value noise in [0, 1) at a lattice spacing of `scale` cells (bilinear, smoothstepped). */
+function valueNoise(gx: number, gz: number, scale: number, n: number): number {
+  const fx = gx / scale;
+  const fz = gz / scale;
+  const ix = Math.floor(fx);
+  const iz = Math.floor(fz);
+  let tx = fx - ix;
+  let tz = fz - iz;
+  tx = tx * tx * (3 - 2 * tx);
+  tz = tz * tz * (3 - 2 * tz);
+  const a = hash01(ix, iz, n) + tx * (hash01(ix + 1, iz, n) - hash01(ix, iz, n));
+  const b = hash01(ix, iz + 1, n) + tx * (hash01(ix + 1, iz + 1, n) - hash01(ix, iz + 1, n));
+  return a + tz * (b - a);
+}
+
+/**
+ * A cell's own plant (kv) and soil (ks) strength factors, 1 ± variation, fixed by its global cell
+ * position (deterministic; no draw from any RNG stream). Mostly smooth patches ~24 m across
+ * (soil and crop variation comes in patches), with a little per-cell jitter.
+ */
+export function cellStrength(gx: number, gz: number): { kv: number; ks: number } {
+  const v = TRACK.variation;
+  const f = (n: number) => 0.85 * valueNoise(gx, gz, PATCH_CELLS, n) + 0.15 * hash01(gx, gz, n + 7);
+  // The sum of a smoothed and a uniform value isn't uniform; stretch it back toward ±1.
+  const s = (x: number) => Math.max(-1, Math.min(1, (2 * x - 1) * 1.6));
+  return { kv: 1 + v.plants * s(f(1)), ks: 1 + v.soil * s(f(2)) };
+}
+
+/** Patch size of the strength variation, in cells (12 cells = 24 m). */
+const PATCH_CELLS = 12;
 
 const STATE_LN: number[] = (() => {
   const z = TRACK.z0;

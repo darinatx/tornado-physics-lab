@@ -76,7 +76,8 @@ From peak wind (lodging, by the cell's cover) and dose (scouring):
 
 Each cell has its own **strength**: its plants' thresholds (lodging, snapping, pushed over)
 and its soil's dose thresholds are each scaled by 1 ± 20%, fixed by the cell's position (a
-deterministic hash mixing the 2 m cell and its 8 m block, so strength varies in patches).
+deterministic smooth noise over ~24 m patches, 85%, plus a little 2 m jitter, 15%), since
+soil and crop variation comes in patches tens of metres across.
 Real fields and lawns aren't uniform; it gives the track ragged, patchy edges instead of
 smooth contour lines. Scouring states override lodging; states never go back. A **gouge** or **streak** marks the
 look only (too small to matter to z₀ at 20 m). Crops lodge at a lower wind than mowed lawn,
@@ -101,8 +102,9 @@ per cell, not the states, so transitions follow each cell's own strength:
   it, full at 135%): the vegetation lightens (up to 18%) with streaks along the stored
   direction, so the convergent rows show; well-flattened crops (not lawn) take a faint straw
   mottle over ~6 m patches (broken stalks);
-- **soil showing:** rises smoothly with the dose against the cell's own erodibility (from 40%
-  of the thinning dose to the bare-soil dose), toward soil colour with slight patch variation;
+- **soil showing:** rises smoothly with the dose against the cell's own erodibility (from 25%
+  of the thinning dose to the bare-soil dose), so a scoured core fades out through a fringe of
+  thinned, part-exposed ground; toward soil colour with slight patch variation;
 - **marks:** darken toward dark soil, at most 55%.
 
 Marks stay for the rest of the run. The track darkens where the storm strengthens and fades
@@ -151,7 +153,7 @@ DebrisField.marks: { landing(p, speed); slide(p, x0, z0) } | null   // set by th
 | D₁ / D₂ / D₃ | s | 0.5 / 1.5 / 8 | calibrated (TERR-19): EF3 core 32% thinned or stripped, EF4 core 81% stripped or bare, EF4 at half speed 100% |
 | z₀ of states | m | see table | Wieringa (1993) classes: flattened canopy ~0.01, short grass 0.005–0.008, bare soil 0.0002–0.005 |
 | gouge landing speed / streak speed | m/s | 5 / 2 | below them a piece settles or creeps without marking |
-| cell strength variation | – | ±20% plants, ±20% soil | patch-to-patch variation in crops, turf and soil; gives ragged edges |
+| cell strength variation | – | ±20% plants, ±20% soil; ~24 m patches | patch-to-patch variation in crops, turf and soil; gives lobed, patchy edges |
 
 All values go in `src/config/terrain.ts` with these sources. The scour thresholds are the
 weakest-sourced numbers in the model: published scouring is case reports (Jarrell 1997;
@@ -227,5 +229,7 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
   at either speed). After the user's review in the app: per-cell strength (±20%) for ragged,
   patchy edges; drawing from continuous flatten and soil amounts (the discrete states drew
   hard contour lines and a speckled straw ring); much lighter debris marks (sliding pieces
-  had painted the lawn nearly black).
+  had painted the lawn nearly black). Then, after the user's look at an EF5 track: the
+  variation in ~24 m patches (per-cell variation broke the edge into speckle) and a wider
+  soil fringe (from 25% of the thinning dose).
 - v0.1 (2026-11-26): drafted at the user's request (another session's design).

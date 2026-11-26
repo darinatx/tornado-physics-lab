@@ -35,7 +35,9 @@ const smooth = (a: number, b: number, x: number) => {
  * dose against its own erodibility). Continuous, so edges follow each cell's own strength.
  */
 export function trackTexels(t: TrackTile, out = new Uint8Array(t.state.length * 4)): Uint8Array {
-  const lnThin = Math.log(0.4 * TRACK.dose.thinned);
+  // Soil starts to show at a quarter of the thinning dose: the fringe of thinned, part-exposed
+  // ground around a scoured core.
+  const lnThin = Math.log(0.25 * TRACK.dose.thinned);
   const lnBare = Math.log(TRACK.dose.bare);
   for (let c = 0; c < t.state.length; c++) {
     const k = { kv: t.kv[c]!, ks: t.ks[c]! };
