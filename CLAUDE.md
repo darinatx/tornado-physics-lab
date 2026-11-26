@@ -33,6 +33,9 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    "Decisions" section with a one-line reason, and approve it. Don't ask the user physics or
    modeling questions. Ask only about what they want to see or do (look, scope, features).
    The user approves at phase gates by watching the demo.
+   **Outside contributors:** this delegation is the maintainer's alone. When working for anyone
+   else (a fork, a PR from someone other than the maintainer), leave spec changes as
+   `Status: Draft` for the maintainer to approve, and follow [CONTRIBUTING.md](CONTRIBUTING.md).
 2. **Acceptance criteria are the contract.** Every criterion has an ID (`WIND-03`). Every ID
    must appear in at least one test name, e.g. `test("WIND-03: ...")`. `npm run trace` enforces this.
 3. **Tests first.** Write tests from the acceptance criteria, then implement.
@@ -48,15 +51,32 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    sign-off** closes phase N: its validation has run and every backlog item from it has a
    decision from the user (fix, defer to a named phase, or accept as a documented
    limitation), with the "fix" items fixed; tag `phase-N-done`. See Phase loop.
+9. **Performance is measured, not guessed.** Performance matters a lot to the user. The target
+   is 60 fps on a mid-range laptop (Spec 00): a 16.7 ms frame shared by physics, the detail
+   zone and rendering. Every slice runs the benchmark and reports any regression. Every phase
+   profiles before its preliminary gate. Optimizations keep determinism and change no
+   physics results (the existing tests must pass unchanged). Among equally realistic models,
+   prefer the cheaper one. Realism still comes first (rule 1). See Phase loop steps 3–4.
 
 ## Phase loop
 
 1. **Spec**: draft or refine the specs the phase touches, resolve open questions toward
    realism, and approve them (see rule 1).
 2. **Plan**: fill in the phase doc (deliverables, exit criteria).
-3. **Build**: tests from acceptance criteria, then implementation.
-4. **Verify**: `npm run verify:fast` (typecheck + unit tests + trace), then run the app and walk
-   the demo checklist.
+3. **Build**: tests from acceptance criteria, then implementation. At the end of each slice,
+   run `npm run bench` and compare against the saved baseline. Note the result in the phase
+   doc's slice notes. Flag any scene that got more than 10% slower, with its cause, and either
+   fix it in the slice or log it for the profiling pass. Update the baseline only for a
+   slowdown that is accepted and explained.
+4. **Verify and profile**: `npm run verify:fast` (typecheck + unit tests + trace), then run the
+   app and walk the demo checklist. Then the **profiling slice**: profile the benchmark scenes
+   (and the browser frame for render work) and list the top hotspots. Give each
+   recommendation an estimated gain as a range, then confirm it with the benchmark once it's
+   done; estimates from reading code alone don't count. Do the cheap, large wins in the slice.
+   Bigger ones go to `docs/backlog.md` (category `perf`) for the user to decide, and the
+   structural work goes to the performance phase. Record before/after numbers in the phase
+   doc. This runs before the preliminary gate, so the separate validation session checks the
+   optimized code.
 5. **Preliminary gate**: update specs to match, write the retro and simplifications note →
    user watches the demo and gives preliminary sign-off → tag `phase-N-prelim`. Unit tests
    and the trace must pass (`npm run verify:fast`); validation tests don't block (bugs are
@@ -64,7 +84,7 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
 6. **Validate (its own session, alongside the next phase)**: a separate session runs the
    phase's validation: `npm run verify`, the validation tests, the phase's validation slice
    and any checks it adds against published data. It **records, it doesn't fix**: every bug
-   and suggestion goes in `docs/backlog.md` (ID, phase, what, evidence, severity, suggested
+   and suggestion goes in `docs/backlog.md` (ID, phase, what, evidence, severity and why it has that severity, suggested
    fix). It may add validation tests and measurements; it changes no model code, so it can't
    collide with the next phase's work.
    **Code changes while validation runs.** Before phase N+1 makes its first code change while
@@ -88,25 +108,6 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    named phase, or accept as a documented limitation in its spec); "fix" items are fixed (usual
    rules) → final sign-off → tag `phase-N-done`.
 
-### Branches
-
-Each phase has its own branch, `phase-N`, and `main` only changes when a phase is merged.
-- **Start:** phase N branches from `phase-(N-1)` at its `phase-(N-1)-prelim` tag (the previous
-  phase isn't merged yet; the two-stage gate lets N start early), or from `main` if the
-  previous phase is already merged. Once `phase-(N-1)` is merged, merge `main` into `phase-N`.
-- **During the phase:** sessions commit to `phase-N` (a session in its own worktree merges its
-  branch into `phase-N` when its work is done) and push `phase-N` to GitHub (`origin`) after
-  each commit, so work is backed up as it goes. The user has approved these pushes; no need to
-  ask each time. Tag `phase-N-prelim` on `phase-N` and push the tag.
-- **Validation** for phase N commits its backlog entries and scripts to `phase-N` too.
-- **End of phase:** at the final gate, open a pull request from `phase-N` into `main`, with
-  the phase's summary, the backlog decisions and the checks run. Merge only when the user says
-  so, then tag `phase-N-done` on `main` and push the tag.
-- Never push to `main` directly, and never force-push.
-
-Phase 6 predates this: its work is already on `main`. Phase 7 is the first phase on its own
-branch (`phase-7`, from `main`).
-
 ### Backlog
 
 `docs/backlog.md` holds what validation found. Each item gets the user's decision before its
@@ -114,6 +115,45 @@ phase's final gate: **fix** (before the final gate), **defer** (to a named phase
 joins that phase's plan), or **accept** (written into the relevant spec's simplifications).
 Fixing one follows the usual rules (spec change first, tests first). Close an item by moving
 it to "Done" with the commit that fixed it, or the spec that records it as accepted.
+
+## Branches and GitHub
+
+The repo is public at `github.com/darinatx/tornado-sim`. `main` is protected: changes reach it
+only through a pull request with CI (`verify:fast`) passing. Never push to `main` directly.
+Work happens on a working branch: a phase branch (e.g. `phase-6-wind-tunnel`) or a short
+branch for one fix.
+
+**A branch per phase.** Each phase is built on its own branch, `phase-N-<name>` (e.g.
+`phase-7-terrain`), and reaches `main` in one pull request at the end of the phase.
+- **Start:** branch from `main` if the previous phase is merged. If it isn't yet (the
+  two-stage gate lets phase N start at N−1's preliminary sign-off), branch from the previous
+  phase branch at its `phase-(N-1)-prelim` tag, and merge `main` in once that phase lands.
+- **During the phase:** commit to the phase branch (a session in its own worktree merges its
+  branch into the phase branch when its work is done), and push the phase branch to `origin`
+  after each commit, so the work is backed up as it goes. The user has approved these pushes;
+  don't ask each time. Tag `phase-N-prelim` on the phase branch at preliminary sign-off and push
+  the tag.
+- **Validation** for phase N commits its backlog entries, tests and scripts to phase N's branch.
+- **End of phase:** at the final gate, open a pull request from the phase branch into `main`
+  with the phase summary, each backlog decision and the checks run. Merge only when the user
+  says so; then tag `phase-N-done` on `main` and push the tag.
+- Never force-push.
+
+**Keep the working branch current with `main`.** At the start of every task, and again before
+opening or updating a pull request:
+
+1. `git fetch origin`, then check `git log --oneline HEAD..origin/main`.
+2. If `main` has commits the working branch lacks, merge them in: `git merge origin/main`.
+   Merge, never rebase: working branches are pushed and shared.
+3. If uncommitted changes touch the same files as the incoming commits, stop and ask the user
+   before merging. Don't stash their work.
+4. Resolve conflicts by the usual rules: the approved spec wins, and if two approved spec
+   versions conflict, ask the user.
+5. After a merge, run `npm run verify:fast` before continuing, and tell the user in one line
+   what came in from `main`.
+
+Merging into `main`: a phase branch lands with a merge commit so its history stays; small
+pull requests are squash-merged.
 
 ## Commands
 
@@ -123,3 +163,7 @@ it to "Done" with the commit that fixed it, or the spec that records it as accep
 - `npm run trace`: check that every acceptance criterion has a test
 - `npm run verify`: everything, validation tests included (the validation session runs it)
 - `npm run verify:fast`: typecheck + unit tests + trace (must pass at every gate)
+- `npm run bench`: two seeded scenes only (an EF4 town pass and the 30-house detail-zone core
+  passage, each a short window around the core), ms per physics step by subsystem, compared
+  with the saved baseline (end of every slice). Don't add scenes without the user's OK. *Not built yet: spec it, then build it once Phase 6
+  validation finishes.*

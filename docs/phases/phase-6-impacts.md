@@ -30,6 +30,23 @@ elsewhere. Pieces stop passing through standing houses.
   the debris reaching a house in a pass, replay it in the lab). Replaces the slice A lab.
   It also gives slice C's reference missile tests a place to watch them.
 - **C — Validation:** reference tests (IMP-12), town pass statistics (IMP-13), cost check.
+- **D — Benchmark and profiling (added 2026-11-26, at the user's request; CLAUDE.md rule 9):**
+  starts after slice C's validation session finishes, because it changes `src/core` and
+  `src/sim`, which validation measures. Phase 6 passed its preliminary gate before this step
+  existed, so its profiling comes before the final gate instead.
+  1. Spec the benchmark harness (`npm run bench`). It has two scenes only, each a short fixed
+     window around the core passage, not a full run:
+     - an EF4 town pass, seed 1, covering the wind field, component damage, debris and hit
+       tests;
+     - the 30-house detail-zone core passage, covering Rapier in the workers.
+     It reports ms per physics step by subsystem, keeps a saved baseline and flags a 10%
+     regression. Then build it, tests first.
+  2. Profile those scenes and the browser frame. List the hotspots, each with an estimated
+     gain, confirmed by the benchmark afterwards. Known starting points: STR-30 (the costliest
+     detail group averages ~21 ms per step against 16 ms), the core passage at ~0.5× real time
+     in the browser, and the hit tests' ~150 ms per simulated second.
+  3. Do the cheap, large wins here. Bigger ones go in the backlog (`perf`). Structural work
+     (level of detail, cloud cost) stays in the performance phase.
 
 ## Specs touched
 
@@ -59,6 +76,8 @@ Final sign-off (tag `phase-6-done`):
       `npm run verify`, the validation tests, reference missile tests on detailed houses, frame
       cost of impact checks; findings in `docs/backlog.md` (run 2026-11-26: BL-001 to BL-003
       rechecked, BL-006 run, BL-007 to BL-012 new)
+- [ ] Slice D: benchmark harness specced and built (`npm run bench`, baseline saved);
+      profiling report with before/after numbers; cheap wins done, the rest in the backlog
 - [ ] Every Phase 6 backlog item decided by the user (fix, defer, accept); "fix" items fixed
 - [ ] User's final sign-off; tag `phase-6-done`
 

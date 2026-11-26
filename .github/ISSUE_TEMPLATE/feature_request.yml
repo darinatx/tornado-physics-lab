@@ -1,0 +1,31 @@
+name: Feature or spec proposal
+description: Suggest a new feature or a change to how the physics works.
+labels: ["proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Features start as a spec change (see CONTRIBUTING.md). Describe the idea here; once the
+        direction is agreed, the spec change comes as its own PR, then the code.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+      description: What the sim should do or show, and why it matters.
+    validations:
+      required: true
+  - type: input
+    id: specs
+    attributes:
+      label: Specs it touches
+      description: e.g. Spec 04 (debris), Spec 10 (impacts). Leave blank if unsure.
+  - type: textarea
+    id: physics
+    attributes:
+      label: Physics and sources
+      description: How it should be modeled, and the papers, standards or damage surveys behind it.
+  - type: textarea
+    id: cost
+    attributes:
+      label: Performance
+      description: Any idea what it costs per step, or a cheaper model that's just as realistic.
