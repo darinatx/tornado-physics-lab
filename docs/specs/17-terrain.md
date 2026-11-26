@@ -176,6 +176,12 @@ lab. When on, the ground is tinted by the roughness the wind actually feels:
 - **Lab:** with an override the layer is uniform at the class's z₀; with Auto it shows the
   surroundings' field.
 
+### Ground damage tracks (Spec 19)
+
+The marks a tornado leaves on the ground (lodged crops, scoured soil, debris gouges) are a
+change to the ground cover. Spec 19 defines them as a track grid that feeds this field's cover
+roughness and is drawn by the same ground material (Phase 7, slice C).
+
 ## Interface
 
 ```ts

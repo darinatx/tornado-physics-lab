@@ -21,7 +21,15 @@ setting any more; the structure lab can override it.
   pavement) and the blended town edge; terrain dropdown removed; probe and inspector show
   the local terrain; the lab's Terrain setting and its ground; the Ground roughness layer
   and its legend. Demo below. TERR-10 to TERR-12, TERR-14.
-- **C — Profiling** (CLAUDE.md rule 9, Phase loop step 4), before the preliminary gate:
+- **C — Ground damage tracks** (Spec 19, at the user's request 2026-11-26): a sparse 2 m track
+  grid near the core recording each cell's peak 2 m wind and direction and a scour dose
+  (aeolian erosion law, weighted by debris load); crops lodge, lawn is pushed over, then
+  thinned, stripped, bare soil; gouges and drag streaks from debris landings and slides; the
+  track lowers the roughness (Spec 17) and is drawn by the ground material. Calibrated so the
+  look follows from the wind (EF0–1 patchy, EF2 inward lodging, EF3 patchy stripping, EF4–5
+  scoured core). TERR-15 to TERR-24. Benchmark at the end (expected to cost little; TERR-24
+  caps it at 3%).
+- **D — Profiling** (CLAUDE.md rule 9, Phase loop step 4), before the preliminary gate:
   profile the benchmark scenes (`npm run bench`) and the browser frame, since the ground shader,
   cover mask and roughness layer are render work. List the top hotspots, each with an
   estimated gain as a range; confirm each one with the benchmark once it's done. Do the cheap,
@@ -31,7 +39,7 @@ setting any more; the structure lab can override it.
   `windAt` over a field (~1.5× a class near the ground), the layer refresh (6–10 ms).
   **Blocked:** `npm run bench` is Phase 6's slice D and isn't built yet; slices A and B were
   never benchmarked, so they get one run against the new baseline when it exists.
-- **D — Validation, in its own session alongside Phase 8** (CLAUDE.md Phase loop step 6):
+- **E — Validation, in its own session alongside Phase 8** (CLAUDE.md Phase loop step 6):
   `npm run verify`; z₀ against published values for comparable neighborhoods; the
   adjustment length at the town edge against internal-boundary-layer data; damage and EF
   readout for an EF2 and an EF4 preset through town before and after (the town was open
@@ -40,6 +48,7 @@ setting any more; the structure lab can override it.
 ## Specs touched
 
 - [17 — Terrain roughness and ground cover](../specs/17-terrain.md): new (TERR-01 to TERR-14)
+- [19 — Ground damage tracks](../specs/19-ground-tracks.md): new (TERR-15 to TERR-24); slice C
 - [01 — Wind field](../specs/01-wind-field.md): `windAt` on a roughness field (v2.0)
 - [04 — Debris](../specs/04-debris.md): per-terrain tables by local z₀
 - [05 — City](../specs/05-city.md): ground cover from the layout
@@ -92,6 +101,17 @@ Reviewed by the user 2026-11-26: "demo looks good".
   - Benchmark: none run. `npm run bench` (rule 9) doesn't exist yet; it's Phase 6's slice D.
     Slices A and B get one run when it does (exit criterion above).
 
+Ground damage tracks (slice C):
+
+- [ ] EF2 preset across the fields: crops lodged across the path, rows pointing inward from
+      both sides; lawn pushed over where it crosses town; nothing scoured
+- [ ] EF1: a faint, patchy track, mostly on one side
+- [ ] EF4: crops gone in the core and lodged at the edges; a strip of bare soil; dense gouges
+      and drag streaks; the strip narrows through town
+- [ ] Same EF4 at half the forward speed: more bare soil
+- [ ] The marks stay after the core has passed; the roughness layer shows the track smoother
+      than the fields around it
+
 ## Exit criteria
 
 Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
@@ -99,9 +119,10 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 - [x] Spec 17 approved (v1.0); Specs 01, 04, 05, 06, 07, 12, 13 updated
 - [x] Slice A: TERR-01 to TERR-09, TERR-13 pass
 - [x] Slice B: TERR-10 to TERR-12, TERR-14 pass; demo reviewed by the user (2026-11-26)
-- [ ] Benchmark run for slices A and B against the baseline once `npm run bench` exists;
+- [ ] Slice C: Spec 19 approved; TERR-15 to TERR-24 pass; demo reviewed by the user
+- [ ] Benchmark run for slices A, B and C against the baseline once `npm run bench` exists;
       any scene more than 10% slower explained, and fixed or logged
-- [ ] Slice C, profiling: hotspots listed with estimated and confirmed gains; cheap wins
+- [ ] Slice D, profiling: hotspots listed with estimated and confirmed gains; cheap wins
       done, the rest in the backlog (`perf`); before/after numbers recorded
 - [ ] `npm run verify:fast` passes
 - [ ] Specs updated, simplifications note and retro written
@@ -112,7 +133,7 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 
 Final sign-off (tag `phase-7-done`):
 
-- [ ] Slice D, validation, in its own session on `validate-phase-7` (from the `phase-7-prelim`
+- [ ] Slice E, validation, in its own session on `validate-phase-7` (from the `phase-7-prelim`
       tag), merged into `main` by pull request; findings in `docs/backlog.md`
 - [ ] Every Phase 7 backlog item decided by the user (fix, defer, accept); "fix" items fixed
 - [ ] User's final sign-off; tag `phase-7-done` on `main`
