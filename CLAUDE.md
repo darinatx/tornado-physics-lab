@@ -48,15 +48,32 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    sign-off** closes phase N: its validation has run and every backlog item from it has a
    decision from the user (fix, defer to a named phase, or accept as a documented
    limitation), with the "fix" items fixed; tag `phase-N-done`. See Phase loop.
+9. **Performance is measured, not guessed.** Performance matters a lot to the user. The target
+   is 60 fps on a mid-range laptop (Spec 00): a 16.7 ms frame shared by physics, the detail
+   zone and rendering. Every slice runs the benchmark and reports any regression. Every phase
+   profiles before its preliminary gate. Optimizations keep determinism and change no
+   physics results (the existing tests must pass unchanged). Among equally realistic models,
+   prefer the cheaper one. Realism still comes first (rule 1). See Phase loop steps 3–4.
 
 ## Phase loop
 
 1. **Spec**: draft or refine the specs the phase touches, resolve open questions toward
    realism, and approve them (see rule 1).
 2. **Plan**: fill in the phase doc (deliverables, exit criteria).
-3. **Build**: tests from acceptance criteria, then implementation.
-4. **Verify**: `npm run verify:fast` (typecheck + unit tests + trace), then run the app and walk
-   the demo checklist.
+3. **Build**: tests from acceptance criteria, then implementation. At the end of each slice,
+   run `npm run bench` and compare against the saved baseline. Note the result in the phase
+   doc's slice notes. Flag any scene that got more than 10% slower, with its cause, and either
+   fix it in the slice or log it for the profiling pass. Update the baseline only for a
+   slowdown that is accepted and explained.
+4. **Verify and profile**: `npm run verify:fast` (typecheck + unit tests + trace), then run the
+   app and walk the demo checklist. Then the **profiling slice**: profile the benchmark scenes
+   (and the browser frame for render work) and list the top hotspots. Give each
+   recommendation an estimated gain as a range, then confirm it with the benchmark once it's
+   done; estimates from reading code alone don't count. Do the cheap, large wins in the slice.
+   Bigger ones go to `docs/backlog.md` (category `perf`) for the user to decide, and the
+   structural work goes to the performance phase. Record before/after numbers in the phase
+   doc. This runs before the preliminary gate, so the separate validation session checks the
+   optimized code.
 5. **Preliminary gate**: update specs to match, write the retro and simplifications note →
    user watches the demo and gives preliminary sign-off → tag `phase-N-prelim`. Unit tests
    and the trace must pass (`npm run verify:fast`); validation tests don't block (bugs are
@@ -104,3 +121,7 @@ it to "Done" with the commit that fixed it, or the spec that records it as accep
 - `npm run trace`: check that every acceptance criterion has a test
 - `npm run verify`: everything, validation tests included (the validation session runs it)
 - `npm run verify:fast`: typecheck + unit tests + trace (must pass at every gate)
+- `npm run bench`: two seeded scenes only (an EF4 town pass and the 30-house detail-zone core
+  passage, each a short window around the core), ms per physics step by subsystem, compared
+  with the saved baseline (end of every slice). Don't add scenes without the user's OK. *Not built yet: spec it, then build it once Phase 6
+  validation finishes.*
