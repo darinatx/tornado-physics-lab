@@ -47,9 +47,11 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    the same run.
 7. **Fixed physics timestep.** Rendering interpolates; physics never uses frame delta directly.
 8. **Phase gates, in two steps.** **Preliminary sign-off** lets phase N+1 start: every
-   preliminary exit criterion checked, the user signs off, tag `phase-N-prelim`. **Final
+   preliminary exit criterion checked, the user signs off, tag `phase-N-prelim`, and the phase
+   branch merges into `main` and closes. **Final
    sign-off** closes phase N: its validation has run and every backlog item from it has a
-   decision from the user (fix, defer, or accept as a documented limitation), with the "fix" items fixed; tag `phase-N-done`. See Phase loop.
+   decision from the user (fix, defer, or accept as a documented limitation), with the "fix"
+   items fixed (each on its own short branch); tag `phase-N-done` on `main`. See Phase loop.
 9. **Performance is measured, not guessed.** Performance matters a lot to the user. The target
    is 60 fps on a mid-range laptop (Spec 00): a 16.7 ms frame shared by physics, the detail
    zone and rendering. Every slice runs the benchmark and reports any regression. Every phase
@@ -77,15 +79,19 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    doc. This runs before the preliminary gate, so the separate validation session checks the
    optimized code.
 5. **Preliminary gate**: update specs to match, write the retro and simplifications note →
-   user watches the demo and gives preliminary sign-off → tag `phase-N-prelim`. Unit tests
-   and the trace must pass (`npm run verify:fast`); validation tests don't block (bugs are
-   fixed along the way in the phase's slices). The next phase can start.
-6. **Validate (its own session, alongside the next phase)**: a separate session runs the
-   phase's validation: `npm run verify`, the validation tests, the phase's validation slice
+   user watches the demo and gives preliminary sign-off → tag `phase-N-prelim` → pull request
+   from the phase branch into `main`, merged when the user says so; the phase branch is then
+   deleted. Unit tests and the trace must pass (`npm run verify:fast`); validation tests don't
+   block (bugs are fixed along the way in the phase's slices). The next phase starts on a new
+   branch from `main`.
+6. **Validate (its own session, alongside the next phase)**: a separate session, on its own
+   short branch from the `phase-N-prelim` tag (`validate-phase-N`), runs the phase's
+   validation against exactly what was signed off: `npm run verify`, the validation tests, the phase's validation slice
    and any checks it adds against published data. It **records, it doesn't fix**: every bug
    and suggestion goes in `docs/backlog.md` (ID, phase, what, evidence, severity and why it has that severity, suggested
    fix). It may add validation tests and measurements; it changes no model code, so it can't
-   collide with the next phase's work.
+   collide with the next phase's work. Its branch merges into `main` by pull request when it's
+   done.
    **Code changes while validation runs.** Before phase N+1 makes its first code change while
    phase N's validation session is still running (and again before any later change in a
    riskier category than the last one asked about), stop and ask the user how to handle the
@@ -104,8 +110,9 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    that in the recommendation; if it's in its own worktree, say its results will describe the
    old code. Don't ask when no validation session is running or the change touches no code.
 7. **Final gate**: the user decides each open backlog item from the phase (fix, defer, or
-   accept as a documented limitation in its spec); "fix" items are fixed (usual
-   rules) → final sign-off → tag `phase-N-done`.
+   accept as a documented limitation in its spec); "fix" items are fixed (usual rules, each on
+   its own short branch from `main`, merged by pull request), and any unfinished gate work
+   gets its own branch the same way → final sign-off → tag `phase-N-done` on `main`.
 
 ### Backlog
 
@@ -123,20 +130,26 @@ only through a pull request with CI (`verify:fast`) passing. Never push to `main
 Work happens on a working branch: a phase branch (e.g. `phase-6-wind-tunnel`) or a short
 branch for one fix.
 
-**A branch per phase.** Each phase is built on its own branch, `phase-N-<name>` (e.g.
-`phase-7-terrain`), and reaches `main` in one pull request at the end of the phase.
-- **Start:** branch from `main` if the previous phase is merged. If it isn't yet (the
-  two-stage gate lets phase N start at N−1's preliminary sign-off), branch from the previous
-  phase branch at its `phase-(N-1)-prelim` tag, and merge `main` in once that phase lands.
+**A branch per phase, closed at preliminary sign-off.** Each phase is built on its own branch,
+`phase-N-<name>` (e.g. `phase-7-terrain`), and reaches `main` in one pull request at its
+preliminary sign-off. Work after that gets short branches.
+- **Start:** branch from `main`. (The previous phase is already merged: it landed at its
+  preliminary sign-off.)
 - **During the phase:** commit to the phase branch (a session in its own worktree merges its
   branch into the phase branch when its work is done), and push the phase branch to `origin`
   after each commit, so the work is backed up as it goes. The user has approved these pushes;
-  don't ask each time. Tag `phase-N-prelim` on the phase branch at preliminary sign-off and push
-  the tag.
-- **Validation** for phase N commits its backlog entries, tests and scripts to phase N's branch.
-- **End of phase:** at the final gate, open a pull request from the phase branch into `main`
-  with the phase summary, each backlog decision and the checks run. Merge only when the user
-  says so; then tag `phase-N-done` on `main` and push the tag.
+  don't ask each time.
+- **Preliminary sign-off:** tag `phase-N-prelim` on the phase branch and push the tag; open a
+  pull request into `main` with the phase summary, the demo the user reviewed and the checks
+  run. Merge only when the user says so; then delete the phase branch (locally and on
+  `origin`) and remove its worktree.
+- **After that, short branches from `main`**, each merged by pull request and then deleted:
+  - `validate-phase-N`: phase N's validation (from the `phase-N-prelim` tag, so it measures
+    what was signed off): backlog entries, validation tests, scripts. No model code.
+  - `fix/BL-NNN-<what>`: one backlog item the user has decided to fix (or is ready to work on).
+  - `phase-N-<what>`: gate work phase N still owes (e.g. Phase 6's benchmark slice).
+- **Final gate:** once validation is merged, every backlog item is decided and the "fix" items
+  are merged, tag `phase-N-done` on `main` and push the tag.
 - Never force-push.
 
 **Keep the working branch current with `main`.** At the start of every task, and again before
@@ -152,8 +165,8 @@ opening or updating a pull request:
 5. After a merge, run `npm run verify:fast` before continuing, and tell the user in one line
    what came in from `main`.
 
-Merging into `main`: a phase branch lands with a merge commit so its history stays; small
-pull requests are squash-merged.
+Merging into `main`: a phase branch lands with a merge commit so its history stays; short
+branches are squash-merged.
 
 ## Commands
 
