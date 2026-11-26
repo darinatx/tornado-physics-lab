@@ -344,4 +344,133 @@ describe("Spec 09 slice B — detail zone", () => {
     expect(shards.every((m) => !h.isAttached(m.id))).toBe(true);
     e.dispose();
   });
+  test("STR-32: rubble with nothing left under it falls: a town house's roof and walls going, or its support removed any other way", async () => {
+    const { DetailEngine } = await import("../../src/sim/detailZone");
+    const { townState } = await import("../../src/sim/townColliders");
+    /** A's rafters resting as rubble on town house B's roof; returns what the test needs. */
+    const setup = () => {
+      const a = exactHouse();
+      const b = exactHouse();
+      b.x = 20;
+      b.id = 1;
+      const e = new DetailEngine([a, b]);
+      const t = tornado(-5000, 1);
+      let n = 0;
+      const step = (town?: ReturnType<typeof townState>[]) => e.step({ enter: n === 0 ? [{ index: 0, removed: [] }] : [], n: n++, tornado: t, terrain: "open", exit: [], town });
+      step([townState(1, b)]);
+      const h = e.houses.get(0)!;
+      while (!h.complete) step();
+      // Three of A's rafter pairs, set exactly over B's own rafters (same house, 20 m along),
+      // 5 cm up: they rest there like a saddle and become rubble.
+      const rafters = h.framing.members.filter((m) => m.kind === "rafterPair").sort((p, q) => p.pos.x - q.pos.x || p.pos.z - q.pos.z);
+      const ids = rafters.slice(10, 13).map((m) => m.id);
+      const orig = h.memberPose(ids[0]!).pos;
+      const body = h.launch(ids, { x: b.x, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })!;
+      const now = h.memberPose(ids[0]!).pos;
+      const bt = body.translation();
+      body.setTranslation({ x: bt.x + orig.x + b.x - now.x, y: bt.y + orig.y + 0.05 - now.y, z: bt.z + orig.z - now.z }, true);
+      const handle = body.handle;
+      for (let k = 0; k < 60 * 4 && !h.rubble.has(handle); k++) step();
+      expect(h.rubble.has(handle)).toBe(true);
+      const y0 = h.memberPose(ids[0]!).pos.y;
+      expect(y0).toBeGreaterThan(b.wallHeight + 0.2); // on B's roof
+      return { e, b, h, ids, y0, step };
+    };
+    // B's roof and walls go (every bay and panel): its stand-in is rebuilt without them, and
+    // the rafters drop to the ground.
+    {
+      const { e, b, h, ids, y0, step } = setup();
+      const gone = { part: "roofBay", index: 0, time: 0, load: 0, capacity: 0, mph: 0, sign: 0, wind: { x: 0, y: 0, z: 0 } } as const;
+      b.bays.forEach((x) => (x.failed = { ...gone }));
+      b.panels.forEach((x) => (x.failed = { ...gone, part: "wallPanel" }));
+      step([townState(1, b)]);
+      for (let k = 0; k < 60 * 3; k++) step();
+      expect(h.memberPose(ids[0]!).pos.y).toBeLessThan(y0 - 1);
+      e.dispose();
+    }
+    // The support goes without anything telling the rubble (here: B's colliders removed
+    // straight from the world): its support check (4 times a second) finds nothing under it.
+    {
+      const { e, h, ids, y0, step } = setup();
+      const sw = e.worldFor(0)!;
+      for (const c of sw.townColliders.get(1)!) sw.world.removeCollider(c, false);
+      for (let k = 0; k < 60 * 3; k++) step();
+      expect(h.memberPose(ids[0]!).pos.y).toBeLessThan(y0 - 1);
+      e.dispose();
+    }
+  }, 60000);
+
+  test("STR-33: a house past its settle timeout freezes only once every piece is down and creeping, never in the air", async () => {
+    const { DetailEngine } = await import("../../src/sim/detailZone");
+    const a = exactHouse();
+    const e = new DetailEngine([a]);
+    const t = tornado(-5000, 1);
+    let n = 0;
+    const step = (exit: number[] = []) => e.step({ enter: n === 0 ? [{ index: 0, removed: [] }] : [], n: n++, tornado: t, terrain: "open", exit });
+    step();
+    const h = e.houses.get(0)!;
+    while (!h.complete) step();
+    // A wall frame thrown up at 15 m/s, spinning (~3 s in the air, then it topples and slides
+    // flat), and the house leaves the zone with its settle timeout already over.
+    const frame = h.framing.members.find((m) => m.kind === "wallFrame")!;
+    h.launch([frame.id], { x: 0, y: 8, z: 30 }, { x: 0, y: 15, z: 0 }, { x: 0.5, y: 0, z: 0 });
+    step([0]);
+    h.releasedAt = -DETAIL.settleTimeout - 1;
+    let frozenAt = -1;
+    let downFor = 0;
+    for (let k = 0; k < 60 * 15 && frozenAt < 0; k++) {
+      const r = step();
+      if (r.frozen.length) frozenAt = k;
+      else downFor = h.unsettled() ? 0 : downFor + 1;
+    }
+    // It came down first and froze with nothing in the air or moving fast (after a second of
+    // creeping, or sooner once everything rested): flat on the ground.
+    expect(frozenAt).toBeGreaterThan(60 * 3);
+    expect(downFor).toBeGreaterThan(0);
+    expect(h.frozen).toBe(true);
+    expect(h.memberPose(frame.id).pos.y).toBeLessThan(0.5);
+    e.dispose();
+  }, 60000);
+  test("STR-35: a light piece held still by rubble or a wall comes to rest where it lies; it wakes when the wind turns away or its support goes", async () => {
+    const RAPIER = (await import("@dimforge/rapier3d-simd-compat")).default;
+    const { buildTownColliders } = await import("../../src/sim/townColliders");
+    const sw = new StructureWorld();
+    const a = exactHouse();
+    const h = sw.addHouse(a);
+    // Town house B 20 m east (its west wall at x = 13), and a fixed box near A standing in for
+    // rubble (top at 0.6 m).
+    const b = exactHouse();
+    b.x = 20;
+    b.id = 1;
+    buildTownColliders(sw.world, b, sw.townPlaneOf);
+    sw.townNear = () => [b];
+    const box = sw.world.createCollider(RAPIER.ColliderDesc.cuboid(0.6, 0.3, 0.6).setTranslation(9, 0.3, 4));
+    const shards = h.framing.members.filter((m) => m.kind === "pane");
+    sw.step(steady(0));
+    // One shard on the ground against B's wall, one on top of the box; 30 mph wind from the
+    // west presses the first into the wall.
+    h.launch([shards[0]!.id], { x: 12.65, y: 0.3, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+    h.launch([shards[1]!.id], { x: 9, y: 1, z: 4 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+    const piece = (id: number) => [...h.light.values()].find((l) => l.members.includes(id))?.piece;
+    for (let k = 0; k < 60 * 1.5; k++) sw.step(steady(30));
+    const wall = piece(shards[0]!.id)!;
+    const onBox = piece(shards[1]!.id)!;
+    expect(wall.resting).toBe(true);
+    expect(onBox.resting).toBe(true);
+    expect(onBox.pos.y).toBeGreaterThan(0.6); // still on the box
+    // At rest it stays exactly where it lies (no phantom speed, no drift).
+    const at = [{ ...wall.pos }, { ...onBox.pos }];
+    for (let k = 0; k < 60 * 2; k++) sw.step(steady(30));
+    expect(wall.pos).toEqual(at[0]);
+    expect(onBox.pos).toEqual(at[1]);
+    expect(Math.hypot(wall.vel.x, wall.vel.y, wall.vel.z)).toBe(0);
+    // The box goes: the piece on it falls.
+    sw.world.removeCollider(box, false);
+    for (let k = 0; k < 60; k++) sw.step(steady(30));
+    expect(onBox.pos.y).toBeLessThan(at[1]!.y - 0.3);
+    // The wind turns to blow from the east, away from the wall: the piece pressed there moves off.
+    for (let k = 0; k < 60 * 2; k++) sw.step(steady(30, 180));
+    expect(wall.pos.x).toBeLessThan(at[0]!.x - 0.1);
+    sw.dispose();
+  }, 60000);
 });

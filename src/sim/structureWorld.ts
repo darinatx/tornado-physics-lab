@@ -203,6 +203,38 @@ export class StructureWorld {
     return found;
   }
 
+  /** Is anything under this body: do its colliders, lowered 5 cm, touch anything else (the
+   *  ground, a slab, a house, rubble or another piece)? */
+  hasSupport(body: RAPIER.RigidBody): boolean {
+    let under = false;
+    for (let i = 0; i < body.numColliders() && !under; i++) {
+      const c = body.collider(i);
+      const t = c.translation();
+      this.world.intersectionsWithShape({ x: t.x, y: t.y - 0.05, z: t.z }, c.rotation(), c.shape, (o) => {
+        if (o.parent()?.handle === body.handle) return true;
+        under = true;
+        return false;
+      });
+    }
+    return under;
+  }
+
+  /** Is a light piece resting or leaning on something: the ground (within 3 cm), or any fixed
+   *  collider (its own house included) within 2 cm of its box, lowered 3 cm? */
+  lightSupported(p: Piece): boolean {
+    if (p.pos.y - supportHeightOf(p) < 0.03) return true;
+    let hit = false;
+    this.world.intersectionsWithShape(
+      { x: p.pos.x, y: p.pos.y - 0.03, z: p.pos.z }, rot(p.q), this.boxOf(p, -0.02),
+      () => {
+        hit = true;
+        return false;
+      },
+      RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC, undefined, this.ground,
+    );
+    return hit;
+  }
+
   /** Light pieces still on Rapier (their first half second): body handle → house. */
   readonly lightBodies = new Map<number, DetailHouse>();
   /** Light bodies pushed clear this step. */
@@ -488,6 +520,27 @@ export class StructureWorld {
     return out;
   }
 
+  /** Remove stand-in colliders of a house around the zone (its state changed, or one of this
+   *  world's own houses replaced them). Whatever rests on them wakes first: rubble is fixed, and
+   *  Rapier never wakes a fixed body (nor keeps contacts between two fixed bodies), so a pile
+   *  on a roof that just blew off would otherwise stay in the air. */
+  removeTownColliders(cols: readonly RAPIER.Collider[]): void {
+    for (const [h, handle] of this.rubbleTouching(cols)) h.wakeRubble(handle);
+    for (const c of cols) {
+      const { center, half } = colliderBox(c, 0.01);
+      this.world.collidersWithAabbIntersectingAabb(center, half, (other) => {
+        const b = other.parent();
+        if (b && b.isDynamic() && b.isSleeping()) b.wakeUp();
+        return true;
+      });
+    }
+    for (const c of cols) {
+      this.townHouseOf.delete(c.handle);
+      this.townPlaneOf.delete(c.handle);
+      this.world.removeCollider(c, false);
+    }
+  }
+
   dispose(): void {
     this.world.free();
     this.events.free();
@@ -510,6 +563,8 @@ export class DetailHouse {
   frozen = false;
   /** Sim time the house left the zone (its pieces settle, then it freezes), or null. */
   releasedAt: number | null = null;
+  /** Past its settle timeout: since when every piece has been down and creeping (s). */
+  creepSince: number | null = null;
   /** Roof-height wind at the last step (mph), and whether the last load solve was skipped. */
   refMph = 0;
   calmSkipped = false;
@@ -1425,11 +1480,17 @@ export class DetailHouse {
   /** Aerodynamic forces on the house's moving groups, per member plate, from the wind where it is. */
   aero(wind: WindSource): void {
     const world = this.sw.world;
-    // Rubble the wind could now move (lift above its weight, or push past friction) wakes.
+    // Rubble the wind could now move (lift above its weight, or push past friction) wakes, and
+    // so does rubble with nothing left under it (what it rested on moved away or was removed:
+    // Rapier never wakes a fixed body).
     if (this.rubble.size && this.rubbleTick++ % DETAIL.rubbleWindEvery === 0) {
       const wake: number[] = [];
       for (const [handle, group] of this.rubble) {
         const body = world.getRigidBody(handle);
+        if (!this.sw.hasSupport(body)) {
+          wake.push(handle);
+          continue;
+        }
         const tr = body.worldCom();
         const wc = wind.at(tr);
         if (Math.hypot(wc.x, wc.y, wc.z) < 0.5) continue;
@@ -1674,7 +1735,16 @@ export class DetailHouse {
       const p = lp.piece;
       if (p.resting) {
         if (!checkResting) continue;
-        if (!wakeIfForced(p, wind.at({ x: p.pos.x, y: 1, z: p.pos.z }))) continue;
+        // Held by something other than the floor: it falls once nothing is under or beside it.
+        const unheld = lp.held && !this.sw.lightSupported(p);
+        if (unheld) {
+          p.resting = false;
+          p.grounded = false;
+          p.snagged = false;
+          p.snagDir = null;
+        } else if (!wakeIfForced(p, wind.at({ x: p.pos.x, y: 1, z: p.pos.z }))) continue;
+        lp.held = false;
+        lp.still = undefined;
       }
       // The houses around it (Spec 10 v0.6), and the ground under it: a slab top (this house's
       // or another's) or the ground.
@@ -1695,6 +1765,7 @@ export class DetailHouse {
       const close = (b: Building) => Math.hypot(p.pos.x - b.x, p.pos.z - b.z) < Math.hypot(b.width, b.depth) / 2 + p.def.dims[0] + 3 && p.pos.y - supportHeightOf(p) < b.wallHeight + b.roofRise + 2;
       if (close(this.building) || near.some(close)) this.blockLight(p, from, qFrom);
       if (near.length) unbury(p, targets);
+      this.holdStill(lp, wind);
       for (const id of lp.members) this.lightChanged.push(id);
       this.lightMoved.push(lp);
       if (Math.abs(p.pos.x) > GROUND_HALF - 50 || Math.abs(p.pos.z) > GROUND_HALF - 50 || p.pos.y > 5000) {
@@ -1707,6 +1778,35 @@ export class DetailHouse {
         this.lostWhy["left the area"] = (this.lostWhy["left the area"] ?? 0) + lp.members.length;
       }
     }
+  }
+
+  /**
+   * A light piece held in place by something other than the floor (rubble under it, a wall the
+   * wind presses it against) comes to rest exactly where it is once it has stayed within
+   * heldDrift and heldTurnDeg for heldAfterS while touching something (Spec 09 v0.16). The wind
+   * failed to move it all that time, so it stays until the wind turns (Spec 04 snag rule) or
+   * could lift it, or its support goes.
+   */
+  private holdStill(lp: LightPiece, wind: WindSource): void {
+    const p = lp.piece;
+    if (p.resting) return;
+    const s = lp.still;
+    const t = this.sw.time;
+    const turned = s ? 2 * Math.acos(Math.min(1, Math.abs(s.q[0] * p.q[0] + s.q[1] * p.q[1] + s.q[2] * p.q[2] + s.q[3] * p.q[3]))) * (180 / Math.PI) : Infinity;
+    if (!s || Math.hypot(p.pos.x - s.pos.x, p.pos.y - s.pos.y, p.pos.z - s.pos.z) > DETAIL.heldDrift || turned > DETAIL.heldTurnDeg) {
+      lp.still = { pos: { ...p.pos }, q: [p.q[0], p.q[1], p.q[2], p.q[3]], t };
+      return;
+    }
+    if (t - s.t < DETAIL.heldAfterS - 1e-9 || !(p.grounded || this.sw.lightSupported(p))) return;
+    const w = wind.at({ x: p.pos.x, y: 1, z: p.pos.z });
+    const wh = Math.hypot(w.x, w.z);
+    p.resting = true;
+    p.vel = { x: 0, y: 0, z: 0 };
+    p.snagged = wh > 0;
+    p.snagDir = wh > 0 ? { x: w.x / wh, z: w.z / wh } : null;
+    p.restedAt = Math.min(p.restedAt, t);
+    lp.held = true;
+    lp.still = undefined;
   }
 
   /** Stop a light piece where its box first meets something fixed, and bounce it off. */
@@ -1814,6 +1914,27 @@ export class DetailHouse {
     return n;
   }
 
+  /** Is any loose piece still falling, toppling or flying (Spec 09 v0.15)? A piece counts as
+   *  settled enough to freeze when it creeps (under DETAIL.creepSpeed and creepSpin) while
+   *  supported: a rigid piece with something under it (its colliders, lowered 5 cm, touch
+   *  something else), a light piece on the ground or resting or leaning on anything fixed. */
+  unsettled(): boolean {
+    const world = this.sw.world;
+    for (const { piece } of this.light.values()) {
+      if (piece.resting) continue;
+      const v = Math.hypot(piece.vel.x, piece.vel.y, piece.vel.z);
+      if (v >= DETAIL.creepSpeed || (!piece.grounded && !this.sw.lightSupported(piece))) return true;
+    }
+    for (const [handle] of this.groupBodies) {
+      const body = world.getRigidBody(handle);
+      if (body.isSleeping()) continue;
+      const v = body.linvel();
+      const w = body.angvel();
+      if (Math.hypot(v.x, v.y, v.z) >= DETAIL.creepSpeed || Math.hypot(w.x, w.y, w.z) >= DETAIL.creepSpin || !this.sw.hasSupport(body)) return true;
+    }
+    return false;
+  }
+
   /** Freeze: keep every member's final pose, remove the house's bodies from the world. */
   freeze(): void {
     if (this.frozen) return;
@@ -1835,6 +1956,10 @@ export class DetailHouse {
 /** A light group flying on the Spec 04 debris model. */
 interface LightPiece {
   piece: Piece;
+  /** Where it was when it last moved more than DETAIL.heldDrift / heldTurnDeg, and when. */
+  still?: { pos: Vec3; q: Q; t: number };
+  /** At rest held by something other than the floor (Spec 09 v0.16): wakes if that goes. */
+  held?: boolean;
   /** Rotation from house-local axes (the group's frame) to the piece's axes. */
   r: Q;
   /** Center of the group's box, house-local. */

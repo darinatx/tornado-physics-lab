@@ -225,12 +225,7 @@ export class DetailEngine {
     sw.townNear = this.townNear;
     const build = (i: number, c: Building) => {
       const old = sw.townColliders.get(i);
-      if (old)
-        for (const col of old) {
-          sw.townHouseOf.delete(col.handle);
-          sw.townPlaneOf.delete(col.handle);
-          sw.world.removeCollider(col, false);
-        }
+      if (old) sw.removeTownColliders(old);
       const cols = buildTownColliders(sw.world, c, sw.townPlaneOf);
       for (const col of cols) sw.townHouseOf.set(col.handle, { x: c.x, z: c.z, index: i });
       sw.townColliders.set(i, cols);
@@ -272,11 +267,7 @@ export class DetailEngine {
           // One of this world's own houses: its stand-ins go once its members are all built.
           const old = own.complete ? sw.townColliders.get(i) : undefined;
           if (old) {
-            for (const col of old) {
-              sw.townHouseOf.delete(col.handle);
-              sw.townPlaneOf.delete(col.handle);
-              sw.world.removeCollider(col, false);
-            }
+            sw.removeTownColliders(old);
             sw.townColliders.delete(i);
           }
           continue;
@@ -410,8 +401,16 @@ export class DetailEngine {
           dods.push(i, d);
         }
       }
-      // Freeze once released and settled (or after the timeout).
-      if (h.releasedAt !== null && (!moved || sw.time - h.releasedAt > DETAIL.settleTimeout)) {
+      // Freeze once released and settled, or after the timeout once every piece is down and
+      // only creeping (one the wind keeps nudging may stop where it is; one in flight, falling
+      // or toppling must come down first).
+      let creeping = false;
+      if (h.releasedAt !== null && moved && sw.time - h.releasedAt > DETAIL.settleTimeout) {
+        if (h.unsettled()) h.creepSince = null;
+        else h.creepSince ??= sw.time;
+        creeping = h.creepSince !== null && sw.time - h.creepSince >= DETAIL.creepForS - 1e-9;
+      }
+      if (h.releasedAt !== null && (!moved || creeping)) {
         h.freeze();
         frozen.push({ index: i, undamaged: h.failures.length === 0 && !h.lost.some(Boolean) });
       }

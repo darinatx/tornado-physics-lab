@@ -57,6 +57,36 @@ describe("Spec 09 slice B — detail zone in the sim", () => {
     for (const [i, h] of a.detail.houses) expect(b.detail.houses.get(i)!.poses).toEqual(h.poses);
     expect(b.world.buildings.map((x) => x.dod)).toEqual(a.world.buildings.map((x) => x.dod));
   }, 600000);
+
+  test("STR-34: houses that left the zone keep getting steps until they freeze; none stops with a piece hanging in the air", () => {
+    let backend = null as ReturnType<typeof createLocalBackend> | null;
+    const sim = createSim({ detailHouses: 4 }, 3, QUICK, (_s, b) => (backend = createLocalBackend(b)));
+    sim.setDetailFocus({ x: 0, z: 0 });
+    const engine = () => backend!.engines[0]!;
+    const houses = () => [...(backend?.engines[0]?.houses ?? [])];
+    // Until the tornado is gone and every house has left the zone (all at once when it dissipates).
+    let entered = 0;
+    let leftAt = -1;
+    for (let k = 0; k < 60 * 90 && leftAt < 0; k++) {
+      sim.advance(1 / 60);
+      entered = Math.max(entered, houses().length);
+      if (entered && houses().every(([, h]) => h.releasedAt !== null)) leftAt = sim.time;
+    }
+    expect(entered).toBe(4);
+    expect(leftAt).toBeGreaterThan(0);
+    const t0 = new Map(houses().map(([i, h]) => [i, h.frozen ? null : engine().worldFor(i)!.time]));
+    for (let k = 0; k < 60 * 60; k++) sim.advance(1 / 60);
+    for (const [i, h] of houses()) {
+      if (h.frozen) continue;
+      // Still settling: it kept getting steps all along, and what keeps it from freezing is a
+      // piece still flying (lofted by the storm's updraft), not one left hanging.
+      const sw = engine().worldFor(i)!;
+      expect(sw.time - t0.get(i)!).toBeGreaterThan(59);
+      for (const [handle] of h.groupBodies) expect(sw.hasSupport(sw.world.getRigidBody(handle))).toBe(true);
+      for (const { piece } of h.light.values())
+        if (!piece.resting && !piece.grounded && !sw.lightSupported(piece)) expect(Math.hypot(piece.vel.x, piece.vel.y, piece.vel.z)).toBeGreaterThan(DETAIL.creepSpeed);
+    }
+  }, 600000);
 });
 
 describe("Spec 09 — detail zone performance in the sim", () => {
