@@ -210,10 +210,11 @@ describe("Spec 07 — instruments", () => {
     expect(rateText(1.5)).toBe("1.5× real time");
   });
 
-  test("INST-14: damage colors and repeat-on-dissipation start off", async () => {
+  test("INST-14: damage colors, repeat-on-dissipation and follow start off", async () => {
     const { DEFAULT_PANEL_STATE } = await import("../../src/ui/panelDefaults");
     expect(DEFAULT_PANEL_STATE.damageColors).toBe(false);
     expect(DEFAULT_PANEL_STATE.autoRepeat).toBe(false);
+    expect(DEFAULT_PANEL_STATE.follow).toBe(false);
   });
 
   test("INST-08: building report matches the building", () => {

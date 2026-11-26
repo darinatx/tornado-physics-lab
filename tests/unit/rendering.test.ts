@@ -417,40 +417,70 @@ describe("Spec 06 — rendering", () => {
     // No previous frame: nothing to follow yet.
     expect(followDelta(null, { x: 5, z: 5 }, false)).toEqual({ x: 0, z: 0 });
   });
-  test("REND-17: the camera starts framed on the tornado, ahead of it on its track", async () => {
+  test("REND-17: the camera starts over the town center, 100 m up, facing the spawn", async () => {
     const { startView } = await import("../../src/render/cameraFly");
-    const fov = 50;
-    const aspect = 16 / 9;
-    const half = (fov / 2) * (Math.PI / 180);
-    const hHalf = Math.atan(Math.tan(half) * aspect);
-    const check = (center: { x: number; z: number }, dir: { x: number; z: number }, rMax: number, cloudBase: number) => {
-      const v = startView(center, dir, rMax, cloudBase, fov, aspect);
-      expect(v.camera.y).toBe(30);
-      expect(v.target).toMatchObject({ x: center.x, y: 0.4 * cloudBase, z: center.z });
-      const rel = { x: v.camera.x - center.x, z: v.camera.z - center.z };
-      const D = Math.hypot(rel.x, rel.z);
-      // Ahead on the track and 30% to the right (right of the heading = (−dz, dx)).
-      const along = rel.x * dir.x + rel.z * dir.z;
-      const across = rel.x * -dir.z + rel.z * dir.x;
-      expect(across / along).toBeCloseTo(0.3, 9);
-      expect(D).toBeGreaterThanOrEqual(300 - 1e-6);
-      // Frames ground to cloud base in ≤ 80% of the view height, 4·R_max in ≤ 60% of its width,
-      // and is the nearest such distance (one of them is tight, or the 300 m floor).
-      const vert = Math.atan((cloudBase - 30) / D) + Math.atan(30 / D);
-      const wide = 2 * Math.atan((2 * rMax) / D);
-      expect(vert).toBeLessThanOrEqual(0.8 * 2 * half + 1e-6);
-      expect(wide).toBeLessThanOrEqual(0.6 * 2 * hHalf + 1e-6);
-      const tight = Math.abs(vert - 0.8 * 2 * half) < 1e-3 || Math.abs(wide - 0.6 * 2 * hHalf) < 1e-3 || Math.abs(D - 300) < 1e-6;
-      expect(tight).toBe(true);
-      return D;
+    const town = { x: 0, z: 0 };
+    const spawn = { x: -2800, z: 1200 };
+    const v = startView(town, spawn, { x: 1, z: 0 }, 550);
+    expect(v.camera).toEqual({ x: 0, y: 100, z: 0 });
+    // Looking at the spawn's axis at 40% of the cloud base.
+    expect(v.target).toEqual({ x: -2800, y: 0.4 * 550, z: 1200 });
+    // A spawn on top of the town center: look along the heading instead.
+    const on = startView(town, { x: 0.2, z: 0 }, { x: 0, z: 1 }, 500);
+    expect(on.camera).toEqual({ x: 0, y: 100, z: 0 });
+    expect(on.target.x).toBeCloseTo(0, 9);
+    expect(on.target.z).toBeGreaterThan(100);
+    // Follow starts off.
+    const { DEFAULT_PANEL_STATE } = await import("../../src/ui/panelDefaults");
+    expect(DEFAULT_PANEL_STATE.follow).toBe(false);
+  });
+
+  test("REND-19: turning follow on keeps the camera in place and turns it to the core", async () => {
+    const { aimAtCore, turnToward, followDelta } = await import("../../src/render/cameraFly");
+    const cam = { x: 0, y: 100, z: 0 };
+    const core = { x: -1500, z: 2000 };
+    // The look point: the core's center on the ground (the middle of the R_max ring), whatever
+    // the camera height or cloud base; the camera isn't moved.
+    expect(aimAtCore(cam, core, { x: 1, z: 0 })).toEqual({ x: -1500, y: 0, z: 2000 });
+    expect(aimAtCore({ x: 0, y: 2, z: 0 }, core, { x: 1, z: 0 })).toEqual({ x: -1500, y: 0, z: 2000 });
+    // On the axis: looks out along its current heading.
+    const on = aimAtCore({ x: -1500, y: 50, z: 2000.5 }, core, { x: 0, z: 1 });
+    expect(on.x).toBeCloseTo(-1500, 9);
+    expect(on.z).toBeGreaterThan(2000.5);
+    // The turn is eased over 0.6 s: it starts at the old view, ends on the core, never moves
+    // the camera, and passes through in between (no snap).
+    const from = { x: 50, y: 0, z: 0 }; // looking east along the ground, 50 m away
+    const to = aimAtCore(cam, core, { x: 1, z: 0 });
+    const dirOf = (p: { x: number; y: number; z: number }) => {
+      const d = { x: p.x - cam.x, y: p.y - cam.y, z: p.z - cam.z };
+      const l = Math.hypot(d.x, d.y, d.z);
+      return { x: d.x / l, y: d.y / l, z: d.z / l };
     };
-    const ef0 = check({ x: -2800, z: 0 }, { x: 1, z: 0 }, 40, 550);
-    const ef5 = check({ x: 100, z: 50 }, { x: 0, z: 1 }, 350, 400);
-    // A small tornado starting far outside town is now well under a kilometre away.
-    expect(ef0).toBeLessThan(1000);
-    expect(ef5).toBeGreaterThan(ef0);
-    // Before the canvas has a size (aspect 0/0) the view is still a real place.
-    const nan = startView({ x: 0, z: 0 }, { x: 1, z: 0 }, 300, 400, fov, NaN);
-    expect(Number.isFinite(nan.camera.x + nan.camera.y + nan.camera.z)).toBe(true);
+    const angle = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => {
+      const u = dirOf(a), v = dirOf(b);
+      return Math.acos(Math.min(1, u.x * v.x + u.y * v.y + u.z * v.z));
+    };
+    const total = angle(from, to);
+    expect(angle(turnToward(cam, from, to, 0), from)).toBeLessThan(1e-6);
+    expect(turnToward(cam, from, to, 0.6)).toEqual(to);
+    expect(turnToward(cam, from, to, 1)).toEqual(to);
+    const mid = turnToward(cam, from, to, 0.3);
+    expect(angle(mid, from)).toBeGreaterThan(0.2 * total);
+    expect(angle(mid, to)).toBeGreaterThan(0.2 * total);
+    // Steady: each 0.06 s turns well under half of the whole turn.
+    for (let t = 0; t < 0.6; t += 0.06) expect(angle(turnToward(cam, from, to, t), turnToward(cam, from, to, t + 0.06))).toBeLessThan(0.3 * total);
+    // Then it moves with the tornado.
+    expect(followDelta(core, { x: -1490, z: 2005 }, false)).toEqual({ x: 10, z: 5 });
+  });
+
+  test("REND-19: while following the camera keeps facing the core; turning or moving away ends follow", async () => {
+    const { keepsFollow } = await import("../../src/render/cameraFly");
+    // Inputs that keep the look point on the core keep following.
+    expect(keepsFollow("height")).toBe(true);
+    expect(keepsFollow("zoom")).toBe(true);
+    // Inputs that aim or move the camera off it end following.
+    expect(keepsFollow("move")).toBe(false);
+    expect(keepsFollow("slide")).toBe(false);
+    expect(keepsFollow("turn")).toBe(false);
   });
 });

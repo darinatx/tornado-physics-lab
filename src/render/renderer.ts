@@ -3,7 +3,7 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { flyStep, followDelta, isTyping, keyEvent, lookStep, NO_KEYS, releaseAll, startView } from "./cameraFly";
+import { flyStep, followDelta, isTyping, keyEvent, lookStep, NO_KEYS, aimAtCore, keepsFollow, turnToward, releaseAll, startView } from "./cameraFly";
 import type { FlyKeys, TurnKeys } from "./cameraFly";
 import { CAMERA, RENDER } from "../config/render";
 import type { Building } from "../core/damage/types";
@@ -22,6 +22,9 @@ import type { DetailView } from "../sim/detailBackend";
 import { createDebrisLayer, createSettledLayer } from "./debris";
 import { interpolateTornado } from "./interpolate";
 import { createDustLayer } from "./dust";
+
+/** The town is laid out over ±CITY.extent/2 about the origin (src/sim/city.ts). */
+const TOWN_CENTER = { x: 0, z: 0 } as const;
 
 export interface Layers {
   arrows: boolean;
@@ -84,7 +87,6 @@ export function createRenderer(
   getDetail: () => { view: DetailView; spot: { x: number; z: number; r: number } | null } | null = () => null,
   /** The tornado's mature core radius (m), for framing the start view (REND-17): while it spins
    *  up the core is wider than it will be. Defaults to the current radius. */
-  getMatureRMax: (() => number) | null = null,
 ): SimRenderer {
   // Logarithmic depth: debris lies millimetres above the ground hundreds of metres away, which a
   // linear 1 m–30 km depth buffer can't separate (pieces flickered in and out as the camera moved).
@@ -237,6 +239,7 @@ export function createRenderer(
   const leaveFollow = () => {
     if (!follow) return;
     follow = false;
+    followTurnFrom = null;
     movedCb?.();
   };
   // A pan (plain left-drag, one finger) stops following the tornado once the pointer moves;
@@ -251,12 +254,17 @@ export function createRenderer(
     if (turnFrom) {
       // Mouse-look: move right to look right, up to look up.
       const k = CAMERA.turnPerPixel;
-      turn(-(e.clientX - turnFrom.x) * k, -(e.clientY - turnFrom.y) * k);
+      const dx = e.clientX - turnFrom.x;
+      const dy = e.clientY - turnFrom.y;
+      if (dx || dy) {
+        if (!keepsFollow("turn")) leaveFollow();
+        turn(-dx * k, -dy * k);
+      }
       turnFrom = { x: e.clientX, y: e.clientY };
     }
     if (panFrom && Math.hypot(e.clientX - panFrom.x, e.clientY - panFrom.y) > 4) {
       panFrom = null;
-      leaveFollow();
+      if (!keepsFollow("slide")) leaveFollow();
     }
   };
   const onPointerUp = () => {
@@ -272,12 +280,15 @@ export function createRenderer(
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const hit = new THREE.Vector3();
 
-  let follow = true;
+  let follow = false;
   /** Tornado center at the last frame (follow moves the camera by how far it went). */
   let followFrom: { x: number; z: number } | null = null;
   /** Sim time at the last frame (it going backwards means a new run). */
   let followTime = 0;
   let recenter = false;
+  /** The eased turn to the core after follow is turned on (REND-19): where it started looking. */
+  let followTurnFrom: { x: number; y: number; z: number } | null = null;
+  let turnStart = 0;
   let placed = false;
   let layers: Layers = { arrows: false, funnel: true, tracers: true, debris: true };
   const m = new THREE.Matrix4();
@@ -353,22 +364,14 @@ export function createRenderer(
 
       // Camera.
       if (!placed) {
-        // Framed on the tornado, ahead of it on its track (REND-17).
+        // Over the town center, facing where the tornado spawns (REND-17).
         const sp = Math.hypot(s.velocity.x, s.velocity.z);
         const dir = sp > 1e-9 ? { x: s.velocity.x / sp, z: s.velocity.z / sp } : { x: 1, z: 0 };
-        const v = startView(s.center, dir, getMatureRMax ? getMatureRMax() : s.rMax, curr.cloudBase, camera.fov, camera.aspect);
+        const v = startView(TOWN_CENTER, s.center, dir, curr.cloudBase);
         controls.target.set(v.target.x, v.target.y, v.target.z);
         camera.position.set(v.camera.x, v.camera.y, v.camera.z);
         camera.lookAt(controls.target);
         placed = true;
-      } else if (follow && recenter) {
-        const dx = s.center.x - controls.target.x;
-        const dz = s.center.z - controls.target.z;
-        controls.target.x += dx;
-        controls.target.z += dz;
-        camera.position.x += dx;
-        camera.position.z += dz;
-        recenter = false;
       } else if (follow) {
         // Follow: carry the camera along as the tornado moves, keeping the view you chose
         // (turned, zoomed or tilted) rather than pulling it back onto the center. A new run
@@ -379,6 +382,28 @@ export function createRenderer(
         controls.target.z += d.z;
         camera.position.x += d.x;
         camera.position.z += d.z;
+        // Turning follow on: the camera stays put and turns to the core, eased (REND-19).
+        if (recenter) {
+          followTurnFrom = { x: controls.target.x, y: controls.target.y, z: controls.target.z };
+          turnStart = performance.now();
+          recenter = false;
+        }
+        if (followTurnFrom) {
+          followTurnFrom.x += d.x;
+          followTurnFrom.z += d.z;
+          const hx = controls.target.x - camera.position.x;
+          const hz = controls.target.z - camera.position.z;
+          const hl = Math.hypot(hx, hz);
+          const heading = hl > 1e-9 ? { x: hx / hl, z: hz / hl } : { x: 0, z: -1 };
+          const to = aimAtCore(camera.position, s.center, heading);
+          const tt = (performance.now() - turnStart) / 1000;
+          const p = turnToward(camera.position, followTurnFrom, to, tt);
+          controls.target.set(p.x, p.y, p.z);
+          camera.lookAt(controls.target);
+          if (tt >= CAMERA.followTurnTime) followTurnFrom = null;
+        }
+      } else {
+        followTurnFrom = null;
       }
       followFrom = { x: s.center.x, z: s.center.z };
       followTime = curr.time;
@@ -388,9 +413,14 @@ export function createRenderer(
       lastFrame = now;
       const yawKeys = (turnKeys.left ? 1 : 0) - (turnKeys.right ? 1 : 0);
       const pitchKeys = (turnKeys.up ? 1 : 0) - (turnKeys.down ? 1 : 0);
-      if (yawKeys || pitchKeys) turn(yawKeys * CAMERA.turnRate * fdt, pitchKeys * CAMERA.turnRate * fdt);
+      if (yawKeys || pitchKeys) {
+        if (!keepsFollow("turn")) leaveFollow();
+        turn(yawKeys * CAMERA.turnRate * fdt, pitchKeys * CAMERA.turnRate * fdt);
+      }
       const mv = flyStep(keys, fdt, camera.position, controls.target);
-      if (Math.abs(mv.camera.x - camera.position.x) + Math.abs(mv.camera.z - camera.position.z) > 1e-9) leaveFollow();
+      if (Math.abs(mv.camera.x - camera.position.x) + Math.abs(mv.camera.z - camera.position.z) > 1e-9 && !keepsFollow("move")) leaveFollow();
+      // While following, zoom heads straight at the core rather than the cursor (REND-19).
+      controls.zoomToCursor = !follow;
       camera.position.set(mv.camera.x, mv.camera.y, mv.camera.z);
       controls.target.set(mv.target.x, mv.target.y, mv.target.z);
       controls.update();

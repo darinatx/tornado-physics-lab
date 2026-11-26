@@ -54,16 +54,13 @@ export const CAMERA = {
   turnPerPixel: 0.004,
   turnRate: Math.PI / 2,
   maxPitch: (85 * Math.PI) / 180,
-  /** Starting view (REND-17, Spec 06 v1.11): framed on the tornado, ahead on its track with
-   *  this share of the distance to the right, this high (m), at least this far (m). Ground to
-   *  cloud base fills at most this share of the view's height, and a debris cloud this many
-   *  R_max wide at most this share of its width (framing choices, not physics). */
-  startSide: 0.3,
-  startHeight: 30,
-  startMinDistance: 300,
-  startFillHeight: 0.8,
-  startFillWidth: 0.6,
-  startDebrisWidth: 4,
-  /** It looks at the tornado's axis this far up, as a share of the cloud base. */
+  /** Starting view (REND-17, Spec 06 v1.13): over the town center this high (m), facing the
+   *  spawn (a viewing choice at the user's request, not physics: clears the houses and trees
+   *  and shows the town's layout). */
+  startHeight: 100,
+  /** It looks at the spawn's axis this far up, as a share of the cloud base. */
   startLookUp: 0.4,
+  /** Turning follow on turns the camera to the core over this long (s, eased; REND-19): quick
+   *  enough to feel immediate, slow enough not to snap. */
+  followTurnTime: 0.6,
 } as const;
