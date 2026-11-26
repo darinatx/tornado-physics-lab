@@ -172,6 +172,29 @@ describe("Spec 07 — instruments", () => {
     expect(airPressureMb(r.pressureDeficit)).toBeCloseTo(1013.25 - pressureDeficit(0, s) / 100, 9);
   });
 
+  test("INST-16: sim rate is sim time over real time across the last second of frames", async () => {
+    const { SimRateMeter, rateText } = await import("../../src/ui/simRate");
+    const m = new SimRateMeter();
+    expect(m.rate).toBeNull();
+    // 0.4 s of sim per real second, in 60 Hz frames, for 2 s.
+    let t = 0;
+    for (let i = 0; i < 120; i++) m.push(1 / 60, (t += 0.4 / 60));
+    expect(m.rate!).toBeCloseTo(0.4, 6);
+    // Only the last second counts: after a second at full speed it reads 1.
+    for (let i = 0; i < 60; i++) m.push(1 / 60, (t += 1 / 60));
+    expect(m.rate!).toBeCloseTo(1, 6);
+    // A hidden-tab frame (> 0.25 s) is left out.
+    m.push(5, (t += 0.01));
+    m.push(1 / 60, (t += 1 / 60));
+    expect(m.rate!).toBeGreaterThan(0.9);
+    // A restart (sim time going backwards) clears it.
+    m.push(1 / 60, 0);
+    expect(m.rate).toBeNull();
+    expect(rateText(0.4237)).toBe("0.42× real time");
+    expect(rateText(0.0583)).toBe("0.058× real time");
+    expect(rateText(1.5)).toBe("1.5× real time");
+  });
+
   test("INST-14: damage colors and repeat-on-dissipation start off", async () => {
     const { DEFAULT_PANEL_STATE } = await import("../../src/ui/panelDefaults");
     expect(DEFAULT_PANEL_STATE.damageColors).toBe(false);

@@ -1,3 +1,4 @@
+import { rateText, SimRateMeter } from "./ui/simRate";
 import { createRenderer } from "./render/renderer";
 import { createSim } from "./sim/loop";
 import { createWorkerBackend } from "./sim/detailBackend";
@@ -78,11 +79,13 @@ const probe = createProbeUI(app, view, (x, z) => sim.world.buildingAt(x, z), (p)
 const REPEAT_DELAY = 3;
 let last = performance.now();
 let readoutTimer = 0;
+const simRate = new SimRateMeter();
 
 function frame(now: number): void {
   const realDt = (now - last) / 1000;
   last = now;
   const f = sim.advance(realDt);
+  simRate.push(realDt, f.curr.time);
   if (panel.state.autoRepeat && f.curr.phase === "dissipated" && f.curr.time > f.curr.lifetime + REPEAT_DELAY) {
     sim.reset();
   }
@@ -94,7 +97,7 @@ function frame(now: number): void {
     readout.update(computeReadout(f.curr));
     const n = sim.detail.houses.size;
     detailStatus.hidden = n === 0;
-    detailStatus.textContent = `${n} house${n === 1 ? "" : "s"} in full structural detail${sim.detailLagging ? " · slow motion while they come apart" : ""}`;
+    detailStatus.textContent = `${n} house${n === 1 ? "" : "s"} in full structural detail${sim.detailLagging ? ` · slow motion while they come apart${simRate.rate !== null ? ` · ${rateText(simRate.rate)}` : ""}` : ""}`;
     readoutTimer = 0.1;
   }
   requestAnimationFrame(frame);
