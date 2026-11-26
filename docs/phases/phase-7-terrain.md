@@ -105,6 +105,8 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 - [ ] Specs updated, simplifications note and retro written
 - [ ] User's preliminary sign-off; tag `phase-7-prelim`
 - [ ] Pull request from `phase-7-terrain` into `main`, merged when the user says so; branch deleted
+- [ ] After the merge: remove the temporary `tornado-sim-phase-7` entry from `.claude/launch.json`
+      in the main folder (uncommitted there; it serves this worktree on port 5173)
 
 Final sign-off (tag `phase-7-done`):
 
