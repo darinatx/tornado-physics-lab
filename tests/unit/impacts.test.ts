@@ -473,3 +473,50 @@ describe("Spec 10 v0.12: town debris perforating detailed houses", () => {
     tun.dispose();
   }, 120_000);
 });
+
+describe("Spec 10 v0.14: light bodies pushed clear go back the way they came", () => {
+  beforeAll(async () => {
+    await initRapier();
+  });
+  /** A thin sheet (1 × 0.5 m) lying flat at 1.5 m, whose +z edge ends up 4 cm into exactHouse's
+   *  back wall (face 1, z = 5.5 ± 0.075) from one side; returns where it ends up. */
+  const pushFrom = async (side: "inside" | "outside") => {
+    const RAPIER = (await import("@dimforge/rapier3d-simd-compat")).default;
+    const { StructureWorld } = await import("../../src/sim/structureWorld");
+    const { buildTownColliders } = await import("../../src/sim/townColliders");
+    const sw = new StructureWorld();
+    const b = exactHouse();
+    for (const c of buildTownColliders(sw.world, b, sw.townPlaneOf)) sw.townHouseOf.set(c.handle, { x: b.x, z: b.z, index: 0 });
+    sw.world.step(); // queries see new colliders after a step
+    const hz = 0.25;
+    const face = side === "inside" ? 5.425 : 5.575;
+    const s = side === "inside" ? -1 : 1;
+    const before = face + s * (hz + 0.1); // clear of the wall
+    const after = face + s * (hz - 0.04); // 4 cm into it
+    const body = sw.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 1.5, before));
+    sw.world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 0.004, hz), body);
+    sw.world.propagateModifiedBodyPositionsToColliders();
+    sw.lightBodies.set(body.handle, { slabCollider: null } as never);
+    const priv = sw as unknown as { recordLightPoses(): void; keepLightBodiesClear(): void };
+    priv.recordLightPoses();
+    body.setTranslation({ x: 0, y: 1.5, z: after }, true);
+    sw.world.propagateModifiedBodyPositionsToColliders();
+    priv.keepLightBodiesClear();
+    return { z: body.translation().z, after, face, hz, pushed: sw.pushed.has(body.handle) };
+  };
+
+  test("IMP-01: a light body inside a house (in through an opening) is pushed back in, not out through the standing wall", async () => {
+    const r = await pushFrom("inside");
+    expect(r.pushed).toBe(true);
+    // Clear of the wall on the inside, and moved only about as far as it overlapped (not 40 cm).
+    expect(r.z + r.hz).toBeLessThanOrEqual(r.face + 0.006);
+    expect(Math.abs(r.z - r.after)).toBeLessThan(0.06);
+  });
+
+  test("IMP-01: a light body that sank into a wall from outside is pushed back out, only as far as it sank", async () => {
+    const r = await pushFrom("outside");
+    expect(r.pushed).toBe(true);
+    expect(r.z - r.hz).toBeGreaterThanOrEqual(r.face - 0.006);
+    expect(Math.abs(r.z - r.after)).toBeLessThan(0.06);
+  });
+});

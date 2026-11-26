@@ -207,12 +207,31 @@ export class StructureWorld {
   readonly lightBodies = new Map<number, DetailHouse>();
   /** Light bodies pushed clear this step. */
   readonly pushed = new Set<number>();
+  /** Where each light body's colliders were before this step (collider handle → pose): the
+   *  side of a surface a piece came from is the side it goes back out to (Spec 10 v0.14). */
+  private readonly lightPrev = new Map<number, { t: Vec3; r: RAPIER.Rotation }>();
+
+  private recordLightPoses(): void {
+    this.lightPrev.clear();
+    for (const handle of this.lightBodies.keys()) {
+      const body = this.world.getRigidBody(handle);
+      if (!body || !body.isValid() || !body.isDynamic()) continue;
+      for (let i = 0; i < body.numColliders(); i++) {
+        const c = body.collider(i);
+        const t = c.translation();
+        const r = c.rotation();
+        this.lightPrev.set(c.handle, { t: { x: t.x, y: t.y, z: t.z }, r: { x: r.x, y: r.y, z: r.z, w: r.w } as RAPIER.Rotation });
+      }
+    }
+  }
 
   /**
    * After the physics step, no light-piece body may sit inside anything fixed other than its
    * own house (Spec 10 v0.9): a thin sheet can slip into a slab or wall without Rapier making a
    * contact for it. Pushed out along the surface's normal (1 cm at a time), it loses its
-   * velocity into the surface.
+   * velocity into the surface. Out is the side of the surface the piece was on before the step
+   * (a piece inside a house, in through an opening, stays inside; Spec 10 v0.14); only a piece
+   * that already overlapped it then falls back to "away from the house".
    */
   private keepLightBodiesClear(): void {
     this.pushed.clear();
@@ -223,7 +242,7 @@ export class StructureWorld {
         continue;
       }
       for (let k = 0; k < 40; k++) {
-        let hit: { col: RAPIER.Collider; c: RAPIER.ShapeContact } | null = null;
+        let hit: { col: RAPIER.Collider; c: RAPIER.ShapeContact; mine: RAPIER.Collider } | null = null;
         for (let i = 0; i < body.numColliders() && !hit; i++) {
           const mine = body.collider(i);
           this.world.intersectionsWithShape(
@@ -235,7 +254,7 @@ export class StructureWorld {
               if (this.owner.get(o.handle)?.house === house || o === house.slabCollider) return true;
               const c = o.contactShape(mine.shape, mine.translation(), mine.rotation(), 0);
               if (c && c.distance < -0.005) {
-                hit = { col: o, c };
+                hit = { col: o, c, mine };
                 return false;
               }
               return true;
@@ -244,11 +263,18 @@ export class StructureWorld {
           );
         }
         if (!hit) break;
-        const h = hit as { col: RAPIER.Collider; c: RAPIER.ShapeContact };
+        const h = hit as { col: RAPIER.Collider; c: RAPIER.ShapeContact; mine: RAPIER.Collider };
         const t = body.translation();
-        const n = this.outward(h.col, h.c.normal1, body.collider(0).translation());
+        // Back out the side it came from: the surface's normal toward where this collider was
+        // before the step, if it was clear of the surface then.
+        const prev = this.lightPrev.get(h.mine.handle);
+        const c0 = prev ? h.col.contactShape(h.mine.shape, prev.t, prev.r, 2) : null;
+        const n = c0 && c0.distance > -0.005 ? c0.normal1 : this.outward(h.col, h.c.normal1, h.mine.translation());
         this.pushed.add(handle);
         body.setTranslation({ x: t.x + n.x * 0.01, y: t.y + n.y * 0.01, z: t.z + n.z * 0.01 }, true);
+        // Colliders follow their body only at the next step: move them now, or the next check
+        // sees the same overlap and every push runs the full 40 cm.
+        this.world.propagateModifiedBodyPositionsToColliders();
         const v = body.linvel();
         const vn = v.x * n.x + v.y * n.y + v.z * n.z;
         if (vn < 0) body.setLinvel({ x: v.x - vn * n.x, y: v.y - vn * n.y, z: v.z - vn * n.z }, true);
@@ -372,6 +398,7 @@ export class StructureWorld {
     });
     // Physics step; collect impact forces for the next step's checks.
     for (const h of live) h.clearContacts();
+    this.recordLightPoses();
     this.phase = "world.step";
     this.world.step(this.events);
     this.phase = "keep clear";
