@@ -174,6 +174,8 @@ describe("Spec 04 v2.1 — heavy debris beside the sim, at a fixed lag", () => {
     const { createDeferredHeavy } = await import("../../src/sim/heavyBackend");
     const { QUICK_PASS } = await import("../harness/runPassthrough");
     const { createRng } = await import("../../src/sim/rng");
+    const { SIM_DEFAULTS } = await import("../../src/config/sim");
+    const SIM_DT = SIM_DEFAULTS.dt;
     const T = 5;
     const run = (deferred: boolean) => {
       let backend: ReturnType<typeof createDeferredHeavy> | null = null;
@@ -183,8 +185,10 @@ describe("Spec 04 v2.1 — heavy debris beside the sim, at a fixed lag", () => {
       let frames = 0;
       while (sim.time < T - 1e-9) {
         // Never past T, so both runs are compared at the same sim time (a lagging frame
-        // otherwise overshoots by up to a frame).
-        sim.advance(Math.min(1 / 30, T - sim.time));
+        // otherwise overshoots by up to a frame). A lagging frame also keeps up to one step
+        // banked, so feed only what is left beyond it.
+        const banked = sim.detailLagging ? SIM_DT : 0;
+        sim.advance(Math.max(0, Math.min(1 / 30, T - sim.time - banked)));
         frames++;
         const b = backend as ReturnType<typeof createDeferredHeavy> | null;
         if (b) {

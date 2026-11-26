@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.18) — Phases 1–4
+Status: Approved (v1.19) — Phases 1–4
 
 ## Purpose
 
@@ -51,7 +51,7 @@ Phase 1 scope:
   F ∝ u³(1 − u_t²/u²) (Gillette & Passi 1988): tracers spawn near the ground at random points
   of that area, accepted in proportion to F, so the cloud is dense where winds are strong and
   thins to a haze at the edge. The number of tracers follows the total emission ∫F dA
-  (surveyed 4 times a second on a polar grid): ~12,000 for the default tornado at full
+  (surveyed 4 times a second on a polar grid): ~8,600 for the default tornado at full
   strength, at least 2,000 while any dust lifts, capped at the measured frame budget (40,000);
   beyond the count, tracers retire as they die, so the cloud grows and fades with the tornado.
   They die after their lifetime, above 0.8·H, or beyond max(4·R_max, 1.5 × the dust radius).
@@ -124,7 +124,7 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 | Name | Unit | Default | Note |
 |---|---|---|---|
 | groundSize | m | 12000 | square; fits the longest preset path |
-| tracersPerEmission | 1/(m²·(m/s)³) | 7.8e-8 | ~12,000 tracers for the default tornado |
+| tracersPerEmission | 1/(m²·(m/s)³) | 7.8e-8 | ~8,600 tracers for the default tornado (Spec 01 v1.10) |
 | tracerMin / tracerCap | – | 2000 / 40000 | measured at the cap: ~3.3 ms CPU per frame, no measurable GPU cost far or inside the cloud |
 | dustRangeRmax | – | 6 | dust lifts within the damage range |
 | dustLiftSpeed | m/s | 25 | ground wind needed to loft dust |
@@ -234,6 +234,9 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 
 ## Changelog
 
+- v1.19 (from main, was its v1.17): with Spec 01 v1.10's faster outer decay, less ground lifts dust, so the default
+  tornado's tracer count falls from ~12,000 to ~8,600. The tracers per unit emission are
+  unchanged (the same dust density where dust lifts); only the stated count follows.
 - v1.18 (Phase 7 slice C): the ground material draws the ground damage tracks (Spec 19, TERR-23).
 - v1.17 (Phase 7): ground drawn by cover (farmland, lawn, pavement) without section-line roads,
   and the ground roughness layer (Spec 17, TERR-12, TERR-14).

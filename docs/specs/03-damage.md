@@ -1,6 +1,6 @@
 # Spec 03 — Damage Model
 
-Status: Approved (v2.3) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
+Status: Approved (v2.4) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
 
 ## Purpose
 
@@ -205,6 +205,10 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
 
 ## Changelog
 
+- v2.4: siding recalibrated 716 → 633 Pa for Spec 01 v1.10. The smaller pressure deficit
+  outside the core (the free-vortex outer decay) put less outward load on siding as the tornado
+  approached, so DOD 1 moved to 68.6 mph against 65 expected (DMG-04). `scripts/calibrate-houses.ts`
+  rerun; the other parts stayed within their tolerance and keep their values. DOD 1 now 64.9 mph.
 - v2.3: strong houses' slab sweep ×1.21, was ×1.6 (DMG-15). DI 2 rates well-built houses at the
   upper bound, 220 mph for DOD 10 against 200 expected: (220/200)² on the lateral pressure. At
   ×1.6 the median was ~250 mph and in town passes only 15–31% of strong houses at 220–239 mph

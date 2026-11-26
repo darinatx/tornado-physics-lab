@@ -111,7 +111,7 @@ export const PART_UNIT: Record<Part, string> = {
  * scripts/calibrate-houses.ts against simulated tornado passes (DMG-04).
  */
 export const BASE_CAPACITY: Record<Part, number> = {
-  siding: 716,
+  siding: 633,
   roofCover: 2288,
   window: 2094,
   /** Fixed, not calibrated: standard non-reinforced garage door, ~27 psf. */

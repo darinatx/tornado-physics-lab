@@ -47,4 +47,5 @@ notes, not the repo.
 
 | ID | Phase | What | Decision | Closed by |
 |---|---|---|---|---|
+| BL-017 | 1 | Outer winds decayed too slowly (r^(−α) at any distance): EF0 winds 4 km out on the right of the EF5 preset; EF0 path 5.4 km (EF4 2.4 km), wider than the 4.2 km record. Found by the user, 2026-11-26. Severity high (wrong physics the user sees: damage far outside any surveyed path). | fix (user, 2026-11-26) | Spec 01 v1.10 (free-vortex decay beyond 2·R_max), branch `fix/BL-017-outer-wind-decay` |
 | BL-004 | 6 | Detailed house stops short of DI 2 with neighbors and the wind square to the ridge | accept (user, 2026-11-26) | Spec 09 v0.19, Simplifications |

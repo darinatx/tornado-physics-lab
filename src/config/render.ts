@@ -15,7 +15,7 @@ export const RENDER = {
   /** Height arrows are drawn at, just above the ground (m). */
   arrowDrawHeight: 1.5,
   /** Dust tracers (Spec 06 v1.6): the count follows the total dust emission (tracers per
-   *  m²·(m/s)³ of ∫F dA, set so a typical tornado has ~12,000), within [tracerMin, tracerCap];
+   *  m²·(m/s)³ of ∫F dA, ~8,600 for a typical tornado since Spec 01 v1.10), within [tracerMin, tracerCap];
    *  the cap is the measured frame budget. */
   tracersPerEmission: 7.8e-8,
   tracerMin: 2000,
