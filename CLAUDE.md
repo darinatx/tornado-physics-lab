@@ -67,6 +67,23 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    and suggestion goes in `docs/backlog.md` (ID, phase, what, evidence, severity, suggested
    fix). It may add validation tests and measurements; it changes no model code, so it can't
    collide with the next phase's work.
+   **Code changes while validation runs.** Before phase N+1 makes its first code change while
+   phase N's validation session is still running (and again before any later change in a
+   riskier category than the last one asked about), stop and ask the user how to handle the
+   in-progress validation: **continue**, **pause** it until the change lands, or **let it finish
+   its current check, then pause**. Name the files the change touches, say whether they're code
+   the validation exercises, and give a recommendation:
+   - *Nothing validation exercises* (docs, specs, new tests, files the validation doesn't
+     run): recommend **continue**.
+   - *Low risk* (additive code behind a new option, UI/render-only changes, new modules not
+     yet wired into the sim): recommend **continue**, and note any check that should be rerun
+     later.
+   - *Changes what validation measures* (`src/core`, `src/sim`, `src/config` values, or
+     anything a validation test or script runs): recommend **pause** (or finish the current
+     check, then pause), and say which checks to rerun once the change lands.
+   If the validation session works in this same folder, edits reach it immediately, so weigh
+   that in the recommendation; if it's in its own worktree, say its results will describe the
+   old code. Don't ask when no validation session is running or the change touches no code.
 7. **Final gate**: the user decides each open backlog item from the phase (fix, defer to a
    named phase, or accept as a documented limitation in its spec); "fix" items are fixed (usual
    rules) → final sign-off → tag `phase-N-done`.
