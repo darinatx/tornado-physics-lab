@@ -1,6 +1,6 @@
 # Spec 08 — Simulation Loop
 
-Status: Approved (v1.7)
+Status: Approved (v1.8)
 
 ## Purpose
 
@@ -46,6 +46,7 @@ interface SimConfig {
   dt: number; maxFrameDt: number; buildings: boolean;
   area?: { x: number; z: number; radius: number };   // only houses within (validation)
   start?: { x: number; z: number };                  // tornado start (default: path centered on the origin)
+  timing?: StepTiming;                               // benchmark (Spec 18): ms per section, read-only
 }
 interface Sim {
   advance(realDtSeconds: number): { prev: SimSnapshot; curr: SimSnapshot; alpha: number };
@@ -94,6 +95,9 @@ function createRng(seed: number): () => number;   // uniform in [0, 1)
 
 ## Changelog
 
+- v1.8 (Phase 6 slice D): an optional, read-only timing hook (`SimConfig.timing`, Spec 18)
+  adds wall-clock ms per section of each step (damage, debris, heavy, detail, total). Nothing
+  in the physics reads it (BENCH-02).
 - v1.7: at the start of a run every house's inside pressure equals the outside (it stood in the
   far field while the storm built up), as a detailed house's does on entry (Spec 09). Only a
   tornado that starts at full strength has a deficit at time 0: the structure lab's mature

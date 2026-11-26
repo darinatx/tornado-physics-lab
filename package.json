@@ -15,7 +15,8 @@
     "test:fast": "vitest run tests/unit",
     "check:passthrough": "tsx scripts/check-passthrough.ts",
     "check:alignment": "tsx scripts/check-alignment.ts",
-    "tunnel": "tsx scripts/tunnel.ts"
+    "tunnel": "tsx scripts/tunnel.ts",
+    "bench": "tsx scripts/bench.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-simd-compat": "^0.19.3",

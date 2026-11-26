@@ -84,6 +84,24 @@ Final sign-off (tag `phase-6-done`):
       (2026-11-26: all eleven deferred, none to fix; see `docs/backlog.md`)
 - [ ] User's final sign-off; tag `phase-6-done`
 
+## Slice D notes
+
+- **Benchmark built** (2026-11-26, branch `phase-6-bench`): Spec 18 v1.0, BENCH-01 to BENCH-05;
+  `npm run bench`; a read-only timing hook in the sim loop (Spec 08 v1.8). Baseline saved in
+  `bench/baseline.json` (Apple M5, 10 cores, Node 25.8; 2 runs per scene, 539 s in all):
+
+  | Scene | total | damage | debris | heavy | detail | other (ms per physics step) |
+  |---|---|---|---|---|---|---|
+  | `ef4-town` | 8.93 | 1.93 | 2.49 | 4.51 | 0.00 | 0.00 |
+  | `detail-core` | 50.69 | 1.69 | 3.03 | 2.21 | 43.61 | 0.08 |
+
+  At 120 steps per sim second, `ef4-town` runs at about 1.07× real time on one thread, and
+  `detail-core` about 6× slower than real time, almost all of it the detail zone (BL-002).
+  Heavy debris is half of the town pass.
+- Found while building it: disposing a sim after a full detail-zone core passage throws in
+  Rapier (BL-013, low). The bench catches and reports it.
+- **Profiling pass: not done yet.**
+
 ## Slice A notes
 
 - Built: Spec 10 v0.1 (envelope clip, fragility by surface and missile, impulse loads with the
