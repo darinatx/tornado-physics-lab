@@ -33,7 +33,7 @@ loose. The Phase 4 component model covers the rest of the town and is the refere
       samples: within ±8%, ±5%; STR-24)
 - [x] Slice C: frame budget — accepted at sign-off as: main thread ~16 ms per frame (draw ~6,
       advance ~10); physics in a worker, so the sim slows to ~0.15–0.3× only while the chosen
-      houses are torn apart, then returns to real time. Faster core passage carried to Phase 10 (then Phase 9; renumbered 2026-11-25).
+      houses are torn apart, then returns to real time. Faster core passage carried to Phase 11 (performance; renumbered 2026-11-25 and 2026-11-26).
 - [x] All tests pass; `npm run verify` passes
 - [x] Specs updated, simplifications note and retro written
 - [x] User sign-off; commit tagged `phase-5-done`

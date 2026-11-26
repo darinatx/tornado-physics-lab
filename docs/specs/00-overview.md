@@ -40,6 +40,7 @@ explainable**, not CFD-accurate: every damage outcome can be traced to a physica
 | 08 | Simulation loop | sim |
 | 09 | Structural physics (detail zone) | core + sim |
 | 10 | Debris impacts | core |
+| 16 | Storm report | sim + ui |
 
 ## Conventions
 
@@ -49,7 +50,7 @@ explainable**, not CFD-accurate: every damage outcome can be traced to a physica
 - **Rotation:** cyclonic (counter-clockwise viewed from above), the Northern Hemisphere norm.
   An anticyclonic toggle may be added later.
 - **Acceptance criterion IDs:** `PREFIX-NN`, unique across all specs. Prefixes: WIND, LOAD,
-  DMG, DEB, CITY, REND, INST, SIM, STR, IMP.
+  DMG, DEB, CITY, REND, INST, SIM, STR, IMP, REP.
 
 ## Spec template
 

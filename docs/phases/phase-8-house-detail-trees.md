@@ -1,6 +1,6 @@
-# Phase 7 — Richer Houses and Trees
+# Phase 8 — Richer Houses and Trees
 
-Status: Spec review (drafted 2026-11-25)
+Status: Spec review (drafted 2026-11-25; renumbered from Phase 7 on 2026-11-26)
 
 ## Goal
 
@@ -40,4 +40,4 @@ when the budget allows, and as matching debris in the component model everywhere
 - [ ] Slice D: HSE-09, HSE-10, HSE-12, HSE-13 pass; town detail-zone level decided by measurement
 - [ ] All tests pass; `npm run verify` passes
 - [ ] Specs updated, simplifications note and retro written
-- [ ] User sign-off; commit tagged `phase-7-done`
+- [ ] User sign-off; commit tagged `phase-8-done`

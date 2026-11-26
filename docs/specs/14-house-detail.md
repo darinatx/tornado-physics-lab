@@ -65,7 +65,7 @@ boxes with real size and mass.
 | Bedrooms (each) | bed frame and mattress (queen 30 mattress + 25 frame; full 25 + 20 in smaller rooms), dresser (60), nightstand (12) |
 | Bathroom | bathtub (steel 50 or cast iron 140; set on a mortar bed with drain: anchored), toilet (40; bolted), vanity (35; screwed) |
 | Closet | clothes and boxes (40) |
-| Garage | water heater (full: 50 gal tank 55 kg + 190 kg water; strapped to studs), washer (75), dryer (55), shelving with bins (60; free), car (Phase 9) |
+| Garage | water heater (full: 50 gal tank 55 kg + 190 kg water; strapped to studs), washer (75), dryer (55), shelving with bins (60; free), car (Phase 10) |
 
 Total: about 2.5–3.5 t, close to the ~30 kg/m² mean sustained residential live load from load
 surveys (ASCE 7 commentary; *to source* the exact survey value) over a 150 m² house.
@@ -137,8 +137,8 @@ All sizes, masses, densities and capacities live in `src/config/structure.ts` (a
 ## Simplifications / out of scope
 
 - Contents don't change internal volume or APC, and nothing inside the house channels flow.
-- No basements, second stories or attached decks (Phase 9 building types).
-- Cars in driveways and garages wait for Phase 9 (vehicles).
+- No basements, second stories or attached decks (Phase 10 building types).
+- Cars in driveways and garages wait for Phase 10 (vehicles).
 - Water, rain and debris inside the house (soaking, ceiling collapse from water) aren't modeled.
 
 ## Changelog

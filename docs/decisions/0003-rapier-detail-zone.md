@@ -30,7 +30,7 @@ member-level house is ~300–600 bodies, so only ~20–40 houses can be breaking
 ## Consequences
 
 - ~1.5 MB WebAssembly, async start-up, and a worker boundary for state.
-- Determinism needs Rapier's deterministic build and a fixed step; replay (Phase 13) must allow
+- Determinism needs Rapier's deterministic build and a fixed step; replay (Phase 14) must allow
   for it.
 - Two building models to keep consistent; validation tests compare them.
 
