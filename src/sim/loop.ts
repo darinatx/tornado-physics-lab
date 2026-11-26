@@ -31,6 +31,7 @@ import type { PlaneId } from "../core/impact/envelope";
 import { resolveImpact } from "../core/impact/impact";
 import { townState } from "./townColliders";
 import { tunnelState } from "./tunnelFlow";
+import { pressureDeficit } from "../core/wind/pressure";
 import type { TownState } from "./townColliders";
 
 export interface Sim {
@@ -62,6 +63,10 @@ export interface Sim {
   readonly detailSpotRadius: number;
   /** Detail physics cost per step (ms, smoothed), for display. */
   readonly detailStepMs: number;
+  /** Stop its engines (workers): the sim can't be used afterwards. */
+  dispose(): void;
+  /** Add a read-only observer (Spec 13); returns its removal. Observers survive a reset. */
+  observe(t: import("./types").SimTaps): () => void;
   /** Debris pool (read-only for callers). */
   readonly debris: Pick<
     DebrisField,
@@ -206,7 +211,19 @@ export function createSim(
   }
   /** Building id → index (impacts on stand-ins name the house by id). */
   let indexById = new Map<number, number>();
-  const taps = config.taps;
+  /** Every observer, through one fan-out (Spec 13: the record, a recorder, the tunnel). */
+  const observers = new Set<import("./types").SimTaps>(config.taps ? [config.taps] : []);
+  const taps: import("./types").SimTaps = {
+    impact: (...a) => {
+      for (const o of observers) o.impact?.(...a);
+    },
+    detailFailure: (...a) => {
+      for (const o of observers) o.detailFailure?.(...a);
+    },
+    debrisStep: (...a) => {
+      for (const o of observers) o.debrisStep?.(...a);
+    },
+  };
   const fixedZone = config.detailSet?.map((d) => d.index);
   const detailSet = new Map((config.detailSet ?? []).map((d) => [d.index, d] as const));
 
@@ -222,7 +239,7 @@ export function createSim(
   let prev: SimSnapshot;
   let curr: SimSnapshot;
   let detail: DetailBackend | null = null;
-  let zone = new ZoneSelector(config.detailHouses, fixedZone);
+  let zone = new ZoneSelector(config.detailHouses, fixedZone, config.detailPinned);
   const detailView = new DetailView();
   /** Detailed houses as town debris sees them (Spec 10 v0.7). */
   const standIns = new DetailStandIns();
@@ -237,11 +254,12 @@ export function createSim(
     // (Spec 10 v0.11).
     const b = house?.detail ? house.standIn : house;
     if (!b || b.sweep.failed) return;
-    const surface = surfaceAt(b, h.plane as PlaneId, toLocal(b, h.point));
-    const out = resolveImpact(b, surface, { label: h.label, family: h.family, mass: h.mass, dims: h.dims }, h.vn, hitRng, true);
+    const local = toLocal(b, h.point);
+    const surface = surfaceAt(b, h.plane as PlaneId, local);
+    const out = resolveImpact(b, surface, { label: h.label, family: h.family, mass: h.mass, dims: h.dims }, h.vn, hitRng, true, local);
     if (out) {
       b.impacts.push(out.impact);
-      taps?.impact?.(h.house, out.impact, path === "heavy" ? "debris" : "detail", null, stepCount * dt);
+      taps.impact?.(h.house, out.impact, path === "heavy" ? "debris" : "detail", null, stepCount * dt);
     }
   }
   let detailN = 0;
@@ -284,9 +302,9 @@ export function createSim(
     // Sent: these states are now what the engine has.
     for (const st of town) sentRev.set(st.index, revKey(world.buildings[st.index]!));
     // The town's debris hits on detailed houses since the last step (Spec 10 slice B).
-    const debrisHits = standIns.forward.splice(0).map(({ index, impact: q }) => ({ index, surface: q.surface, component: q.index, face: q.face, broke: q.broke, perforated: q.perforated, force: q.force }));
+    const debrisHits = standIns.forward.splice(0).map(({ index, impact: q }) => ({ index, surface: q.surface, component: q.index, face: q.face, broke: q.broke, perforated: q.perforated, force: q.force, ...(q.coverTorn ? { coverTorn: true } : {}), ...(q.sidingTorn ? { sidingTorn: true } : {}), ...(q.at ? { at: q.at } : {}) }));
     const launches = config.inject?.detail?.(pre.time);
-    detail.post({ n: detailN++, tornado: pre.tornado, terrain: pre.terrain, enter, exit: ops.exit, town, debrisHits, ...(launches?.length ? { launches } : {}) });
+    detail.post({ n: detailN++, tornado: pre.tornado, terrain: pre.terrain, enter, exit: ops.exit, town, debrisHits, ...(launches?.length ? { launches } : {}), ...(config.inspect?.length ? { inspect: config.inspect } : {}) });
   }
 
   /**
@@ -311,12 +329,14 @@ export function createSim(
     for (const r of detail.drain()) {
       stepMs += (r.ms - stepMs) * 0.05;
       detailView.apply(r.poses);
+      if (r.inspect) for (const x of r.inspect) detailView.inspected(x.house, x.loads, x.attached, r.n);
       standIns.record(r.n, r.poses);
       for (const h of r.townHits) townHits.push({ n: r.n, h });
       for (let k = 0; k < r.dods.length; k += 2) world.setDod(world.buildings[r.dods[k]!]!, r.dods[k + 1]!);
       // The inspector's failure list: connection failures by type, in order.
       for (const f of r.failLog) {
-        taps?.detailFailure?.(f.house, f, curr.time);
+        taps.detailFailure?.(f.house, f, curr.time);
+        if (f.con !== undefined) detailView.failed(f.house, f.con, { time: curr.time, mph: f.mph, load: f.load });
         const b = world.buildings[f.house]!;
         const list = (b.detailFailures ??= []);
         const g = list.find((x) => x.label === f.label);
@@ -428,6 +448,7 @@ export function createSim(
         applyHeavy(heavyN - 1 - HEAVY.lagSteps);
       }
       debris.step(dt * DEBRIS.stepInterval, pre.tornado, pre.terrain, damageStep, pre.time, pre.cloudBase, world);
+      if (observers.size) taps.debrisStep?.(pre.time);
     }
     curr = makeSnapshot();
   }
@@ -438,6 +459,7 @@ export function createSim(
     rng = createRng(currentSeed);
     world = createWorld(currentSeed, withBuildings, config.area, config.houses);
     debris = new DebrisField(currentSeed);
+    debris.dispersion = config.dispersion ?? true;
     heavy?.dispose();
     heavy = null;
     heavyN = 0;
@@ -449,8 +471,10 @@ export function createSim(
     lagSweeps.clear();
     attachHeavy();
     indexById = new Map(world.buildings.map((b, i) => [b.id, i]));
-    if (taps) debris.onImpact = (b, q, p) => taps.impact?.(indexById.get(b.standInFor ?? b.id) ?? -1, q, "debris", p, stepCount * dt);
-    zone = new ZoneSelector(config.detailHouses, fixedZone);
+    debris.onImpact = (b, q, p) => {
+      if (observers.size) taps.impact?.(indexById.get(b.standInFor ?? b.id) ?? -1, q, "debris", p, stepCount * dt);
+    };
+    zone = new ZoneSelector(config.detailHouses, fixedZone, config.detailPinned);
     settling.clear();
     detailView.clear();
     standIns.clear();
@@ -468,6 +492,11 @@ export function createSim(
     center = startPosition();
     curr = makeSnapshot();
     prev = curr;
+    // Houses have stood in the far field while the storm built up: inside pressure starts equal
+    // to outside (as a detailed house entering the zone does, Spec 09). Only a tornado that
+    // starts at full strength (the lab's mature pass) has a deficit at time 0.
+    if (!config.tunnel)
+      for (const b of world.buildings) b.deficitIn = pressureDeficit(Math.hypot(b.x - curr.tornado.center.x, b.z - curr.tornado.center.z), curr.tornado);
   }
 
   reset();
@@ -529,6 +558,16 @@ export function createSim(
     _heavy: () => (heavy as { engine?: { debris: HeavyDebris } } | null)?.engine?.debris ?? null,
     get debris() {
       return debris;
+    },
+    dispose() {
+      heavy?.dispose();
+      heavy = null;
+      detail?.dispose();
+      detail = null;
+    },
+    observe(t) {
+      observers.add(t);
+      return () => observers.delete(t);
     },
     get detail() {
       return detailView;

@@ -137,6 +137,10 @@ describe("Spec 07 — instruments", () => {
     expect(coreDistanceText(250, -20)).toBe("250 m now · closest: inside the core");
     expect(coreDistanceText(-5, -20)).toBe("inside the core now · closest: inside the core");
     expect(coreDistanceText(900, Infinity)).toBe("900 m now");
+    // After dissipation there is no core: no live distance, the closest approach stays.
+    expect(coreDistanceText(null, 37.6)).toBe("dissipated · closest 38 m");
+    expect(coreDistanceText(null, -20)).toBe("dissipated · closest: inside the core");
+    expect(coreDistanceText(null, Infinity)).toBe("dissipated");
     let checked = 0;
     for (const { b, rng } of randomHouses(20, 3)) {
       const c = samplePassCase(rng);
@@ -172,21 +176,32 @@ describe("Spec 07 — instruments", () => {
     expect(airPressureMb(r.pressureDeficit)).toBeCloseTo(1013.25 - pressureDeficit(0, s) / 100, 9);
   });
 
-  test("INST-16: sim rate is sim time over real time across the last second of frames", async () => {
+  test("INST-16: sim rate is sim time over real time across the last second, and slow is measured", async () => {
     const { SimRateMeter, rateText } = await import("../../src/ui/simRate");
     const m = new SimRateMeter();
     expect(m.rate).toBeNull();
-    // 0.4 s of sim per real second, in 60 Hz frames, for 2 s.
+    expect(m.isSlow(1)).toBe(false);
+    // 0.4 s of sim per real second, in 60 Hz frames: not slow until 0.5 s is measured.
     let t = 0;
-    for (let i = 0; i < 120; i++) m.push(1 / 60, (t += 0.4 / 60));
+    for (let i = 0; i < 20; i++) m.push(1 / 60, (t += 0.4 / 60));
+    expect(m.isSlow(1)).toBe(false);
+    for (let i = 0; i < 100; i++) m.push(1 / 60, (t += 0.4 / 60));
     expect(m.rate!).toBeCloseTo(0.4, 6);
+    expect(m.isSlow(1)).toBe(true);
+    expect(m.isSlow(0.4)).toBe(false); // keeping up with a 0.4× setting
+    expect(m.isSlow(0)).toBe(false); // paused
     // Only the last second counts: after a second at full speed it reads 1.
     for (let i = 0; i < 60; i++) m.push(1 / 60, (t += 1 / 60));
     expect(m.rate!).toBeCloseTo(1, 6);
-    // A hidden-tab frame (> 0.25 s) is left out.
-    m.push(5, (t += 0.01));
-    m.push(1 / 60, (t += 1 / 60));
-    expect(m.rate!).toBeGreaterThan(0.9);
+    expect(m.isSlow(1)).toBe(false);
+    // Slow frames (0.5 s each, the sim clamped to 0.25 s per frame) count: that is slow motion.
+    for (let i = 0; i < 3; i++) m.push(0.5, (t += 0.25));
+    expect(m.rate!).toBeCloseTo(0.5, 6);
+    expect(m.isSlow(1)).toBe(true);
+    // A tab coming back from hidden (> 1 s) is left out.
+    for (let i = 0; i < 60; i++) m.push(1 / 60, (t += 1 / 60));
+    m.push(5, (t += 0.25));
+    expect(m.rate!).toBeCloseTo(1, 6);
     // A restart (sim time going backwards) clears it.
     m.push(1 / 60, 0);
     expect(m.rate).toBeNull();

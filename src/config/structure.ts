@@ -7,7 +7,11 @@ export const LUMBER = {
   stud: [0.04, 0.09] as const,
   /** 2×6 actual size (m). */
   rafter: [0.04, 0.14] as const,
+  /** Rafter (and ceiling joist) spacing, 24 in. o.c. (m). */
   spacing: 0.6,
+  /** Stud spacing in walls and gable ends, 16 in. o.c. (m): what US houses are built with
+   *  (Spec 09 v0.18). */
+  studSpacing: 0.406,
 } as const;
 
 export const SHEET = {
@@ -60,10 +64,17 @@ export const GARAGE_DOOR_AREAL = 12;
  * Connection capacities for a standard house (Spec 09 table): mean *ultimate* strengths from
  * laboratory tests, not design (allowable) values, which are deliberately 2–3× lower.
  */
+/**
+ * Stud bending (Spec 09 v0.18). MOR: mean modulus of rupture of No. 2 SPF 2×4s (Pa), ~5,800 psi
+ * (In-Grade Testing Program, Green & Evans 1987). systemFactor: repetitive-member factor for
+ * studs sharing load through sheathing and plates (NDS).
+ */
+export const STUD_BENDING = { mor: 40e6, systemFactor: 1.15 } as const;
+
 export const CONNECTION = {
   /** 8d nails at 6/12 in.: mean failure ~80 psf. */
-  roofSheetPa: 4000,
-  wallSheetPa: 4000,
+  roofSheetPa: 4900,
+  wallSheetPa: 6000,
   /** Annealed glass, 1.2 m pane. */
   glazingPa: 2500,
   /** Standard non-reinforced door. */
@@ -255,6 +266,10 @@ export const DETAIL = {
   maxLeadS: 0.25,
   /** Detail steps run every N sim steps (60 Hz at the 120 Hz sim step). */
   stepEvery: 2,
+  /** Roof external pressures in a tornado vs straight-line wind (–), the atmospheric pressure
+   *  change aside (modeled on its own): tornado peaks average ~13% higher (Roueche, Prevatt & Haan
+   *  2020); ASCE 7-22's tornado vertical-wind factor K_vT is 1.05–1.2 on roofs. */
+  tornadoRoofFactor: 1.15,
   /** Loose pieces (a member or a nailed-together chunk) lighter than this (kg) leave Rapier
    *  for the Spec 04 debris model… */
   lightKg: 40,

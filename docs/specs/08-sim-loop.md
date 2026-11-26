@@ -1,6 +1,6 @@
 # Spec 08 — Simulation Loop
 
-Status: Approved (v1.5)
+Status: Approved (v1.7)
 
 ## Purpose
 
@@ -94,6 +94,18 @@ function createRng(seed: number): () => number;   // uniform in [0, 1)
 
 ## Changelog
 
+- v1.7: at the start of a run every house's inside pressure equals the outside (it stood in the
+  far field while the storm built up), as a detailed house's does on entry (Spec 09). Only a
+  tornado that starts at full strength has a deficit at time 0: the structure lab's mature
+  pass put an EF5's far-field deficit on every house at once, and every house lost siding in
+  the first second (found by the user).
+- v1.6: for the structure lab (Spec 13): any number of read-only observers (`sim.observe`,
+  with a hook after every debris step); `dispose` stops its workers; `detailPinned` (the detail
+  set enters at once and never leaves); `inspect` (connection loads back from the detail
+  engine for the member inspector); `dispersion`. An explicit layout's houses can each draw
+  from their own seed (`HouseSpec.drawSeed`), and the detail and heavy-debris workers now
+  build an explicit layout's houses (they rebuilt the town from the seed, so the tunnel could
+  only run in-process).
 - v1.5: for the wind tunnel (Spec 12): an explicit house layout (`houses`) instead of the generated
   town, a tunnel flow schedule (`tunnel`) that replaces the tornado, the houses the detail zone takes
   (`detailSet`: with each one's physics group and whether it enters stripped), read-only

@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.11) — Phases 1–4
+Status: Approved (v1.13) — Phases 1–4
 
 ## Purpose
 
@@ -35,7 +35,8 @@ Phase 1 scope:
   with its description, the survey estimate (EF with the assigned speed, the DOD's range and
   the reason), construction class, peak and current wind at the roof, and its distance from
   the tornado's core edge (the radius of maximum wind, R_max): now, and the closest it came
-  (Spec 03), or "inside the core".
+  (Spec 03), or "inside the core". Once the tornado has dissipated there is no core, so the
+  live distance gives way to "dissipated" and only the closest approach stays.
 
   Clicking pins a probe (up to 4). Pinned probes stay fixed on the ground and show live
   readings plus a history graph covering the whole run, from the start to dissipation (the
@@ -57,11 +58,14 @@ Phase 1 scope:
   probes share the left column (the pins below the readout, scrolling in the space left); the
   camera-key hint and the detail-zone status share the bottom-center column (the status above
   the hint).
-- **Detail status:** while houses are in structural detail, a line says how many. When the
-  detail or heavy-debris physics holds the sim back (Spec 09, Spec 04), it adds the measured
-  sim rate: "slow motion · 0.42× real time", sim seconds advanced per real second over the
-  last second of frames (two significant figures). Frames longer than 0.25 s (a hidden tab)
-  are left out, and a restart clears the measurement.
+- **Slow-motion status:** while houses are in structural detail, a line says how many. Whenever
+  the sim runs slower than its speed setting, whatever the cause (detail or heavy-debris
+  physics holding it back, Spec 09 and Spec 04, or frames too slow to keep up, SIM-02), the
+  line shows, with or without detail houses, and gives the measured sim rate: "slow motion ·
+  0.42× real time", sim seconds advanced per real second over the last second of frames (two
+  significant figures). It counts as slow once at least 0.5 s has been measured and the rate is
+  below 95% of the speed setting. Frames longer than 1 s (a tab coming back from hidden) are
+  left out, and a restart clears the measurement.
 - **EF readout:** the current EF rating and the peak ground-relative speed (mph and m/s),
   computed with `efRating` from Spec 01, plus the vortex structure (one-cell, transitioning,
   two-cell) and swirl ratio, plus a neighborhood tally: houses damaged (DOD ≥ 1) and destroyed
@@ -105,7 +109,7 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 | probeHeight | m | 10 | range 2–200 |
 | maxPins | – | 4 | |
 | history span / interval | s | run lifetime (up to 3,600) / 0.25 | pinned-probe history (wind speed and air pressure) |
-| sim-rate window / max frame | s | 1 / 0.25 | measured sim rate in the detail status |
+| sim-rate window / max frame / min measured | s | 1 / 1 / 0.5 | measured sim rate in the slow-motion status; slow below 95% of the speed setting |
 | background pressure | Pa | 101,325 | standard sea-level pressure; shown in mb (1 mb = 100 Pa) |
 
 ## Acceptance criteria
@@ -137,14 +141,17 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
   value (pressure drop) is kept in step with the first.
 - **INST-13**: The building summary shows the distance from the core edge now
   (distance to the axis − R_max) and the closest approach from Spec 03, both in m, or "inside
-  the core" when ≤ 0; it has no failure list, and the pinned inspector has the summary, then
+  the core" when ≤ 0; after dissipation it shows "dissipated" in place of the live distance
+  and keeps the closest; it has no failure list, and the pinned inspector has the summary, then
   the graph, then the failure list.
 - **INST-14**: The panel starts with damage colors and repeat-on-dissipation off.
 - **INST-15**: Air pressure is shown in millibars as the background pressure (1013.25 mb)
   minus the pressure drop: `airPressureMb(Δp) = (101,325 Pa − Δp) / 100`.
 - **INST-16**: The sim rate is sim time advanced ÷ real time over the last 1 s of frames,
-  ignoring frames longer than 0.25 s and clearing when sim time goes backwards; the slow-motion
-  status shows it as "N× real time" to two significant figures.
+  ignoring frames longer than 1 s and clearing when sim time goes backwards; the sim counts as
+  slow once ≥ 0.5 s is measured and the rate is below 95% of the speed setting (never when
+  paused); the slow-motion status shows whenever it's slow, with or without detail houses, as
+  "N× real time" to two significant figures.
 
 ## Simplifications / out of scope
 
@@ -172,6 +179,12 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.13: after dissipation the building summary stops showing a live distance to the core
+  edge (it kept climbing as the dissipated state drifted on with the storm) and shows
+  "dissipated · closest N m" (INST-13).
+- v1.12: the slow-motion line shows whenever the measured rate falls behind the speed setting,
+  not only when detail houses lag: it was hidden without a detail spot, and frames over 0.25 s
+  (where the sim drops time) were left out of the rate, hiding that slowdown too (INST-16).
 - v1.11: at the user's request: the slow-motion status shows the measured sim rate (INST-16).
 
 - v1.10: at the user's request: the hover summary drops the failure list (it stays in the

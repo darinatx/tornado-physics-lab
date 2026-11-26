@@ -257,11 +257,11 @@ describe("Spec 06 — rendering", () => {
     expect(JSON.stringify([f.prev, f.curr])).toBe(before);
   });
 
-  test("REND-14: moving goes along the view (tilt included), sideways and up, at height-scaled speed", async () => {
+  test("REND-14: moving goes level along the ground (whatever the tilt), sideways and up, at height-scaled speed", async () => {
     const { flySpeed, flyStep, NO_KEYS, FLY_KEY_MAP } = await import("../../src/render/cameraFly");
     const { CAMERA } = await import("../../src/config/render");
-    // Keys: W/S forward/back, arrows sideways and up/down.
-    expect(FLY_KEY_MAP).toMatchObject({ KeyW: "forward", KeyS: "back", ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", PageUp: "up", PageDown: "down" });
+    // Keys: W/S forward/back, A/D left/right, ↑/↓ (PageUp/PageDown) up/down.
+    expect(FLY_KEY_MAP).toEqual({ KeyW: "forward", KeyS: "back", KeyA: "left", KeyD: "right", ArrowUp: "up", ArrowDown: "down", PageUp: "up", PageDown: "down" });
     const cam = { x: 0, y: 100, z: 0 };
     const tgt = { x: 300, y: 100, z: 400 }; // level, toward +x+z (3-4-5), 500 m away
     const dt = 0.1;
@@ -275,16 +275,20 @@ describe("Spec 06 — rendering", () => {
     expect(moved(w).y).toBeCloseTo(0, 9);
     expect(off(w).x).toBeCloseTo(300, 6);
     expect(off(w).z).toBeCloseTo(400, 6);
-    // W tilted down 30°: along the tilted view, toward the ground.
+    // W tilted down 30°: still level, at full speed along the heading (+z).
     const down30 = { x: 0, y: 100 - 500 * Math.sin(Math.PI / 6), z: 500 * Math.cos(Math.PI / 6) };
     const wt = moved(flyStep({ ...NO_KEYS, forward: true }, dt, cam, down30));
-    expect(wt.y).toBeCloseTo(-Math.sin(Math.PI / 6) * v * dt, 9);
-    expect(wt.z).toBeCloseTo(Math.cos(Math.PI / 6) * v * dt, 9);
+    expect(wt.y).toBeCloseTo(0, 12);
+    expect(wt.z).toBeCloseTo(v * dt, 9);
     expect(Math.abs(wt.x)).toBeLessThan(1e-9);
+    // Tilted up too.
+    const up30 = { x: 0, y: 100 + 500 * Math.sin(Math.PI / 6), z: 500 * Math.cos(Math.PI / 6) };
+    expect(moved(flyStep({ ...NO_KEYS, forward: true }, dt, cam, up30)).y).toBeCloseTo(0, 12);
     // S: the opposite way.
     const s = moved(flyStep({ ...NO_KEYS, back: true }, dt, cam, down30));
-    expect(s.y).toBeCloseTo(-wt.y, 9);
-    // →: sideways along the ground, to the right of the view (forward × up = (−0.8, 0.6)).
+    expect(s.z).toBeCloseTo(-wt.z, 9);
+    expect(s.y).toBeCloseTo(0, 12);
+    // D: sideways along the ground, to the right of the view (forward × up = (−0.8, 0.6)).
     const d = moved(flyStep({ ...NO_KEYS, right: true }, dt, cam, tgt));
     expect(d.x * 0.6 + d.z * 0.8).toBeCloseTo(0, 9);
     expect(-0.8 * d.x + 0.6 * d.z).toBeCloseTo(v * dt, 9);
@@ -301,12 +305,12 @@ describe("Spec 06 — rendering", () => {
     // Speed limits.
     expect(flySpeed(1, false)).toBe(CAMERA.flyMinSpeed);
     expect(flySpeed(5000, false)).toBe(CAMERA.flyMaxSpeed);
-    // Floor: flying forward into the ground stops at eye height (no sliding along it); ↓ too.
+    // Low down and looking steeply down, W keeps the height; ↓ stops at eye height.
     const low = { x: 0, y: 2, z: 0 };
     const steep = { x: 0, y: 0, z: 1 }; // 63° down
-    const into = flyStep({ ...NO_KEYS, forward: true, fast: true }, 1, low, steep);
-    expect(into.camera.y).toBeCloseTo(CAMERA.minHeight, 9);
-    expect(Math.hypot(into.camera.x - low.x, into.camera.z - low.z)).toBeCloseTo(0.3 / 2, 6); // stopped where it met the floor
+    const into = flyStep({ ...NO_KEYS, forward: true }, 0.1, low, steep);
+    expect(into.camera.y).toBeCloseTo(2, 12);
+    expect(into.camera.z - low.z).toBeCloseTo(flySpeed(2, false) * 0.1, 9);
     const q = flyStep({ ...NO_KEYS, down: true, fast: true }, 1, low, { x: 10, y: 0, z: 0 });
     expect(q.camera.y).toBeCloseTo(CAMERA.minHeight, 9);
     // The orbit point never goes below the ground: looking down it lands where the view meets it.
@@ -325,8 +329,8 @@ describe("Spec 06 — rendering", () => {
   test("REND-15: turning moves only the look point, around the camera", async () => {
     const { lookStep, TURN_KEY_MAP } = await import("../../src/render/cameraFly");
     const { CAMERA } = await import("../../src/config/render");
-    // Keys: A/D pan, Q/E tilt down/up.
-    expect(TURN_KEY_MAP).toEqual({ KeyA: "left", KeyD: "right", KeyE: "up", KeyQ: "down" });
+    // Keys: ←/→ turn, Q/E tilt down/up.
+    expect(TURN_KEY_MAP).toEqual({ ArrowLeft: "left", ArrowRight: "right", KeyE: "up", KeyQ: "down" });
     const cam = { x: 100, y: 20, z: -50 };
     const tgt = { x: 100, y: 20, z: 950 }; // level, looking along +z, 1 km away
     // Yaw left 90°: the view turns to +x (left of +z with y up), same distance, still level.
@@ -368,16 +372,50 @@ describe("Spec 06 — rendering", () => {
     expect(keys.forward).toBe(false);
     // ⌘ pressed while flying and turning: everything released (macOS won't send the key-ups).
     keyEvent(keys, turn, ev("KeyS"), true, false);
-    keyEvent(keys, turn, ev("KeyA"), true, false);
+    keyEvent(keys, turn, ev("ArrowLeft"), true, false);
     keyEvent(keys, turn, ev("MetaLeft", { key: "Meta", metaKey: true }), true, false);
     expect(keys.back).toBe(false);
     expect(turn.left).toBe(false);
     // Ctrl/Alt shortcuts too; key-downs while typing in a field are ignored.
+    keyEvent(keys, turn, ev("KeyA"), true, false);
     keyEvent(keys, turn, ev("ArrowLeft"), true, false);
+    expect(keys.left).toBe(true);
+    expect(turn.left).toBe(true);
     keyEvent(keys, turn, ev("KeyC", { ctrlKey: true }), true, false);
     expect(keys.left).toBe(false);
+    expect(turn.left).toBe(false);
     expect(keyEvent(keys, turn, ev("ArrowRight"), true, true)).toBe(false);
-    expect(keys.right).toBe(false);
+    expect(turn.right).toBe(false);
+  });
+
+  test("REND-16: camera keys work whatever has focus except a text field being typed in", async () => {
+    const { isTyping } = await import("../../src/render/cameraFly");
+    const el = (tagName: string, type = "", isContentEditable = false) => ({ tagName, type, isContentEditable });
+    // The side panel's checkboxes, menus, buttons and sliders don't take the keys.
+    expect(isTyping(null)).toBe(false);
+    expect(isTyping(el("INPUT", "checkbox"))).toBe(false);
+    expect(isTyping(el("INPUT", "range"))).toBe(false);
+    expect(isTyping(el("INPUT", "button"))).toBe(false);
+    expect(isTyping(el("SELECT"))).toBe(false);
+    expect(isTyping(el("BUTTON"))).toBe(false);
+    expect(isTyping(el("DIV"))).toBe(false);
+    expect(isTyping(el("CANVAS"))).toBe(false);
+    // Text and number fields do.
+    expect(isTyping(el("INPUT", "text"))).toBe(true);
+    expect(isTyping(el("INPUT", "number"))).toBe(true);
+    expect(isTyping(el("INPUT", ""))).toBe(true); // no type = text
+    expect(isTyping(el("TEXTAREA"))).toBe(true);
+    expect(isTyping(el("DIV", "", true))).toBe(true);
+  });
+
+  test("REND-18: a new run never moves the camera", async () => {
+    const { followDelta } = await import("../../src/render/cameraFly");
+    // Following: the camera goes with the tornado's motion.
+    expect(followDelta({ x: 10, z: 20 }, { x: 13, z: 24 }, false)).toEqual({ x: 3, z: 4 });
+    // A new run: the tornado jumps to its new start; the camera stays put.
+    expect(followDelta({ x: 1500, z: 200 }, { x: -2800, z: 40 }, true)).toEqual({ x: 0, z: 0 });
+    // No previous frame: nothing to follow yet.
+    expect(followDelta(null, { x: 5, z: 5 }, false)).toEqual({ x: 0, z: 0 });
   });
   test("REND-17: the camera starts framed on the tornado, ahead of it on its track", async () => {
     const { startView } = await import("../../src/render/cameraFly");

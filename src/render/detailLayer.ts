@@ -31,11 +31,20 @@ interface Slot {
   shape: number;
 }
 
+/** Per-member view style (the lab, Spec 13): hidden (cutaway) and/or a color (utilization). */
+export type MemberStyle = (house: number, member: number) => { hidden?: boolean; color?: number } | null;
+
 export interface DetailLayer {
   group: THREE.Group;
   /** With damage colors on, the outer finish (siding, shingles) takes the house's DOD color,
    *  as the component houses do; bare sheathing and framing keep their materials. */
   sync(view: DetailView, damageColors?: boolean): void;
+  /** Set a member style (null: none); it is applied on the next `restyle`. */
+  setStyle(style: MemberStyle | null): void;
+  /** Rewrite every member with the current style (view only). */
+  restyle(view: DetailView): void;
+  /** The member an instance of one of the layer's meshes draws. */
+  memberAt(mesh: THREE.Object3D, instanceId: number): { house: number; member: number } | null;
 }
 
 const TINTED = new Set<string>(["siding", "roofShingle"]);
@@ -53,6 +62,8 @@ export function createDetailLayer(): DetailLayer {
   const houses = new Map<number, { slots: Slot[]; seen: number; tint: number }>();
   let lastVersion = -1;
   let lastColors = false;
+  /** The view drawn last: a new sim (the lab's rebuild) has its own, numbered from 0 again. */
+  let lastView: DetailView | null = null;
   const m4 = new THREE.Matrix4();
   const zero = new THREE.Matrix4().makeScale(0, 0, 0);
   const pos = new THREE.Vector3();
@@ -61,6 +72,11 @@ export function createDetailLayer(): DetailLayer {
   const scl = new THREE.Vector3();
   const off = new THREE.Vector3();
   const color = new THREE.Color();
+  /** Mesh key → instance index → the member it draws. */
+  const owners = new Map<SlotKey, ({ house: number; member: number } | null)[]>();
+  const keyOf = new Map<THREE.Object3D, SlotKey>();
+  let style: MemberStyle | null = null;
+  let styled = false;
 
   function meshFor(key: SlotKey, need: number): THREE.InstancedMesh {
     let mesh = meshes.get(key);
@@ -82,6 +98,8 @@ export function createDetailLayer(): DetailLayer {
     next.count = used.get(key) ?? 0;
     group.add(next);
     meshes.set(key, next);
+    if (mesh) keyOf.delete(mesh);
+    keyOf.set(next, key);
     return next;
   }
 
@@ -100,7 +118,7 @@ export function createDetailLayer(): DetailLayer {
     const mesh = meshes.get(s.key)!;
     const o = s.member * 7;
     const p = h.poses;
-    if (p[o + 1]! < -1000) {
+    if (p[o + 1]! < -1000 || (style && style(houseIndex, s.member)?.hidden)) {
       mesh.setMatrixAt(s.index, zero); // gone (left the area)
       return;
     }
@@ -115,7 +133,49 @@ export function createDetailLayer(): DetailLayer {
 
   return {
     group,
+    setStyle(s) {
+      if (!s && !style) return;
+      style = s;
+    },
+    restyle(view) {
+      if (!style && !styled) return;
+      styled = !!style;
+      const touched = new Set<SlotKey>();
+      for (const [i, mine] of houses) {
+        const h = view.houses.get(i);
+        if (!h) continue;
+        for (const s of mine.slots) {
+          write(view, i, s);
+          const m = h.framing.members[s.member]!;
+          const c = style?.(i, s.member)?.color;
+          meshes.get(s.key)!.setColorAt(s.index, color.setHex(c ?? (mine.tint >= 0 && TINTED.has(m.kind) ? mine.tint : m.color)));
+          touched.add(s.key);
+        }
+      }
+      for (const k of touched) {
+        const mesh = meshes.get(k)!;
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }
+    },
+    memberAt(mesh, instanceId) {
+      const key = keyOf.get(mesh);
+      return key ? (owners.get(key)?.[instanceId] ?? null) : null;
+    },
     sync(view, damageColors = false) {
+      if (view !== lastView) {
+        // Another sim's houses: free every slot, so nothing of the old run is drawn.
+        for (const [, h] of houses)
+          for (const sl of h.slots) {
+            meshes.get(sl.key)!.setMatrixAt(sl.index, zero);
+            (free.get(sl.key) ?? free.set(sl.key, []).get(sl.key)!).push(sl.index);
+            owners.get(sl.key)![sl.index] = null;
+            meshes.get(sl.key)!.instanceMatrix.needsUpdate = true;
+          }
+        houses.clear();
+        lastView = view;
+        lastVersion = -1;
+      }
       const colorsChanged = damageColors !== lastColors;
       lastColors = damageColors;
       const touched = new Set<SlotKey>();
@@ -142,6 +202,7 @@ export function createDetailLayer(): DetailLayer {
         for (const s of h.slots) {
           meshes.get(s.key)!.setMatrixAt(s.index, zero);
           (free.get(s.key) ?? free.set(s.key, []).get(s.key)!).push(s.index);
+          owners.get(s.key)![s.index] = null;
           touched.add(s.key);
         }
         houses.delete(i);
@@ -156,6 +217,7 @@ export function createDetailLayer(): DetailLayer {
               const key: SlotKey = sh.tri ? (m.kind === "pane" ? "triGlass" : sh.tri.mirror ? "triM" : "tri") : BOX_KINDS.includes(m.kind) ? m.kind : "wallSheet";
               const index = alloc(key);
               meshes.get(key)!.setColorAt(index, color.setHex(m.color));
+              (owners.get(key) ?? owners.set(key, []).get(key)!)[index] = { house: i, member: mi };
               slots.push({ key, index, member: mi, shape: si });
               touched.add(key);
             }),

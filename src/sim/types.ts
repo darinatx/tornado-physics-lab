@@ -93,8 +93,16 @@ export interface SimConfig {
   /** Wind tunnel: exactly these houses enter the detail zone (once a spot is set), each in the
    *  named physics group (default: its street row), `stripped` = with every member removed. */
   detailSet?: readonly { index: number; group?: string; stripped?: boolean }[];
-  /** Read-only observers (Spec 08 v1.5). */
+  /** The lab (Spec 13): the detail set enters at the first detail step, all at once, wherever
+   *  the tornado is, and never leaves. */
+  detailPinned?: boolean;
+  /** Read-only observers (Spec 08 v1.5). More can be added with `sim.observe`. */
   taps?: SimTaps;
+  /** Turbulent debris dispersion (Spec 13; default on). Off: gusts held at zero (replay tests). */
+  dispersion?: boolean;
+  /** Detailed houses whose connection loads come back with every detail step (Spec 13, the
+   *  lab's member inspector). */
+  inspect?: readonly number[];
   /** Launches (Spec 12): called at every debris step before the debris moves, and at every
    *  detail step for the launches it carries. */
   inject?: {
@@ -109,7 +117,9 @@ export interface SimTaps {
    *  or a detail-zone piece's hit applied in the sim ("detail"). */
   impact?(house: number, q: QueuedImpact, path: "debris" | "detail", piece: Piece | null, time: number): void;
   /** A connection failure in a detailed house, as the sim receives it. */
-  detailFailure?(house: number, f: { label: string; load: number; capacity: number; mph: number }, time: number): void;
+  detailFailure?(house: number, f: { label: string; load: number; capacity: number; mph: number; con?: number }, time: number): void;
+  /** After every debris step (`time` = the step's start), once the debris has moved (Spec 13). */
+  debrisStep?(time: number): void;
 }
 
 export interface SimFrame {

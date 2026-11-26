@@ -1,4 +1,8 @@
 import { rateText, SimRateMeter } from "./ui/simRate";
+import { SIM_DEFAULTS } from "./config/sim";
+import type { Building } from "./core/damage/types";
+import { recordDebrisAt, townWind } from "./sim/debrisRecorder";
+import type { DebrisRecorder } from "./sim/debrisRecorder";
 import { createRenderer } from "./render/renderer";
 import { createSim } from "./sim/loop";
 import { createWorkerBackend } from "./sim/detailBackend";
@@ -67,13 +71,38 @@ view.onCameraMoved(() => {
   panel.state.follow = false;
 });
 const readout = mountReadout(leftCol);
+const recorders = new Map<Building, DebrisRecorder>();
 const probe = createProbeUI(app, view, (x, z) => sim.world.buildingAt(x, z), (p) => {
   if (!pickingSpot) return false;
   pickingSpot = false;
   spotHint.hidden = true;
   sim.setDetailFocus({ x: p.x, z: p.z });
   return true;
-}, { dock: leftCol, hint: bottomCol });
+}, { dock: leftCol, hint: bottomCol }, {
+  // Record the debris reaching a pinned house, for replay in the structure lab (Spec 13).
+  label: (b) => {
+    const r = recorders.get(b);
+    return r ? `⏹ Stop and save the debris recording (${r.count} pieces)` : "⏺ Record debris at this house";
+  },
+  run: (b) => {
+    const r = recorders.get(b);
+    if (r) {
+      recorders.delete(b);
+      const rec = r.stop();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(rec)], { type: "application/json" }));
+      a.download = `debris-recording-house-${b.id}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      return;
+    }
+    // The track's start (sim time 0), back along the straight track from where it is now.
+    const s = sim.snapshot.tornado;
+    const start = { x: s.center.x - s.velocity.x * sim.time, z: s.center.z - s.velocity.z * sim.time };
+    const index = sim.world.buildings.indexOf(b);
+    recorders.set(b, recordDebrisAt(sim, index, townWind(sim.params, start, b, "custom"), { seed: SIM_DEFAULTS.seed }));
+  },
+});
 
 /** Seconds to wait after dissipation before repeating. */
 const REPEAT_DELAY = 3;
@@ -96,8 +125,12 @@ function frame(now: number): void {
   if (readoutTimer <= 0) {
     readout.update(computeReadout(f.curr));
     const n = sim.detail.houses.size;
-    detailStatus.hidden = n === 0;
-    detailStatus.textContent = `${n} house${n === 1 ? "" : "s"} in full structural detail${sim.detailLagging ? ` · slow motion while they come apart${simRate.rate !== null ? ` · ${rateText(simRate.rate)}` : ""}` : ""}`;
+    const slow = simRate.isSlow(sim.timeScale);
+    const parts: string[] = [];
+    if (n > 0) parts.push(`${n} house${n === 1 ? "" : "s"} in full structural detail`);
+    if (slow) parts.push(`slow motion${n > 0 ? " while they come apart" : ""} · ${rateText(simRate.rate!)}`);
+    detailStatus.hidden = parts.length === 0;
+    detailStatus.textContent = parts.join(" · ");
     readoutTimer = 0.1;
   }
   requestAnimationFrame(frame);

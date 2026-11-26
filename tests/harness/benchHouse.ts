@@ -1,22 +1,23 @@
 /**
- * Structure lab (Spec 09 slice A): a block of 1–12 member-level houses in a shared structure
- * world under steady straight-line wind, or a tornado pass across them.
+ * Test bench for the structure world (Spec 09): member-level houses in one shared structure
+ * world under steady straight-line wind, stepped directly. Not the lab (Spec 13 runs the lab
+ * on the real sim); the unit tests use it to drive the structure world on its own.
  */
-import type { Building } from "../core/damage/types";
-import type { Vec3 } from "../core/math/vec";
-import { PRESETS } from "../config/presets";
-import { DETAIL, LAB } from "../config/structure";
-import type { ConstructionClass } from "../config/buildings";
-import { createHouse } from "../core/damage/building";
-import { randomHouseSpec } from "./city";
-import { createRng } from "./rng";
-import { mphToMs } from "../core/wind/efScale";
-import { pressureDeficit } from "../core/wind/pressure";
-import type { TornadoState } from "../core/wind/types";
-import { envFactor, windAt } from "../core/wind/windField";
-import { defaultParams } from "./types";
-import { DetailHouse, initRapier, STRUCT_DT, StructureWorld } from "./structureWorld";
-import type { MemberPose, StructureFailure, WindSource } from "./structureWorld";
+import type { Building } from "../../src/core/damage/types";
+import type { Vec3 } from "../../src/core/math/vec";
+import { PRESETS } from "../../src/config/presets";
+import { DETAIL, LAB } from "../../src/config/structure";
+import type { ConstructionClass } from "../../src/config/buildings";
+import { createHouse } from "../../src/core/damage/building";
+import { randomHouseSpec } from "../../src/sim/city";
+import { createRng } from "../../src/sim/rng";
+import { mphToMs } from "../../src/core/wind/efScale";
+import { pressureDeficit } from "../../src/core/wind/pressure";
+import type { TornadoState } from "../../src/core/wind/types";
+import { envFactor, windAt } from "../../src/core/wind/windField";
+import { defaultParams } from "../../src/sim/types";
+import { DetailHouse, initRapier, STRUCT_DT, StructureWorld } from "../../src/sim/structureWorld";
+import type { MemberPose, StructureFailure, WindSource } from "../../src/sim/structureWorld";
 
 export { initRapier };
 export type { MemberPose };
@@ -55,7 +56,7 @@ export function labHouses(n: number, cls: ConstructionClass): Building[] {
 const PASS_CALM = mphToMs(50);
 const PASS_SEARCH_STEP = 10; // m
 
-export class StructureLab {
+export class BenchHouse {
   readonly sw: StructureWorld;
   readonly house: DetailHouse;
   windMph = 0;

@@ -4,7 +4,7 @@ import { LAYOUT } from "../../src/config/buildings";
 import { plateForce } from "../../src/core/structure/aero";
 import { buildFraming } from "../../src/core/structure/framing";
 import { attachedToSlab, groupsOf, solveLoadPath } from "../../src/core/structure/loadpath";
-import { initRapier, LAB_DT, labHouses, StructureLab } from "../../src/sim/structureLab";
+import { initRapier, LAB_DT, labHouses, BenchHouse as StructureLab } from "../harness/benchHouse";
 import { LAB } from "../../src/config/structure";
 import { PRESETS } from "../../src/config/presets";
 import { mphToMs } from "../../src/core/wind/efScale";
@@ -46,11 +46,12 @@ describe("Spec 09 — structural physics", () => {
       const [x0, x1] = extent(fr);
       expect(x0!).toBeCloseTo(-p.len / 2 - (corner(-1) ? ext : 0), 9);
       expect(x1!).toBeCloseTo(p.len / 2 + (corner(1) ? ext : 0), 9);
-      // Vertical members (studs, jacks, cripples) at no more than 0.6 m apart along the wall.
+      // Vertical members (studs, jacks, cripples) at no more than 16 in. apart along the wall
+      // (a king stud at an opening's edge can sit up to a stud's width off the grid).
       const xs = fr.shapes.filter((s) => s.size[1] > s.size[0]).map((s) => s.pos.x).sort((a, b) => a - b);
       expect(xs[0]!).toBeLessThan(x0! + LUMBER.stud[0]);
       expect(xs[xs.length - 1]!).toBeGreaterThan(x1! - LUMBER.stud[0]);
-      for (let k = 1; k < xs.length; k++) expect(xs[k]! - xs[k - 1]!).toBeLessThanOrEqual(LUMBER.spacing + 1e-6);
+      for (let k = 1; k < xs.length; k++) expect(xs[k]! - xs[k - 1]!).toBeLessThanOrEqual(LUMBER.studSpacing + LUMBER.stud[0] + 1e-6);
     });
     // Wall sheathing and drywall cover each panel (less its openings).
     for (let i = 0; i < b.panels.length; i++) {
@@ -241,7 +242,7 @@ describe("Spec 09 — structural physics", () => {
     lab.dispose();
   });
 
-  test("STR-08: the lab is deterministic", () => {
+  test("STR-08: the structure world is deterministic", () => {
     const run = () => {
       const lab = new StructureLab(house());
       for (let mph = 60; mph <= 110; mph += 2) {
@@ -397,129 +398,6 @@ describe("openings, doors and floor plan (STR-11, STR-12)", () => {
       const others = lab.house.groupBodies;
       expect([...others.values()].find((g) => g.includes(m.id))!.length).toBe(1); // loose shard
     }
-    lab.dispose();
-  });
-});
-
-describe("lab tornado pass (STR-21, STR-22)", () => {
-  beforeAll(async () => {
-    await initRapier();
-  });
-
-  const preset = (id: string) => PRESETS.find((p) => p.id === id)!.params;
-
-  test("STR-21: the pass starts where roof wind is calm, moves straight at mature strength, with the Spec 01/02 wind", () => {
-    const lab = new StructureLab(house());
-    const b = lab.building;
-    // Far off the track: the house never sees damaging wind, so the whole pass is cheap.
-    lab.startTornado({ presetId: "ef2-cone", headingDeg: 0, offset: 2000 });
-    const p = preset("ef2-cone");
-    const s0 = lab.tornado!;
-    expect(s0.vMax).toBe(p.vPeak);
-    expect(s0.rMax).toBe(p.rMax);
-    expect(Math.hypot(s0.velocity.x, s0.velocity.z)).toBeCloseTo(p.translationSpeed!, 9);
-    // Heading 0 = +X; positive offset puts the house to the right of the track (+Z for +X travel).
-    const along0 = b.x - s0.center.x;
-    expect(along0).toBeCloseTo(2 * p.rMax!, 6); // nothing within reach: the 2·R_max minimum
-    expect(b.z - s0.center.z).toBeCloseTo(2000, 6);
-    for (let i = 0; i < 60; i++) lab.step();
-    const s1 = lab.tornado!;
-    expect(s1.center.x - s0.center.x).toBeCloseTo(p.translationSpeed! * 60 * LAB_DT, 6);
-    expect(s1.center.z).toBeCloseTo(s0.center.z, 9);
-    expect(s1.vMax).toBe(p.vPeak);
-    // The house feels exactly the tornado's wind and deficit.
-    const q = { x: b.x + 3, y: 4, z: b.z - 2 };
-    expect(lab.wind.at(q)).toEqual(windAt(q, s1, "open"));
-    expect(lab.wind.deficit(b.x, b.z)).toBe(pressureDeficit(Math.hypot(b.x - s1.center.x, b.z - s1.center.z), s1));
-    // The pass ends once the tornado is as far past the house as it started before it.
-    let steps = 60;
-    while (!lab.passDone && steps < 100000) {
-      lab.step();
-      steps++;
-    }
-    expect(lab.passDone).toBe(true);
-    expect(steps).toBe(Math.ceil((2 * along0) / (p.translationSpeed! * LAB_DT)));
-    expect(lab.tornado).toBeNull();
-    expect(lab.wind.at(q)).toEqual({ x: 0, y: 0, z: 0 });
-    expect(lab.wind.deficit(b.x, b.z)).toBe(0);
-    lab.dispose();
-  }, 120000);
-
-  test("STR-21: on a close track the start is the nearest point where roof wind is under 50 mph", () => {
-    const lab = new StructureLab(house());
-    const b = lab.building;
-    lab.startTornado({ presetId: "ef4-wedge", headingDeg: 90, offset: 0 });
-    const s = lab.tornado!;
-    // No APC jump: the inside pressure starts equal to the outside.
-    expect(lab.wind.deficit(b.x, b.z)).toBeGreaterThan(50);
-    lab.step();
-    expect(Math.abs(lab.house.apc)).toBeLessThan(5);
-    // Heading 90°: travel toward −Z (counter-clockwise from +X seen from above).
-    expect(s.velocity.z).toBeLessThan(0);
-    const d = s.center.z - b.z;
-    expect(d).toBeGreaterThanOrEqual(2 * s.rMax);
-    const roof = (state: typeof s) => {
-      const w = windAt({ x: b.x, y: b.roofHeight, z: b.z }, state, "open");
-      return Math.hypot(w.x, w.y, w.z);
-    };
-    expect(roof(s)).toBeLessThan(mphToMs(50));
-    const nearer = { ...s, center: { x: s.center.x, z: s.center.z - 10 } };
-    expect(roof(nearer)).toBeGreaterThanOrEqual(mphToMs(50));
-    lab.dispose();
-  });
-
-  test("STR-22: a lab tornado pass is deterministic", () => {
-    const run = () => {
-      const lab = new StructureLab(house());
-      // Start inside the damaging winds so a short run already tears pieces off.
-      lab.startTornado({ presetId: "ef3-strong", headingDeg: 20, offset: 60, startDistance: 1.3 * preset("ef3-strong").rMax! });
-      for (let i = 0; i < 150; i++) lab.step();
-      const out = lab.failures.map((x) => [x.label, x.member, x.time.toFixed(6)]);
-      lab.dispose();
-      return out;
-    };
-    const a = run();
-    expect(a.length).toBeGreaterThan(0);
-    expect(run()).toEqual(a);
-  }, 120000);
-});
-
-describe("lab house count (STR-23)", () => {
-  beforeAll(async () => {
-    await initRapier();
-  });
-
-  test("STR-23: N houses in a centered grid at lot spacing, one shared world, calm start at every house", () => {
-    for (const n of [1, 4, 5, LAB.maxHouses]) {
-      const bs = labHouses(n, "standard");
-      expect(bs.length).toBe(n);
-      const cols = Math.ceil(Math.sqrt(n));
-      const xs = [...new Set(bs.map((b) => b.x))].sort((a, b) => a - b);
-      const zs = [...new Set(bs.map((b) => b.z))].sort((a, b) => a - b);
-      expect(xs.length).toBe(Math.min(cols, n));
-      for (let i = 1; i < xs.length; i++) expect(xs[i]! - xs[i - 1]!).toBeCloseTo(LAB.lotSpacing, 9);
-      for (let i = 1; i < zs.length; i++) expect(zs[i]! - zs[i - 1]!).toBeCloseTo(LAB.lotSpacing, 9);
-      // Centered: the grid's extents are symmetric about the origin.
-      expect(xs[0]! + xs[xs.length - 1]!).toBeCloseTo(0, 9);
-      expect(zs[0]! + zs[zs.length - 1]!).toBeCloseTo(0, 9);
-    }
-    const bs = labHouses(4, "standard");
-    const lab = new StructureLab(bs);
-    expect(lab.houses.length).toBe(4);
-    expect(lab.sw.houses).toEqual(lab.houses);
-    lab.startTornado({ presetId: "ef4-wedge", headingDeg: 0, offset: 0 });
-    const s = lab.tornado!;
-    for (const b of bs) {
-      const w = windAt({ x: b.x, y: b.roofHeight, z: b.z }, s, "open");
-      expect(Math.hypot(w.x, w.y, w.z)).toBeLessThan(mphToMs(50));
-    }
-    // The nearest start: 10 m closer, some house would already feel 50 mph (or it's the minimum).
-    const nearer = { ...s, center: { x: s.center.x + 10, z: s.center.z } };
-    const max = Math.max(...bs.map((b) => {
-      const w = windAt({ x: b.x, y: b.roofHeight, z: b.z }, nearer, "open");
-      return Math.hypot(w.x, w.y, w.z);
-    }));
-    expect(max).toBeGreaterThanOrEqual(mphToMs(50));
     lab.dispose();
   });
 });
@@ -814,4 +692,104 @@ describe("Spec 09 — detail zone performance", () => {
       lab.dispose();
     }
   });
+});
+
+describe("Spec 09 v0.18 — stud bending (STR-36)", () => {
+  beforeAll(async () => {
+    await initRapier();
+  });
+
+  test("STR-36: studs at 16 in.; M = W·H/(8n) braced or W·H/(2n) unbraced against MOR·S·k_sys; a frame whose studs break lets go at once", async () => {
+    const { studCapacity, studMoment } = await import("../../src/core/structure/studs");
+    const { STUD_BENDING } = await import("../../src/config/structure");
+    expect(LUMBER.studSpacing).toBeCloseTo(0.406, 3);
+    const [bw, bd] = LUMBER.stud;
+    expect(studCapacity()).toBeCloseTo((STUD_BENDING.mor * bw * bd * bd) / 6 * STUD_BENDING.systemFactor, 9);
+    expect(studCapacity()).toBeGreaterThan(2000);
+    expect(studCapacity()).toBeLessThan(3000);
+    expect(studMoment(1000, 3, 10, true)).toBeCloseTo(37.5, 9);
+    expect(studMoment(1000, 3, 10, false)).toBeCloseTo(150, 9);
+
+    // The engine's check equals the formula for each standing frame.
+    const lab = new StructureLab(house());
+    const H = lab.house as any;
+    const b = lab.building;
+    const w10 = { x: 0, y: 0, z: -mphToMs(150) };
+    const checks = H.studCheck(w10, 0) as { id: number; W: number; M: number; cap: number; braced: boolean; n: number }[];
+    expect(checks.length).toBe(lab.framing.members.filter((m) => m.kind === "wallFrame").length);
+    for (const c of checks) {
+      expect(c.M).toBeCloseTo(studMoment(c.W, b.wallHeight, c.n, c.braced), 9);
+      expect(c.cap).toBe(studCapacity());
+      expect(c.n).toBeGreaterThanOrEqual(2);
+      expect(c.braced).toBe(true); // the roof is on
+    }
+    // W from the frame's attached envelope: hand-check one frame on the windward face.
+    const { faceCp, faceNormal } = await import("../../src/core/damage/loads");
+    const { AIR_DENSITY } = await import("../../src/config/atmosphere");
+    const fr = lab.framing.members.find((m) => m.kind === "wallFrame" && m.face === 1)!;
+    const env = lab.framing.carriesOf[fr.id]!.map((c) => lab.framing.members[lab.framing.connections[c]!.from]!).filter((m) => m.kind === "wallSheet" || m.kind === "pane" || m.kind === "door" || m.kind === "garageDoor").reduce((a, m) => a + m.area, 0);
+    const cpFace = [0, 1, 2, 3].map((k) => faceCp({ x: w10.x, z: w10.z }, faceNormal(b.yaw, k)));
+    const q = 0.5 * AIR_DENSITY * w10.z * w10.z;
+    const want = Math.abs(q * (cpFace[1]! - H.internalCp(cpFace))) * env;
+    expect(checks.find((c) => c.id === fr.id)!.W).toBeCloseTo(want, 6);
+
+    // In a strong steady wind on the windward wall, a frame's studs break: every one of its
+    // supports fails at once by bending, with the moment over the studs' capacity, and it comes loose.
+    lab.setWind(230, 270); // toward −Z: the +Z face (1) is windward
+    let hit: { label: string; load: number; capacity: number } | undefined;
+    for (let i = 0; i < 600 && !hit; i++) {
+      lab.step();
+      hit = lab.failures.find((f) => f.label === "Studs (bending)");
+    }
+    expect(hit).toBeDefined();
+    expect(hit!.load).toBeGreaterThan(hit!.capacity);
+    expect(hit!.capacity).toBe(studCapacity());
+    const fid = lab.framing.members.find((m) => m.kind === "wallFrame" && lab.framing.supportsOf[m.id]!.some((c) => lab.failures.some((f) => f.label === "Studs (bending)" && (f as any).con === c)))!.id;
+    expect(lab.framing.supportsOf[fid]!.every((c) => !H.intact[c])).toBe(true);
+    expect(H.isAttached(fid)).toBe(false);
+    lab.dispose();
+  }, 60000);
+});
+
+describe("Spec 09 v0.19 — tornado roof pressures (STR-37)", () => {
+  beforeAll(async () => {
+    await initRapier();
+  });
+
+  test("STR-37: in a tornado the roof's external pressures are 1.15× straight-line; 1× in the wind tunnel", async () => {
+    const { DETAIL } = await import("../../src/config/structure");
+    expect(DETAIL.tornadoRoofFactor).toBe(1.15);
+    const lab = new StructureLab(house());
+    const H = lab.house as any;
+    const sw = (lab as any).sw;
+    const w10 = { x: 0, y: 0, z: -mphToMs(120) };
+    const roofIds = lab.framing.members.filter((m) => m.kind === "roofSheet" || m.kind === "roofShingle").map((m) => m.id);
+    const forces = (k: number, local: boolean) => {
+      sw.roofFactor = k;
+      return H.attachedForces(local, w10, 0) as { x: number; y: number; z: number }[];
+    };
+    for (const local of [false, true]) {
+      const f0 = forces(0, local);
+      const f1 = forces(1, local);
+      const fk = forces(1.15, local);
+      // Linear in the factor: only the external term scales.
+      for (const id of roofIds) {
+        for (const a of ["x", "y", "z"] as const) expect(fk[id]![a] - f0[id]![a]).toBeCloseTo(1.15 * (f1[id]![a] - f0[id]![a]), 6);
+      }
+      // Walls don't change.
+      const wall = lab.framing.members.find((m) => m.kind === "wallSheet")!.id;
+      expect(fk[wall]).toEqual(f1[wall]);
+    }
+    lab.dispose();
+    // The engine sets it from the wind: a tornado pass 1.15, the tunnel's flow 1.
+    const { createLab } = await import("../../src/sim/lab");
+    const { createLocalBackend } = await import("../../src/sim/detailBackend");
+    for (const [wind, want] of [[{ kind: "steady", keys: [{ t: 0, mph: 50, dirDeg: 0 }] }, 1], [{ kind: "pass", presetId: "ef2-cone", headingDeg: 0, offset: 0, lifecycle: "mature" }, 1.15]] as const) {
+      let be: ReturnType<typeof createLocalBackend> | undefined;
+      const l = await createLab({ houses: 1, cls: "standard", surroundings: "open", seed: 3, donors: false }, wind as never, { passThrough: false, detail: (_s, b) => (be = createLocalBackend(b, 1)) });
+      l.advance(0.1);
+      expect(be!.engines[0]!.worlds.get("lab")!.roofFactor).toBe(want);
+      l.dispose();
+    }
+  }, 60000);
 });

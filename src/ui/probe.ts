@@ -53,14 +53,15 @@ const kn = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} kN` : `${Math.r
 const kpa = (pa: number) => (pa >= 1000 ? `${(pa / 1000).toFixed(2)} kPa` : `${Math.round(pa)} Pa`);
 
 /** Distance from the core edge (R_max) now and the closest it came (INST-13). */
-export function coreDistanceText(now: number, closest: number): string {
-  const nowText = now <= 0 ? "inside the core now" : `${Math.round(now)} m now`;
+export function coreDistanceText(now: number | null, closest: number): string {
+  // null: the tornado has dissipated, so there is no core to measure from.
+  const nowText = now === null ? "dissipated" : now <= 0 ? "inside the core now" : `${Math.round(now)} m now`;
   if (!Number.isFinite(closest)) return nowText;
   return `${nowText} · closest${closest <= 0 ? ": inside the core" : ` ${Math.round(closest)} m`}`;
 }
 
 /** The short building summary (hover, and the top of a pinned house). */
-export function buildingSummary(r: BuildingReport, hereMph: number, edgeNow: number): string {
+export function buildingSummary(r: BuildingReport, hereMph: number, edgeNow: number | null): string {
   const col = r.dod > 0 ? hex(DOD_COLORS[r.dod]!) : "#c3ccd6";
   const est = r.estimate.ef === null
     ? "No damage"
@@ -98,9 +99,12 @@ export const PIN_CARD_HTML = `<button type="button" class="pin-x" title="Remove"
   `<div class="pin-fails"></div>`;
 
 /** Distance from the core edge (m) for a point. */
-const edgeAt = (x: number, z: number, s: SimSnapshot["tornado"]) => Math.hypot(x - s.center.x, z - s.center.z) - s.rMax;
+/** Distance from the core edge now (m), or null once the tornado has dissipated (no core). */
+const edgeAt = (x: number, z: number, snap: SimSnapshot): number | null =>
+  snap.phase === "dissipated" ? null : Math.hypot(x - snap.tornado.center.x, z - snap.tornado.center.z) - snap.tornado.rMax;
 
 interface Pin {
+  action?: HTMLButtonElement;
   point: Vec3;
   color: number;
   history: History;
@@ -226,6 +230,8 @@ export function createProbeUI(
   interceptClick: (p: Vec3) => boolean = () => false,
   /** Where the pin dock and the key hint go (layout columns, Spec 07 v1.10). */
   hosts: { dock: HTMLElement; hint: HTMLElement } = { dock: document.body, hint: document.body },
+  /** A button on a pinned house's card (Spec 13: record the debris reaching it). */
+  pinAction?: { label: (b: Building) => string; run: (b: Building) => void },
 ): ProbeUI {
   const tooltip = document.createElement("div");
   tooltip.className = "probe-tip";
@@ -246,7 +252,7 @@ export function createProbeUI(
 
   const hint = document.createElement("div");
   hint.className = "probe-hint";
-  hint.textContent = "Hover to inspect · click to pin · drag to move · scroll to zoom · W/S forward/back · A/D pan · Q/E tilt · arrows move · Shift faster";
+  hint.textContent = "Hover to inspect · click to pin · drag to move · scroll to zoom · WASD move · ↑/↓ height · ←/→ turn · Q/E tilt · Shift faster";
   hosts.hint.appendChild(hint);
 
   let hover: Vec3 | null = null;
@@ -301,6 +307,18 @@ export function createProbeUI(
       legendDp: card.querySelector<HTMLElement>(".lg-dp b")!,
       legendSpan: card.querySelector<HTMLElement>(".lg-span")!,
     };
+    if (pinAction) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pin-act";
+      btn.hidden = true;
+      btn.onclick = () => {
+        const b = buildingAt(point.x, point.z);
+        if (b) pinAction.run(b);
+      };
+      card.appendChild(btn);
+      pin.action = btn;
+    }
     card.querySelector<HTMLButtonElement>(".pin-x")!.onclick = () => {
       pins.splice(pins.indexOf(pin), 1);
       card.remove();
@@ -318,7 +336,7 @@ export function createProbeUI(
         const house = buildingAt(hover.x, hover.z);
         if (house) {
           const w = probeAt({ x: house.x, y: house.roofHeight, z: house.z }, s, snap.terrain);
-          tooltip.innerHTML = buildingSummary(buildingReport(house), w.mph, edgeAt(house.x, house.z, s)) + `<div class="p-row p-dim">click to pin for its history and what failed</div>`;
+          tooltip.innerHTML = buildingSummary(buildingReport(house), w.mph, edgeAt(house.x, house.z, snap)) + `<div class="p-row p-dim">click to pin for its history and what failed</div>`;
         } else {
           const r = probeAt({ x: hover.x, y: probeHeight, z: hover.z }, s, snap.terrain);
           tooltip.innerHTML = fmt(r) + `<div class="p-row p-dim">at ${probeHeight} m above ground · click to pin</div>`;
@@ -343,7 +361,7 @@ export function createProbeUI(
         if (snap.time <= snap.lifetime) pin.history.push(snap.time, r.mph, dpMb);
         if (house) {
           const rep = buildingReport(house);
-          setHtml(pin.body, buildingSummary(rep, r.mph, edgeAt(house.x, house.z, s)));
+          setHtml(pin.body, buildingSummary(rep, r.mph, edgeAt(house.x, house.z, snap)));
           setHtml(pin.fails, failureList(rep));
         } else {
           setHtml(pin.body, fmt(r));
@@ -353,6 +371,13 @@ export function createProbeUI(
         pin.legendDp.textContent = `${airPressureMb(r.pressureDeficit).toFixed(1)} mb`;
         pin.legendSpan.textContent = `0–${Math.round(snap.lifetime)} s`;
         drawGraph(pin.canvas, pin.history, pin.color, snap.lifetime);
+        if (pin.action) {
+          pin.action.hidden = !house;
+          if (house) {
+            const label = pinAction!.label(house);
+            if (pin.action.textContent !== label) pin.action.textContent = label;
+          }
+        }
       }
 
       view.setProbes(

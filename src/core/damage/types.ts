@@ -21,6 +21,10 @@ export interface HouseSpec {
   hasGarage: boolean;
   wallColor: number;
   roofColor: number;
+  /** Explicit layouts (Spec 13): this house's layout and capacities come from its own stream
+   *  with this seed, not the layout's shared one, so it is the same house whatever else is in
+   *  the layout. */
+  drawSeed?: number;
 }
 
 /** Connection failures of one type in a detailed house (Spec 09; loads in newtons). */
@@ -84,8 +88,11 @@ export interface QueuedImpact {
   perforated: boolean;
   sidingTorn: boolean;
   coverTorn: boolean;
-  /** Impulse force on the struck component (N); 0 for copies and roof hits. */
+  /** Impulse force on the struck component (N); 0 for copies. A roof hit's push is used by
+   *  detailed houses only (component uplift checks don't take a downward load). */
   force: number;
+  /** Where it hit, house-local (m; y above the ground), when known. */
+  at?: Vec3;
   /** The measure and threshold that decided the outcome (for the record). */
   measure: number;
   threshold: number;

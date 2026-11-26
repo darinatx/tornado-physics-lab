@@ -1,6 +1,6 @@
 # Spec 10 — Debris Impacts
 
-Status: Approved (v0.15) — Phase 6 slice A (impact physics and component houses) and the first
+Status: Approved (v0.17) — Phase 6 slice A (impact physics and component houses) and the first
 part of slice B (detail-zone pieces hit the houses around them). The rest of slice B is outlined
 at the end.
 
@@ -165,7 +165,13 @@ more force than its own end crushes at. F spread over the component's area is an
 pressure, added inward to that component's net load at the next damage evaluation (Spec 03).
 Quasi-static: a wall panel's natural period (~0.05–0.1 s) is close to τ, so dynamic
 amplification is about 1. Impacts on roof planes push down, which Spec 03's uplift checks
-don't use, so they cause only perforation and shingle damage.
+don't use, so on a component house they cause only perforation and shingle damage; a detailed
+house takes the push on the sheathing panel hit (below).
+
+**Where it hit** (v0.17). Every hit keeps its point on the house. On a detailed house the hit
+tears the actual member: a torn-shingle hit takes the shingle patch member nearest the point off
+its nails and sealant, a torn-siding hit the siding course nearest it, and the push goes into the
+roof sheet or wall frame struck.
 
 **Damage areas.** One hit damages a patch, not a whole component:
 
@@ -357,6 +363,10 @@ Values live in `src/config/impacts.ts`.
   stand-in lodges in it (never bounces off a surface it perforated) and falls free once the
   stand-in shows that surface gone; the detail engine counts the hole as an opening at its face
   in the internal pressure, and 1 m² of holes breaches the house.
+- **IMP-23**: Roof and siding hits on detailed houses: a town piece whose hit tears shingles
+  takes the shingle patch member nearest the hit off its fasteners (one connection failure
+  each, by impact), a torn-siding hit the siding course nearest it, and every roof hit adds its
+  impulse force to the roof sheet nearest the hit, inward along its normal.
 - **IMP-21**: Glass in a detailed house breaks when a piece hits it with momentum above the
   pane's threshold (and not below), whole pane at once.
 - **IMP-13** *(validation)*: In an EF4 pass through the town, debris breaks the first window
@@ -371,9 +381,12 @@ Values live in `src/config/impacts.ts`.
   effect up to 0.25 s after they happen (the fixed lag that keeps runs deterministic).
 
 - Pieces don't hit each other.
-- Roof impacts don't push roof sections down; impacts don't weaken connections without failing
-  them (no fatigue).
-- Partly stripped siding and partly torn-off shingles aren't drawn until the component fails.
+- Partly stripped siding and partly torn-off shingles on component houses aren't drawn until the
+  component fails (drawn marks were tried in v0.17 and removed at the user's request).
+- Roof impacts don't push a component house's roof sections down (its checks are for uplift);
+  impacts don't weaken connections without failing them (no fatigue).
+- A detailed house's shingle patch members are about 0.7 m² (a quarter sheet), so a torn
+  shingle hit removes that much, not the component model's 0.5 m².
 - Debris inside a house falls to the slab; it doesn't hit interior walls.
 
 ### Damage both ways (slice B, second part)
@@ -419,6 +432,27 @@ n + lead, which they are certain to have reached):
 
 ## Changelog
 
+- v0.17 (same day): drawn damage marks removed at the user's request (they floated where walls had
+  fallen); hits keep their point for detailed houses' tear-off.
+- v0.17: roof hits show (found by the user in the structure lab: the debris launcher did nothing
+  visible to a roof). Hits keep their point; component houses draw torn shingle and siding
+  patches and punctures where they land (IMP-24); detailed houses lose the shingle patch or
+  siding course hit and take a roof hit's push on the sheet struck (IMP-23; the detail
+  section already said roof hits push, but only wall hits did). A single 2×4 still doesn't
+  take a roof off: at ICC 500 speeds its push is about 2–3 kN, far below a sheet's nailing or a
+  rafter's capacity. Push-out refined (IMP-17 found both): a light piece overlapping a shape
+  that it already overlapped before the step backs out toward where it last ended a step clear
+  of everything, if that pose is within 0.5 m (from farther, the direction says nothing); a
+  slab's way out is always up (it reaches into the ground); otherwise "inside a house" (under
+  its roof's outer surface and 0.15 m clear of its walls, not inside a wall's own thickness)
+  or "away from the house" decides. LAB-10 is at zero; IMP-17 is at 1 crossing (out through a
+  wall), still being traced.
+- v0.16: a light piece in the detail physics that sits inside a house's envelope (in through
+  an opening) and finds a fixed shape of that house overlapping it with no clear side it came
+  from (the shape was just rebuilt over it) is pushed toward the house's inside, not "away from
+  the house", which went out through the wall. Found by the structure lab's pass-through check
+  (Spec 13 LAB-10: a siding strip under a neighbor's roof deck, rebuilt when that house's
+  state changed).
 - v0.15: glass thresholds checked against the sources (Phase 6 open item). Sheets 1.2 → 4.7
   kg·m/s, β 0.5 → 0.3 (Shah 2008 / Masters et al. 2010 shingle tests); lumber gets its own
   family, 10.5 kg·m/s, β 0.3 (NAHB 2002 2×4 tests), instead of sharing 0.4 with compact

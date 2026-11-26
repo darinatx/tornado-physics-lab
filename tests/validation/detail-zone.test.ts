@@ -167,3 +167,26 @@ describe("Spec 09 slice C — detailed houses vs DI 2", () => {
     }
   }, 900000);
 });
+
+describe("Spec 09 v0.18 — stud bending in an EF5 pass", () => {
+  test("STR-36 (validation): an EF5 pass destroys a detailed house past DOD 7 by the eye, whichever way the track runs", async () => {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const run = promisify(execFile);
+    // 3 headings × 4 seeds, 6 at a time (async, so the test worker stays responsive).
+    const jobs = [0, 45, 90].flatMap((h) => [1, 2, 3, 4].map((s) => [s, h] as const));
+    const out: { seed: number; heading: number; peak: number; dod: number }[] = [];
+    for (let i = 0; i < jobs.length; i += 6) {
+      const batch = await Promise.all(
+        jobs.slice(i, i + 6).map(([s, h]) => run("npx", ["tsx", "scripts/lab-ef5.ts", String(s), String(h)], { encoding: "utf8", maxBuffer: 1 << 22 })),
+      );
+      for (const r of batch) out.push(JSON.parse(r.stdout.split("\n").find((l) => l.startsWith("JSON "))!.slice(5)));
+    }
+    console.log("STR-36:", out.map((r) => `${r.heading}°/${r.seed}: DOD ${r.dod} at ${Math.round(r.peak)} mph`).join(", "));
+    for (const r of out) {
+      expect(r.peak, "peak roof wind past DI 2's DOD 7 upper bound").toBeGreaterThan(153);
+      expect(r.dod, `heading ${r.heading}, seed ${r.seed}`).toBeGreaterThanOrEqual(7);
+    }
+  }, 1800000);
+});
+

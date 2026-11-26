@@ -1,6 +1,6 @@
 # Spec 12 — Wind Tunnel (Test Harness)
 
-Status: Approved (v0.1) — Stage 1 (headless tunnel, launcher, record, checks, parallel runner).
+Status: Approved (v0.2) — Stage 1 (headless tunnel, launcher, record, checks, parallel runner).
 Stage 2 (tornado replay, ramp-to-failure fragility, reference missile tests, timestep
 convergence, viewer) is outlined at the end.
 
@@ -226,5 +226,9 @@ boundaries. Values live in `src/config/tunnel.ts`.
 
 ## Changelog
 
+- v0.2: the launcher (`src/sim/launcher.ts`), the record (`src/sim/runRecord.ts`) and the
+  pass-through checker (`src/sim/passThrough.ts`) moved into the sim so the structure lab
+  (Spec 13) uses the same ones; the tunnel's behavior and record are unchanged. Launches can
+  aim at any house, carry an exact velocity, or arrive at their aim at a given speed.
 - v0.1: first version, at the user's request: a wind-tunnel harness to find physics and damage
   issues faster than town passes (Phase 6, ahead of slice C).

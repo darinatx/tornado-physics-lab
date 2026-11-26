@@ -3,7 +3,7 @@
  * (tests, tools). Both process steps strictly in order with their own inputs, so results don't
  * depend on timing.
  */
-import type { Building } from "../core/damage/types";
+import type { Building, HouseSpec } from "../core/damage/types";
 import { HeavyEngine } from "./heavyEngine";
 import type { HeavyResult, HeavyStep } from "./heavyEngine";
 import type { Vec3 } from "../core/math/vec";
@@ -107,12 +107,12 @@ export function createDeferredHeavy(buildings: readonly Building[], dt: number):
 }
 
 /** Messages to the worker. */
-export type ToHeavyWorker = { type: "reset"; seed: number; dt: number } | { type: "step"; step: HeavyStep };
+export type ToHeavyWorker = { type: "reset"; seed: number; dt: number; houses?: readonly HouseSpec[] } | { type: "step"; step: HeavyStep };
 /** Messages from the worker. */
 export type FromHeavyWorker = { type: "ready" } | { type: "result"; result: HeavyResult } | { type: "error"; message: string };
 
 /** Runs the engine in a Web Worker (browser only). The worker rebuilds the town from the seed. */
-export function createWorkerHeavy(seed: number, dt: number): HeavyBackend {
+export function createWorkerHeavy(seed: number, dt: number, houses?: readonly HouseSpec[]): HeavyBackend {
   const worker = new Worker(new URL("./heavyWorker.ts", import.meta.url), { type: "module" });
   let out: HeavyResult[] = [];
   let done = -1;
@@ -125,7 +125,7 @@ export function createWorkerHeavy(seed: number, dt: number): HeavyBackend {
     } else if (m.type === "error") console.error("heavy debris worker:", m.message);
   };
   const send = (m: ToHeavyWorker) => worker.postMessage({ ...m, epoch });
-  send({ type: "reset", seed, dt });
+  send({ type: "reset", seed, dt, ...(houses ? { houses } : {}) });
   return {
     post(step) {
       send({ type: "step", step });
@@ -142,7 +142,7 @@ export function createWorkerHeavy(seed: number, dt: number): HeavyBackend {
       epoch++;
       out = [];
       done = -1;
-      send({ type: "reset", seed: s, dt });
+      send({ type: "reset", seed: s, dt, ...(houses ? { houses } : {}) });
     },
     dispose() {
       worker.terminate();

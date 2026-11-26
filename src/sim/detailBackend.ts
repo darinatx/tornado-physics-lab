@@ -5,7 +5,7 @@
  * engines (Spec 09 performance); each row is its own world, so results don't depend on how
  * many engines there are either.
  */
-import type { Building } from "../core/damage/types";
+import type { Building, HouseSpec } from "../core/damage/types";
 import type { Framing } from "../core/structure/framing";
 import { streetRowOf } from "./city";
 import { DetailEngine } from "./detailZone";
@@ -78,6 +78,7 @@ export function mergeResults(rs: readonly DetailResult[]): DetailResult {
     failures: cat(Int32Array, (r) => r.failures),
     frozen: rs.flatMap((r) => r.frozen),
     failLog: rs.flatMap((r) => r.failLog),
+    ...(rs.some((r) => r.inspect) ? { inspect: rs.flatMap((r) => r.inspect ?? []) } : {}),
     townHits: rs.flatMap((r) => r.townHits),
     ms: Math.max(...rs.map((r) => r.ms)),
     groupMs: Math.max(...rs.map((r) => r.groupMs)),
@@ -150,7 +151,7 @@ export function createDeferredBackend(buildings: readonly Building[]): DetailBac
 }
 
 /** Messages to the worker. */
-export type ToWorker = { type: "reset"; seed: number } | { type: "step"; step: DetailStep };
+export type ToWorker = { type: "reset"; seed: number; houses?: readonly HouseSpec[] } | { type: "step"; step: DetailStep };
 /** Messages from the worker. */
 export type FromWorker = { type: "ready" } | { type: "result"; result: DetailResult } | { type: "error"; message: string };
 
@@ -160,7 +161,7 @@ export function detailWorkerCount(cores = typeof navigator !== "undefined" ? nav
 }
 
 /** Runs the engines in Web Workers (browser only), one per worker. */
-export function createWorkerBackend(seed: number, buildings: readonly Building[], k = detailWorkerCount()): DetailBackend {
+export function createWorkerBackend(seed: number, buildings: readonly Building[], k = detailWorkerCount(), houses?: readonly HouseSpec[]): DetailBackend {
   const workers = Array.from({ length: k }, () => new Worker(new URL("./detailWorker.ts", import.meta.url), { type: "module" }));
   let split = new DetailSplit(buildings, k);
   let out: DetailResult[] = [];
@@ -189,7 +190,7 @@ export function createWorkerBackend(seed: number, buildings: readonly Building[]
     };
   });
   const send = (w: number, m: ToWorker) => workers[w]!.postMessage({ ...m, epoch });
-  for (let w = 0; w < k; w++) send(w, { type: "reset", seed });
+  for (let w = 0; w < k; w++) send(w, { type: "reset", seed, ...(houses ? { houses } : {}) });
   return {
     post(step) {
       split.split(step).forEach((part, w) => send(w, { type: "step", step: part }));
@@ -209,7 +210,7 @@ export function createWorkerBackend(seed: number, buildings: readonly Building[]
       done = -1;
       pending = new Map();
       split = new DetailSplit(b, k);
-      for (let w = 0; w < k; w++) send(w, { type: "reset", seed: s });
+      for (let w = 0; w < k; w++) send(w, { type: "reset", seed: s, ...(houses ? { houses } : {}) });
     },
     dispose() {
       for (const w of workers) w.terminate();
@@ -227,6 +228,20 @@ export class DetailView {
   readonly houseVersion = new Map<number, number>();
   /** Per house, per member: the house version at which that member last moved. */
   readonly stamps = new Map<number, Uint32Array>();
+  /** Inspected houses (Spec 13): connection loads (N) and attached members at detail step `n`. */
+  readonly inspection = new Map<number, { loads: Float32Array; attached: Uint8Array; n: number }>();
+  /** Per house: failed connections, when (sim s), in what roof wind (mph) and at what load (N). */
+  readonly failedAt = new Map<number, Map<number, { time: number; mph: number; load: number }>>();
+
+  inspected(index: number, loads: Float32Array, attached: Uint8Array, n: number): void {
+    if (this.houses.has(index)) this.inspection.set(index, { loads, attached, n });
+  }
+
+  failed(index: number, con: number, at: { time: number; mph: number; load: number }): void {
+    let m = this.failedAt.get(index);
+    if (!m) this.failedAt.set(index, (m = new Map()));
+    if (!m.has(con)) m.set(con, at);
+  }
 
   add(index: number, building: Building, framing: Framing): void {
     const poses = new Float32Array(framing.members.length * 7);
@@ -254,6 +269,8 @@ export class DetailView {
 
   remove(index: number): void {
     this.houses.delete(index);
+    this.inspection.delete(index);
+    this.failedAt.delete(index);
     this.houseVersion.delete(index);
     this.stamps.delete(index);
     this.version++;
@@ -283,6 +300,8 @@ export class DetailView {
     this.houses.clear();
     this.houseVersion.clear();
     this.stamps.clear();
+    this.inspection.clear();
+    this.failedAt.clear();
     this.version++;
   }
 }

@@ -47,6 +47,8 @@ export class ZoneSelector {
   constructor(
     private readonly maxHouses: number = DETAIL.maxHouses,
     private readonly fixed?: readonly number[],
+    /** The fixed houses enter at once, whatever the tornado does, and never leave (the lab). */
+    private readonly pinned = false,
   ) {}
 
   /** The houses around the detail spot: the N nearest it (ties by index). */
@@ -73,6 +75,10 @@ export class ZoneSelector {
 
   update(s: TornadoState, buildings: readonly Building[], focus: { x: number; z: number } | null): ZoneOps {
     const ops: ZoneOps = { enter: [], exit: [] };
+    if (this.pinned && this.fixed) {
+      if (focus) for (const i of this.fixed) if (!this.active.has(i)) (this.active.add(i), ops.enter.push(i));
+      return ops;
+    }
     const speed = Math.hypot(s.velocity.x, s.velocity.z);
     const alive = s.vMax >= 1;
     // Leave: the tornado has passed (house behind it, beyond R_exit) or has dissipated.
@@ -122,8 +128,10 @@ export interface DetailStep {
   exit: number[];
   /** Houses around the zone whose state changed since last sent (Spec 10 v0.6). */
   town?: TownState[];
+  /** Houses whose connection loads to send back (Spec 13 member inspector). */
+  inspect?: readonly number[];
   /** The town's debris hitting detailed houses (Spec 10 slice B): pane breaks and wall pushes. */
-  debrisHits?: { index: number; surface: string; component: number; face: number; broke: boolean; perforated?: boolean; force: number }[];
+  debrisHits?: { index: number; surface: string; component: number; face: number; broke: boolean; perforated?: boolean; force: number; coverTorn?: boolean; sidingTorn?: boolean; at?: Vec3 }[];
 }
 
 /** A launch in the detail zone (Spec 12): house `index`'s `members` become one free body whose
@@ -152,7 +160,9 @@ export interface DetailResult {
   /** New connection failures this step (count per house: [house, n] × k). */
   failures: Int32Array;
   /** The new failures themselves (for the inspector). */
-  failLog: { house: number; label: string; load: number; capacity: number; mph: number }[];
+  failLog: { house: number; label: string; load: number; capacity: number; mph: number; con: number }[];
+  /** Asked-for houses' connection loads (N) and attached members (1/0) this step (Spec 13). */
+  inspect?: { house: number; loads: Float32Array; attached: Uint8Array }[];
   /** Hits on houses around the zone this step (Spec 10 slice B), in order. */
   townHits: TownHit[];
   /** Wall-clock time the step took (ms), for the status line (not part of the results). */
@@ -227,7 +237,7 @@ export class DetailEngine {
       const old = sw.townColliders.get(i);
       if (old) sw.removeTownColliders(old);
       const cols = buildTownColliders(sw.world, c, sw.townPlaneOf);
-      for (const col of cols) sw.townHouseOf.set(col.handle, { x: c.x, z: c.z, index: i });
+      for (const col of cols) sw.townHouseOf.set(col.handle, { x: c.x, z: c.z, index: i, b: c });
       sw.townColliders.set(i, cols);
       built.set(i, this.townVersion.get(i) ?? 0);
     };
@@ -283,7 +293,10 @@ export class DetailEngine {
     const t0 = performance.now();
     this.tornado = msg.tornado;
     this.terrain = msg.terrain;
-    for (const sw of this.worlds.values()) sw.terrain = msg.terrain;
+    for (const sw of this.worlds.values()) {
+      sw.terrain = msg.terrain;
+      sw.roofFactor = msg.tornado.tunnel ? 1 : DETAIL.tornadoRoofFactor;
+    }
     if (msg.town?.length) this.applyTown(msg.town);
     const poses: number[] = [];
     const push = (i: number, h: DetailHouse, id: number) => {
@@ -297,6 +310,7 @@ export class DetailEngine {
       if (!sw) {
         sw = new StructureWorld();
         sw.terrain = msg.terrain;
+        sw.roofFactor = msg.tornado.tunnel ? 1 : DETAIL.tornadoRoofFactor;
         this.attachTown(sw);
         this.worlds.set(key, sw);
       }
@@ -321,6 +335,39 @@ export class DetailEngine {
       const b = h.building;
       // A perforation is a hole in the envelope (Spec 10 v0.12): face 0–3, or 4 for the roof.
       if (d.perforated) h.addHole(d.face);
+      // The attached member of a kind nearest the hit point (house-local), within `reach` m.
+      const house = h;
+      const nearest = (ok: (m: (typeof house.framing.members)[number]) => boolean, reach: number) => {
+        if (!d.at) return undefined;
+        let best: number | undefined;
+        let bd = reach;
+        for (const m of house.framing.members) {
+          if (!ok(m) || !house.isAttached(m.id)) continue;
+          const dd = Math.hypot(m.pos.x - d.at.x, m.pos.y - d.at.y, m.pos.z - d.at.z);
+          if (dd < bd) (bd = dd), (best = m.id);
+        }
+        return best;
+      };
+      // Torn cladding (Spec 10 v0.17): the shingle patch or siding course hit loses its fasteners.
+      if (d.surface === "roof" && d.coverTorn) {
+        const id = nearest((m) => m.kind === "roofShingle", 1.5);
+        if (id !== undefined) h.tearOff(id);
+      }
+      if ((d.surface === "wall" || d.surface === "gable") && d.sidingTorn) {
+        const id = nearest((m) => m.kind === "siding" && m.face === d.face, 1.5);
+        if (id !== undefined) h.tearOff(id);
+      }
+      // A roof hit pushes on the sheathing panel it struck, inward along the roof's normal.
+      if (d.surface === "roof" && d.force > 0) {
+        const id = nearest((m) => m.kind === "roofSheet", 2);
+        if (id !== undefined) {
+          const n = h.framing.members[id]!.normal;
+          const c = Math.cos(b.yaw);
+          const sn = Math.sin(b.yaw);
+          h.addContact(id, -(n.x * c + n.z * sn) * d.force, -n.y * d.force, -(-n.x * sn + n.z * c) * d.force);
+        }
+        continue;
+      }
       if (d.surface === "pane" && d.broke) {
         const panel = b.panes[d.component]?.panel;
         const shard = h.framing.members.find((m) => m.kind === "pane" && m.panel === panel && h.isAttached(m.id));
@@ -381,7 +428,7 @@ export class DetailEngine {
       if (nf !== this.failCount.get(i) || (moved && sw.stepCount % 6 === 0)) {
         if (nf !== this.failCount.get(i)) {
           failures.push(i, nf - this.failCount.get(i)!);
-          for (const f of h.failures.slice(this.failCount.get(i)!)) failLog.push({ house: i, label: f.label, load: f.load, capacity: f.capacity, mph: f.mph });
+          for (const f of h.failures.slice(this.failCount.get(i)!)) failLog.push({ house: i, label: f.label, load: f.load, capacity: f.capacity, mph: f.mph, con: f.con });
         }
         this.failCount.set(i, nf);
         const inv = qconj(houseQ(h.building));
@@ -421,7 +468,13 @@ export class DetailEngine {
         sw.dispose();
         this.worlds.delete(key);
       }
-    return { n: msg.n, poses: new Float32Array(poses), dods: new Int32Array(dods), frozen, failures: new Int32Array(failures), failLog, townHits, ms: performance.now() - t0, groupMs };
+    const inspect: NonNullable<DetailResult["inspect"]> = [];
+    for (const i of msg.inspect ?? []) {
+      const h = this.houses.get(i);
+      if (!h) continue;
+      inspect.push({ house: i, loads: h.conLoad.slice(), attached: Uint8Array.from(h.framing.members, (m) => (h.isAttached(m.id) ? 1 : 0)) });
+    }
+    return { n: msg.n, poses: new Float32Array(poses), dods: new Int32Array(dods), frozen, failures: new Int32Array(failures), failLog, townHits, ms: performance.now() - t0, groupMs, ...(inspect.length ? { inspect } : {}) };
   }
 
   /** The physics world a house is in (tests and the wind tunnel). */

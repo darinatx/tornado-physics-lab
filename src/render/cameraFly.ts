@@ -17,7 +17,7 @@ export interface FlyKeys {
 
 export const NO_KEYS: FlyKeys = { forward: false, back: false, left: false, right: false, up: false, down: false, fast: false };
 
-/** Keys held for turning in place: A/D pan, E/Q tilt. */
+/** Keys held for turning in place: ←/→ turn, E/Q tilt. */
 export interface TurnKeys {
   left: boolean;
   right: boolean;
@@ -25,13 +25,35 @@ export interface TurnKeys {
   down: boolean;
 }
 
-/** W/S along the view; arrows sideways and up/down (REND-14). */
+/** W/S forward/back level, A/D left/right, ↑/↓ height (Spec 06 v1.12, REND-14). */
 export const FLY_KEY_MAP: Readonly<Record<string, keyof FlyKeys>> = {
-  KeyW: "forward", KeyS: "back", ArrowLeft: "left", ArrowRight: "right",
+  KeyW: "forward", KeyS: "back", KeyA: "left", KeyD: "right",
   ArrowUp: "up", PageUp: "up", ArrowDown: "down", PageDown: "down",
 };
-/** A/D pan, Q/E tilt down/up (REND-15). */
-export const TURN_KEY_MAP: Readonly<Record<string, keyof TurnKeys>> = { KeyA: "left", KeyD: "right", KeyE: "up", KeyQ: "down" };
+/** ←/→ turn, Q/E tilt down/up (REND-15). */
+export const TURN_KEY_MAP: Readonly<Record<string, keyof TurnKeys>> = { ArrowLeft: "left", ArrowRight: "right", KeyE: "up", KeyQ: "down" };
+
+/** Input types that aren't typed into: the camera keys still work with these focused. */
+const NON_TEXT_INPUTS = new Set(["checkbox", "radio", "range", "button", "submit", "reset", "color", "file", "image"]);
+
+/**
+ * Whether the focused element is a text field being typed in (REND-16): only then do the
+ * camera keys go to it. Checkboxes, menus, buttons and sliders don't take them.
+ */
+export function isTyping(el: { tagName: string; type?: string; isContentEditable?: boolean } | null): boolean {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === "TEXTAREA") return true;
+  if (el.tagName === "INPUT") return !NON_TEXT_INPUTS.has((el.type ?? "").toLowerCase());
+  return false;
+}
+
+/** How far follow mode carries the camera this frame (REND-18): with the tornado's motion,
+ *  but not across the jump to a new run's start point. */
+export function followDelta(from: { x: number; z: number } | null, to: { x: number; z: number }, newRun: boolean): { x: number; z: number } {
+  if (!from || newRun) return { x: 0, z: 0 };
+  return { x: to.x - from.x, z: to.z - from.z };
+}
 
 export interface KeyLike {
   code: string;
@@ -81,11 +103,11 @@ export function flySpeed(height: number, fast: boolean): number {
 }
 
 /**
- * The camera and orbit point after this frame's move (REND-14). W/S go along the full view
- * direction (tilt included), ←/→ sideways along the ground, ↑/↓ straight up; any combination
- * moves at the same speed. The camera stops at eye height (forward motion into the floor stops
- * where it meets it); the orbit point keeps its direction and distance from the camera, but
- * lands on the ground where the view meets it.
+ * The camera and orbit point after this frame's move (REND-14). W/S go level along the ground
+ * in the direction the camera faces (tilt doesn't change the height), A/D sideways along the
+ * ground, ↑/↓ straight up; any combination moves at the same speed. The camera stops at eye
+ * height; the orbit point keeps its direction and distance from the camera, but lands on the
+ * ground where the view meets it.
  */
 export function flyStep(keys: FlyKeys, dt: number, camera: Vec3, target: Vec3): { camera: Vec3; target: Vec3 } {
   const f = (keys.forward ? 1 : 0) - (keys.back ? 1 : 0);
@@ -96,23 +118,18 @@ export function flyStep(keys: FlyKeys, dt: number, camera: Vec3, target: Vec3): 
   const vy = target.y - camera.y;
   const vz = target.z - camera.z;
   const vl = Math.hypot(vx, vy, vz);
-  // View direction (3-D) and its right along the ground (forward × up).
+  // View direction (3-D), its heading along the ground and its right (heading × up). The pitch
+  // limit keeps the heading defined.
   const fw = vl > 1e-9 ? { x: vx / vl, y: vy / vl, z: vz / vl } : { x: 0, y: 0, z: -1 };
   const hl = Math.hypot(fw.x, fw.z);
-  const right = hl > 1e-9 ? { x: -fw.z / hl, z: fw.x / hl } : { x: 1, z: 0 };
-  // Forward (F) and sideways/vertical (G) parts, scaled together to the flying speed.
-  const F = { x: f * fw.x, y: f * fw.y, z: f * fw.z };
-  const G = { x: r * right.x, y: u, z: r * right.z };
-  const len = Math.hypot(F.x + G.x, F.y + G.y, F.z + G.z);
+  const head = hl > 1e-9 ? { x: fw.x / hl, z: fw.z / hl } : { x: 0, z: -1 };
+  const right = { x: -head.z, z: head.x };
+  // Level forward/sideways and vertical parts, scaled together to the flying speed.
+  const m = { x: f * head.x + r * right.x, y: u, z: f * head.z + r * right.z };
+  const len = Math.hypot(m.x, m.y, m.z);
   if (len < 1e-12) return { camera: { ...camera }, target: { ...target } };
   const k = (flySpeed(camera.y, keys.fast) * dt) / len;
-  // Sideways and vertical first (↓ stops at the floor), then forward, stopped where it meets it.
-  const c = { x: camera.x + G.x * k, y: Math.max(CAMERA.minHeight, camera.y + G.y * k), z: camera.z + G.z * k };
-  let fk = k;
-  if (F.y < 0 && c.y + F.y * fk < CAMERA.minHeight) fk = Math.max(0, (CAMERA.minHeight - c.y) / F.y);
-  c.x += F.x * fk;
-  c.y = Math.max(CAMERA.minHeight, c.y + F.y * fk);
-  c.z += F.z * fk;
+  const c = { x: camera.x + m.x * k, y: Math.max(CAMERA.minHeight, camera.y + m.y * k), z: camera.z + m.z * k };
   // The orbit point: same direction and distance from the camera, not below the ground.
   let L = Math.max(vl, CAMERA.minDistance);
   if (fw.y < 0 && c.y + fw.y * L < 0) L = Math.max(c.y / -fw.y, CAMERA.minDistance);

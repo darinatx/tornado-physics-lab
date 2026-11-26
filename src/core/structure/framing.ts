@@ -300,7 +300,7 @@ export function buildFraming(b: Building, opts: { scatter?: boolean } = {}): Fra
     const yb = -H / 2 + tw;
     const yt = H / 2 - tw;
     const flen = fx1 - fx0;
-    const nStuds = Math.max(2, Math.ceil((flen - tw) / LUMBER.spacing - 1e-9) + 1);
+    const nStuds = Math.max(2, Math.ceil((flen - tw) / LUMBER.studSpacing - 1e-9) + 1);
     for (let i = 0; i < nStuds; i++) {
       const x = fx0 + tw / 2 + (i * (flen - tw)) / (nStuds - 1);
       const o = openings.find((o) => x + tw / 2 > o.x0 - tw && x - tw / 2 < o.x1 + tw);
@@ -614,7 +614,7 @@ export function buildFraming(b: Building, opts: { scatter?: boolean } = {}): Fra
     const height = (u: number) => rise * Math.max(0, 1 - Math.abs(u) / (b.depth / 2));
     const [tw, td] = LUMBER.stud;
     const shapes: Shape[] = [{ size: [b.depth, tw, td], pos: { x: 0, y: tw / 2, z: 0 }, q: ident }];
-    for (let u = -b.depth / 2 + LUMBER.spacing; u < b.depth / 2 - 0.1; u += LUMBER.spacing) {
+    for (let u = -b.depth / 2 + LUMBER.studSpacing; u < b.depth / 2 - 0.1; u += LUMBER.studSpacing) {
       const h = height(u) - tw;
       if (h > 0.1) shapes.push({ size: [tw, h, td], pos: { x: u, y: tw + h / 2, z: 0 }, q: ident });
     }

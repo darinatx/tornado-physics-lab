@@ -374,3 +374,27 @@ body {
   font: 12px/1.4 system-ui, sans-serif;
   pointer-events: none;
 }
+
+/* Structure lab v2 (Spec 13): the failure log and member card stack in the left column. */
+.left-col .lab-log {
+  position: static;
+  width: auto;
+  max-height: 30vh;
+}
+
+.member-card {
+  max-height: 40vh;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.member-card .pin-head .pin-clear {
+  padding: 0 6px;
+}
+
+.pin-card .pin-act {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font-size: 12px;
+}

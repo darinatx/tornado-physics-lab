@@ -94,6 +94,20 @@ function realCount(b: Building, rec: FailureRecord, kind: DebrisKind): number {
 }
 
 /** Where heavy pieces go (Spec 04 v2.0): the sim's heavy-debris world. */
+/** Per-piece state a replayed piece takes over from the recorded one (Spec 13). */
+export interface LaunchState {
+  /** Shape, size and mass other than the kind's own (the lab's reference missiles). */
+  def?: DebrisKindDef;
+  liftRoll?: number;
+  spin?: 1 | -1;
+  gust?: Vec3;
+  stepPhase?: number;
+  angVel?: Vec3;
+  /** Sim time it was last advanced to, and whether it lay on the ground then. */
+  steppedTo?: number;
+  grounded?: boolean;
+}
+
 export interface HeavySink {
   /** Take a new heavy piece from house `b`, at its pose and velocity. */
   take(p: Piece, b: Building, time: number): void;
@@ -171,15 +185,29 @@ export class DebrisField {
    *  v1.9; the wind tunnel's record). `b` is the house hit (a detailed house's stand-in). */
   onImpact: ((b: Building, q: QueuedImpact, p: Piece) => void) | null = null;
 
+  /** Turbulent dispersion (Spec 13): off holds every gust at zero, so a piece's flight draws
+   *  nothing from the shared stream (exact debris replay). On in every real run. */
+  dispersion = true;
+
   /**
    * Add one piece of `kind` at `pos` with velocity `vel` and orientation `q` (Spec 04 v1.9, the
    * wind tunnel's launcher). It counts as spawned by `source` (a house id, or −1) and spreads its
    * representative copies from where it started.
    */
-  launch(kind: DebrisKind, pos: Vec3, vel: Vec3, q: Q, time: number, represents = 1, source = -1): Piece {
-    const def = DEBRIS_KINDS[kind];
+  launch(kind: DebrisKind, pos: Vec3, vel: Vec3, q: Q, time: number, represents = 1, source = -1, state?: LaunchState): Piece {
+    const def = state?.def ?? DEBRIS_KINDS[kind];
     const p = this.makePiece({ id: source, x: pos.x, z: pos.z } as Building, kind, def, { ...pos }, q, 0x8a7f6a, represents, time);
     p.vel = { ...vel };
+    // A replayed piece (Spec 13) carries the recorded one's per-piece state.
+    if (state) {
+      if (state.liftRoll !== undefined) p.liftRoll = state.liftRoll;
+      if (state.spin !== undefined) p.spin = state.spin;
+      if (state.gust) p.gust = { ...state.gust };
+      if (state.stepPhase !== undefined) p.stepPhase = state.stepPhase;
+      if (state.angVel) p.angVel = { ...state.angVel };
+      if (state.steppedTo !== undefined) p.steppedTo = state.steppedTo;
+      if (state.grounded) p.grounded = true;
+    }
     const m = def.mass * represents;
     this.massSpawned += m;
     this.massBySource.set(source, (this.massBySource.get(source) ?? 0) + m);
@@ -573,7 +601,7 @@ export class DebrisField {
       // Far from the core the wind changes slowly: such a piece is advanced every other step,
       // by the time since it last was (Spec 04 v2.2), on alternate steps by its id.
       const far = Math.hypot(p.pos.x - s.center.x, p.pos.z - s.center.z) > this.farRmax * s.rMax;
-      if (far && (this.stepNo + p.id) % 2 === 1 && p.steppedTo !== undefined && p.steppedTo >= time - 1e-9) {
+      if (far && (this.stepNo + (p.stepPhase ?? p.id)) % 2 === 1 && p.steppedTo !== undefined && p.steppedTo >= time - 1e-9) {
         airborne++;
         continue;
       }
@@ -732,7 +760,7 @@ export class DebrisField {
       return false;
     }
     const m: Missile = { label: p.def.label, family: p.def.family, mass: p.def.mass, dims: p.def.dims };
-    const own = resolveImpact(b, best.surface, m, vn, this.rng, true);
+    const own = resolveImpact(b, best.surface, m, vn, this.rng, true, best.local);
     if (own) {
       b.impacts.push(own.impact);
       this.stats.impacts++;
@@ -754,7 +782,7 @@ export class DebrisField {
         const c = this.normal() * sigma;
         const l = { x: best.local.x + a * t1.x + c * t2.x, y: best.local.y + a * t1.y + c * t2.y, z: best.local.z + a * t1.z + c * t2.z };
         if (!insideLocal(b, l, 1e-6, best.plane)) continue; // off the envelope: a miss
-        const r = resolveImpact(b, surfaceAt(b, best.plane, l), m, vn, this.rng, false);
+        const r = resolveImpact(b, surfaceAt(b, best.plane, l), m, vn, this.rng, false, l);
         if (r) {
           b.impacts.push(r.impact);
           this.stats.impacts++;
@@ -807,6 +835,10 @@ export class DebrisField {
 
   /** Exact discrete Ornstein–Uhlenbeck update of a piece's gust, scaled to the local wind. */
   private updateGust(p: Piece, w: { x: number; y: number; z: number }, dt: number, terrain: TerrainClass): void {
+    if (!this.dispersion) {
+      p.gust.x = p.gust.y = p.gust.z = 0;
+      return;
+    }
     const sigma = TURBULENCE.intensity[terrain] * Math.hypot(w.x, w.z);
     const a = Math.exp(-dt / TURBULENCE.timeScale);
     const b = Math.sqrt(1 - a * a) * sigma;

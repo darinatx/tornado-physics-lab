@@ -152,8 +152,14 @@ describe("Spec 08 — simulation loop", () => {
     const town = generateNeighborhood(1).buildings.filter((b) => Math.hypot(b.x - area.x, b.z - area.z) <= area.radius);
     const sim = createSim({ area, start: { x: -500, z: 30 } }, 1, { tUp: 0 });
     expect(sim.world.buildings.map((b) => b.id)).toEqual(town.map((b) => b.id));
-    sim.world.buildings.forEach((b, i) => expect({ ...b, normals: null }).toEqual({ ...town[i]!, normals: null }));
+    sim.world.buildings.forEach((b, i) => expect({ ...b, normals: null, deficitIn: 0 }).toEqual({ ...town[i]!, normals: null, deficitIn: 0 }));
     expect(sim.snapshot.tornado.center).toEqual({ x: -500, z: 30 });
+    // Mature from the first step: every house starts with inside pressure equal to outside
+    // (Spec 08 v1.7), so a full-strength start doesn't load them all at once.
+    const { pressureDeficit } = await import("../../src/core/wind/pressure");
+    const s0 = sim.snapshot.tornado;
+    for (const b of sim.world.buildings) expect(b.deficitIn).toBeCloseTo(pressureDeficit(Math.hypot(b.x - s0.center.x, b.z - s0.center.z), s0), 9);
+    expect(sim.world.buildings.some((b) => b.deficitIn > 1)).toBe(true);
     sim.advance(1 / 60);
     expect(sim.snapshot.tornado.vMax).toBe(sim.params.vPeak);
   });

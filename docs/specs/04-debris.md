@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v2.4) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
+Status: Approved (v2.5) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
 
 ## Purpose
 
@@ -420,6 +420,11 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- v2.5: for debris replay (Spec 13): a dispersion switch (`DebrisField.dispersion`, on in every
+  real run; off holds gusts at zero), and `launch` takes a piece's own state (shape and mass
+  for reference missiles; lift roll, spin sign, gust, stepping phase, last-stepped time and
+  ground contact for replayed pieces). The far-piece alternate stepping uses the piece's
+  stepping phase (its id's parity unless set). Nothing changes for pieces made by the town.
 - v2.4: heavy pieces fall from where the component stood (walls and garage doors tip over)
   instead of being placed, and snag while sliding on the ground (DEB-29, DEB-30); interior
   walls are released as wall panels where they stood, not just studs and chunks (DEB-31); a swept

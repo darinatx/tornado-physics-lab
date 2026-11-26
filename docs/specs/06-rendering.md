@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.11) — Phases 1–4
+Status: Approved (v1.12) — Phases 1–4
 
 ## Purpose
 
@@ -155,14 +155,14 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
   there), with spawn density in proportion to the emission rate F.
 - **REND-14**: Moving moves the camera and its orbit point together, at ~1.2 m/s per metre of
   height (clamped 10–1,000 m/s, ×4 with Shift), at the same speed whatever keys are combined:
-  W/S along the full 3-D view direction (looking down, W moves toward the ground), ←/→ sideways
-  along the ground, ↑/↓ (and PageUp/PageDown) straight up and down. The camera never goes below
-  1.7 m: moving forward into the floor stops there. The orbit point keeps its direction and
+  W/S forward and back level along the ground in the direction the camera faces (tilt doesn't
+  change the height), A/D left and right along the ground, ↑/↓ (and PageUp/PageDown) straight
+  up and down. The camera never goes below 1.7 m. The orbit point keeps its direction and
   distance from the camera, but never goes below the ground (it lands where the view meets it).
 - **REND-15**: Turning moves only the point the camera looks at: the camera stays put, the
   look direction rotates by the yaw about the vertical and by the pitch about the camera's
   right axis, pitch stays within ±85° of level, and the look point never goes below the
-  ground (looking down, it lands where the view meets the ground). Keys: A/D pan left/right,
+  ground (looking down, it lands where the view meets the ground). Keys: ←/→ turn left/right,
   Q/E tilt down/up; right-drag turns too.
 - **REND-17**: The starting view frames the tornado: the camera is 30 m up, looking at the
   axis at 40% of the cloud-base height, from ahead of it on its track and 30% to the right, at
@@ -172,6 +172,12 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 - **REND-16**: Held keys never stick: a key-up always releases its key (whatever has focus or
   modifiers), pressing ⌘, Ctrl or Alt releases every flying and turning key (macOS sends no
   key-up for keys released while ⌘ is held), and so does the page losing focus or visibility.
+  The camera keys work whatever has focus (the side panel's checkboxes, menus, buttons and
+  sliders included, and the keys don't also change them), except a text or number field being
+  typed in; Enter or Escape there ends typing.
+- **REND-18**: A new run (restart, preset, repeat) never moves the camera: it stays where it
+  is, looking where it was. Follow stays as it was, carrying the camera with the new tornado's
+  motion from there (the jump to the new start point is not a move to follow).
 - **REND-13**: The tracer count follows the total emission, within [2,000, 40,000]: a larger
   or stronger tornado gets more tracers, a tornado lifting no dust none, and the count drops as
   the tornado weakens.
@@ -190,11 +196,23 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
    show (ground to cloud base, the debris cloud's width) rather than the town's edge, so it is
    never kilometres away. Follow mode (on by default) keeps the offset, so the tornado doesn't
    run into the camera.
-2. **Forward follows the view, including tilt (v1.11):** at the user's request, like a drone
-   camera. Hitting the eye-height floor stops forward motion rather than sliding along the
-   ground, so the view never changes direction unasked.
+2. **Forward is level (v1.12, replacing v1.11's forward along the view):** at the user's
+   request, W/S keep the height and ↑/↓ set it, like walking or a drone holding altitude, so
+   looking down while moving doesn't lose height. The heading is the view's direction along the
+   ground (the pitch limit of ±85° keeps it defined).
+3. **Keys from anywhere but a text field (v1.12):** at the user's request, the keys keep
+   flying after a click in the side panel. Text and number fields still get their keys while
+   being typed in (arrows move the caret, letters type); Enter or Escape hands the keys back.
+   Arrow keys on a focused menu would change its choice, so the camera takes them instead.
+4. **A new run leaves the camera alone (v1.12):** at the user's request. The start view
+   (REND-17) is placed only on the first load.
 
 ## Changelog
+
+- v1.12: new key layout at the user's request: W/S forward and back level, A/D left and right,
+  ↑/↓ height, ←/→ turn, Q/E tilt (REND-14, REND-15). The keys work after clicking in the side
+  panel (REND-16). A new run no longer moves the camera (REND-18): follow mode carried it
+  across the jump to the new start point.
 
 - v1.11: new key layout at the user's request: W/S forward and back along the view (tilt
   included), A/D pan, Q/E tilt, arrows move up/down and sideways (REND-14, REND-15). The

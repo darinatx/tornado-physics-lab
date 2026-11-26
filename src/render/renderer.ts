@@ -3,7 +3,7 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { flyStep, keyEvent, lookStep, NO_KEYS, releaseAll, startView } from "./cameraFly";
+import { flyStep, followDelta, isTyping, keyEvent, lookStep, NO_KEYS, releaseAll, startView } from "./cameraFly";
 import type { FlyKeys, TurnKeys } from "./cameraFly";
 import { CAMERA, RENDER } from "../config/render";
 import type { Building } from "../core/damage/types";
@@ -17,6 +17,7 @@ import { createEnvironment } from "./environment";
 import { createFunnel } from "./funnel";
 import { createHouseLayer } from "./houses";
 import { createDetailLayer } from "./detailLayer";
+import type { MemberStyle } from "./detailLayer";
 import type { DetailView } from "../sim/detailBackend";
 import { createDebrisLayer, createSettledLayer } from "./debris";
 import { interpolateTornado } from "./interpolate";
@@ -35,8 +36,15 @@ export interface SimRenderer {
   setFollow(follow: boolean): void;
   /** Look at a ground point from close by (stops following the tornado). */
   lookAt(x: number, z: number, distance: number): void;
+  /** Put the camera at a point looking at another (stops following the tornado). */
+  setView(position: Vec3, target: Vec3): void;
   setLayers(l: Layers): void;
   pick(ndcX: number, ndcY: number): Vec3 | null;
+  /** The detailed-house member under the cursor, and where on it (Spec 13 member inspector). */
+  pickMember(ndcX: number, ndcY: number): { house: number; member: number; point: Vec3 } | null;
+  /** Per-member view style for detailed houses (cutaway, utilization colors), re-applied a few
+   *  times a second while set. */
+  setMemberStyle(style: MemberStyle | null): void;
   setProbes(hover: Vec3 | null, pins: { point: Vec3; color: number }[]): void;
   setDamageColors(on: boolean): void;
   setDebrisScale(scale: number): void;
@@ -127,6 +135,9 @@ export function createRenderer(
 
   // Detailed houses, and a dashed ring around the detail spot.
   const detail = createDetailLayer();
+  let memberStyle: MemberStyle | null = null;
+  let styleDirty = false;
+  let styledAt = 0;
   scene.add(detail.group);
   const spotRing = new THREE.Mesh(
     new THREE.RingGeometry(0.97, 1.0, 96).rotateX(-Math.PI / 2),
@@ -189,13 +200,20 @@ export function createRenderer(
     camera.lookAt(controls.target);
   };
   const keys: FlyKeys = { ...NO_KEYS };
-  const typing = (e: KeyboardEvent) => {
-    const t = e.target as HTMLElement | null;
-    return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
-  };
+  // The keys work whatever has focus (side panel included) except a text field being typed in
+  // (REND-16); Enter or Escape there ends typing. Captured on window so a focused control
+  // (a menu's arrow keys, a slider) can't act on them first.
+  const typing = (e: KeyboardEvent) => isTyping(e.target as HTMLInputElement | null);
   const clearKeys = () => releaseAll(keys, turnKeys);
   const onKey = (down: boolean) => (e: KeyboardEvent) => {
-    if (keyEvent(keys, turnKeys, e, down, typing(e))) e.preventDefault();
+    if (down && typing(e) && (e.key === "Enter" || e.key === "Escape")) {
+      (e.target as HTMLElement).blur();
+      return;
+    }
+    if (keyEvent(keys, turnKeys, e, down, typing(e))) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   };
   const keyDown = onKey(true);
   const keyUp = onKey(false);
@@ -204,8 +222,8 @@ export function createRenderer(
   const onVisibility = () => {
     if (document.visibilityState !== "visible") clearKeys();
   };
-  window.addEventListener("keydown", keyDown);
-  window.addEventListener("keyup", keyUp);
+  window.addEventListener("keydown", keyDown, true);
+  window.addEventListener("keyup", keyUp, true);
   window.addEventListener("blur", clearKeys);
   document.addEventListener("visibilitychange", onVisibility);
   const onFocusOut = (e: FocusEvent) => {
@@ -254,6 +272,8 @@ export function createRenderer(
   let follow = true;
   /** Tornado center at the last frame (follow moves the camera by how far it went). */
   let followFrom: { x: number; z: number } | null = null;
+  /** Sim time at the last frame (it going backwards means a new run). */
+  let followTime = 0;
   let recenter = false;
   let placed = false;
   let layers: Layers = { arrows: false, funnel: true, tracers: true, debris: true };
@@ -267,7 +287,9 @@ export function createRenderer(
     draw(prev, curr, alpha) {
       const s = interpolateTornado(prev.tornado, curr.tornado, alpha);
       const t = prev.time + (curr.time - prev.time) * alpha;
-      const active = s.vMax > 0.5;
+      // Steady wind (the lab, Spec 13): no vortex to draw.
+      const steady = !!curr.tornado.tunnel;
+      const active = s.vMax > 0.5 && !steady;
 
       // Arrows.
       arrows.visible = layers.arrows;
@@ -291,10 +313,20 @@ export function createRenderer(
       ring.scale.set(s.rMax, 1, s.rMax);
       ring.position.set(s.center.x, 2, s.center.z);
 
-      env.update(s.center, s.rMax, curr.cloudBase);
+      env.update(s.center, steady ? 60 : s.rMax, curr.cloudBase);
       houses.sync(getBuildings(), damageColors);
       const det = getDetail();
-      if (det) detail.sync(det.view, damageColors);
+      if (det) {
+        detail.sync(det.view, damageColors);
+        // Member styles (the lab): a few times a second, and once when cleared.
+        const nowMs = performance.now();
+        if (styleDirty || (memberStyle && nowMs - styledAt > 200)) {
+          detail.setStyle(memberStyle);
+          detail.restyle(det.view);
+          styledAt = nowMs;
+          styleDirty = false;
+        }
+      }
       spotRing.visible = !!det?.spot;
       if (det?.spot) {
         const r = det.spot.r + 12; // around the houses, not through them
@@ -309,12 +341,12 @@ export function createRenderer(
         settledLayer.sync(st.pieces, debrisScale, st.dropped, st.version);
       }
 
-      funnel.mesh.visible = layers.funnel;
-      if (layers.funnel) funnel.update(s, curr.cloudBase, t);
+      funnel.mesh.visible = layers.funnel && !steady;
+      if (layers.funnel && !steady) funnel.update(s, curr.cloudBase, t);
 
       // Tracers advance with sim time; a restart (time going backwards) clears them.
-      dust.update(t, s, curr.terrain, curr.cloudBase);
-      dust.points.visible = layers.tracers;
+      if (!steady) dust.update(t, s, curr.terrain, curr.cloudBase);
+      dust.points.visible = layers.tracers && !steady;
 
       // Camera.
       if (!placed) {
@@ -334,17 +366,19 @@ export function createRenderer(
         camera.position.x += dx;
         camera.position.z += dz;
         recenter = false;
-      } else if (follow && followFrom) {
+      } else if (follow) {
         // Follow: carry the camera along as the tornado moves, keeping the view you chose
-        // (turned, zoomed or tilted) rather than pulling it back onto the center.
-        const dx = s.center.x - followFrom.x;
-        const dz = s.center.z - followFrom.z;
-        controls.target.x += dx;
-        controls.target.z += dz;
-        camera.position.x += dx;
-        camera.position.z += dz;
+        // (turned, zoomed or tilted) rather than pulling it back onto the center. A new run
+        // (sim time going backwards) jumps the tornado to its start: not a move to follow
+        // (REND-18).
+        const d = followDelta(followFrom, s.center, curr.time < followTime);
+        controls.target.x += d.x;
+        controls.target.z += d.z;
+        camera.position.x += d.x;
+        camera.position.z += d.z;
       }
       followFrom = { x: s.center.x, z: s.center.z };
+      followTime = curr.time;
       // Keyboard flying (real time, not sim time: the camera moves while paused too).
       const now = performance.now();
       const fdt = Math.min((now - lastFrame) / 1000, 0.1);
@@ -380,6 +414,13 @@ export function createRenderer(
       camera.position.set(x - distance * 0.55, distance * 0.6, z + distance * 0.58);
       controls.update();
     },
+    setView(position, target) {
+      follow = false;
+      placed = true;
+      controls.target.set(target.x, target.y, target.z);
+      camera.position.set(position.x, position.y, position.z);
+      controls.update();
+    },
     setLayers(l) {
       layers = { ...l };
     },
@@ -395,6 +436,19 @@ export function createRenderer(
       const sky = baseSky.clone().multiplyScalar(exposure);
       scene.background = sky;
       if (scene.fog) (scene.fog as THREE.Fog).color.copy(sky);
+    },
+    pickMember(ndcX, ndcY) {
+      raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+      for (const h of raycaster.intersectObjects(detail.group.children, false)) {
+        if (h.instanceId === undefined) continue;
+        const m = detail.memberAt(h.object, h.instanceId);
+        if (m) return { ...m, point: { x: h.point.x, y: h.point.y, z: h.point.z } };
+      }
+      return null;
+    },
+    setMemberStyle(style) {
+      memberStyle = style;
+      styleDirty = true;
     },
     pick(ndcX, ndcY) {
       raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
@@ -424,8 +478,8 @@ export function createRenderer(
       return { position: { x: p.x, y: p.y, z: p.z }, target: { x: t.x, y: t.y, z: t.z } };
     },
     dispose() {
-      window.removeEventListener("keydown", keyDown);
-      window.removeEventListener("keyup", keyUp);
+      window.removeEventListener("keydown", keyDown, true);
+      window.removeEventListener("keyup", keyUp, true);
       window.removeEventListener("blur", clearKeys);
       document.removeEventListener("visibilitychange", onVisibility);
       document.removeEventListener("focusout", onFocusOut);

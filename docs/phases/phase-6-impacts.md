@@ -23,6 +23,12 @@ elsewhere. Pieces stop passing through standing houses.
   stage 1: one house in a scripted wind, a debris launcher across zones and models, a record,
   pass-through on every run, and a parallel runner (`npm run tunnel`). Stage 2 (tornado replay,
   fragility ramps, reference missile tests, convergence, viewer) goes with slice C.
+- **Structure lab v2 (at the user's request, 2026-11-25):** [Spec 13](../specs/13-structure-lab.md):
+  the lab rebuilt on the real sim (explicit layout, detail set, worker backends), the main
+  renderer, camera and inspector, a member inspector, a neighborhood of component houses around
+  the block, the tunnel's debris launcher with reference missiles, and debris replay (record
+  the debris reaching a house in a pass, replay it in the lab). Replaces the slice A lab.
+  It also gives slice C's reference missile tests a place to watch them.
 - **C — Validation:** reference tests (IMP-12), town pass statistics (IMP-13), cost check.
 
 ## Specs touched
@@ -31,6 +37,7 @@ elsewhere. Pieces stop passing through standing houses.
 - [03 — Damage](../specs/03-damage.md): impact failures, damage areas for siding and covering
 - [04 — Debris](../specs/04-debris.md): pieces collide with houses
 - [12 — Wind tunnel](../specs/12-wind-tunnel.md): new; stage 1 approved (TUN-01 to TUN-10)
+- [13 — Structure lab v2](../specs/13-structure-lab.md): new; approved 2026-11-25 (LAB-01 to LAB-15)
 - [09 — Structure](../specs/09-structure.md): slice B
 
 ## Exit criteria (whole phase)
@@ -38,6 +45,7 @@ elsewhere. Pieces stop passing through standing houses.
 - [ ] Slice A: IMP-01 to IMP-13 pass; demo reviewed by the user
 - [ ] Slice B: spec written and approved; detail-zone impacts; determinism across worker counts
 - [x] Wind tunnel stage 1: TUN-01 to TUN-10 pass
+- [ ] Structure lab v2: Spec 13 approved; LAB-01 to LAB-15 pass; lab demo reviewed by the user
 - [ ] Slice C: validation passes; frame cost of impact checks measured
 - [ ] All tests pass; `npm run verify` passes
 - [ ] Specs updated, simplifications note and retro written
@@ -217,3 +225,91 @@ and pressure drop above the failure list; damage colors and repeat off by defaul
 columns so panels can't overlap, INST-13/14), Spec 03 v2.2 (closest approach, DMG-14).
 To check at the demo: the keys feel right; the start view frames the tornado for each preset;
 no overlap with four pins and the slow-motion message at a narrow window.
+
+## Structure lab v2 (2026-11-25)
+
+Spec 13 approved and built (v0.2). The lab (`?lab`) is now the real sim on a small layout:
+`src/sim/lab.ts` on `createSim`, the main renderer, camera and inspector, the workers. The slice
+A lab module is gone (its steady-wind bench lives on in `tests/harness/benchHouse.ts` for the
+structure unit tests). LAB-01 to LAB-15 pass.
+
+- Block of 1–12 houses (detailed or component), in the town's lots out to 130 m (suburban) or an
+  open field; steady wind (live edits are keyframes) or a pass (mature, or full lifecycle timed
+  to the block).
+- Launcher: ASTM E1996 A–E and ICC 500 missiles at their standard's length, mass and arrival
+  speed (the launch is solved in the wind blowing); click a surface to aim; a seeded stream from
+  upwind.
+- Member inspector (click a member: each connection's live load, capacity, utilization, and
+  when and in what wind it failed); utilization colors; cutaway; failure log.
+- Debris recording at any house (lab, or a pinned house in the main sim) and replay onto a lab
+  house in the recorded wind, no wind, or the lab's wind. With dispersion off, every piece that
+  flies to the house without touching the ground gets the identical first hit (27 of 27);
+  with dispersion on, over three EF3 passes, 95 vs 98 pieces reach the house, first-hit speed
+  13.4 vs 12.4 m/s (replayed pieces lose the favorable gusts that brought them into the box).
+- Cost (LAB-11, costliest second of an EF3 direct hit, physics group time): 4 houses 1.73×
+  real time, 12 houses 0.52× (the slice A lab measured ~1× and ~0.5×).
+
+Found and fixed on the way:
+- The detail and heavy-debris workers rebuilt the town from the seed, so an explicit layout
+  (the tunnel's, the lab's) could only run in-process (Spec 08 v1.6).
+- A siding strip inside a neighbor house was pushed out through its back wall when that
+  house's roof shapes were rebuilt over it (LAB-10; Spec 10 v0.16).
+
+Open:
+- **IMP-19 fails at HEAD before this work** (2 crossings in the 20 s town pass: one "through
+  wall", one "out through roof", town debris), most likely since the glass thresholds changed
+  (Spec 10 v0.15). Not caused by the lab; to trace.
+- To check at the demo: the lab's panel and views; recording in town and replaying in the lab.
+
+## EF5 gap in the lab (2026-11-26, the user's review)
+
+Seen: in an EF5 mature pass through the lab, the detailed house stayed at DOD 4 while its
+neighbors (component model) reached DOD 8–10 at the same wind (167 mph on the rising side).
+
+Traced (8 seeds per case, DOD when the eye arrives):
+- Neighborhood, track straight at the house (heading 0°): detailed 4/4/4/4/4/7/8/9, component
+  8–9 on every seed. Open field, same track: detailed still 4 on 3 of 8 seeds at 196 mph, so
+  the neighborhood isn't the cause.
+- By heading (open field, 196 mph, DI 2 expects DOD 9–10): 0° gives 4–7, while 45° and 90° give
+  8–10. A straight approach holds the wind square to the ridge the whole way; at a 20° pitch the
+  roof's suction there is small (ASCE 7: about −0.3 windward, −0.6 leeward), and a single leeward
+  opening (cpi −0.38) cancels it. Rafters reach 2% of capacity at 97 mph. Roof sheathing and a
+  whole side wall's sheathing peeling off first (the neighborhood stalls) vent the house the
+  same way.
+- What should still destroy it is the windward wall: at 196 mph with cpi −0.38 it carries about
+  1.2·q ≈ 5.4 kPa, which breaks 2×4 studs at 24 in. in bending (M ≈ 2.3 kN·m against ~2 kN·m
+  ultimate). The detailed model fails walls only at their connections, not by stud bending: a
+  missing failure mode (DI 2 DOD 7, windward walls blown in).
+- Tried and reverted: studs at 16 in. with sheathing from fastener counts (roof 4.9 kPa from 8d
+  at 6/12 tests, walls 7.4 kPa): heading 0° improved (7/9/10/4), 90° got slightly weaker, and
+  STR-31 broke. Not the fix on its own; 16 in. studs belong with stud bending.
+
+Next: stud bending failure in the detailed walls (Spec 09), with 16 in. studs, then STR-24, STR-31
+and this 8-seed check (all headings) again.
+
+Also fixed from the same review: every house starts in pressure balance with the wind (Spec 08
+v1.7; a mature start put the EF5's far-field deficit on all houses at once and stripped their
+siding in the first second); a mature pass starts calm at every house, neighbors included
+(Spec 13 v0.3); full lifecycle is the lab default; picking a wind mode doesn't start it.
+
+### Follow-up (2026-11-26)
+
+- Stud bending (Spec 09 v0.18, STR-36): walls at 16 in., sheathing from test data (roof 4.9 kPa,
+  walls 6 kPa). Open-field EF5: DOD 8–10 at every heading.
+- Tornado roof pressures ×1.15 (Spec 09 v0.19, STR-37). Neighborhood EF5, heading 0°, 167 mph:
+  8/6/6/6/9/7/4/10 (was 4/7/4/4/6/4/9/4). STR-24 (DI 2) passes. Still below DI 2 on some seeds
+  (DOD 6 at 167 mph; DOD 6's upper bound is 142).
+- Drawn damage marks on component houses tried and removed at the user's request.
+- Push-out: back out toward the last nearby clear pose; slabs always up; inside a house means
+  under its roof and clear of its walls. LAB-10 and IMP-17 at zero. IMP-19 (town debris) still
+  fails as it did before this work.
+- Town houses against DI 2 (full EF3/EF4/EF5 town passes, 1,509 houses, each house's own peak roof
+  wind vs its final DOD): within about half a DOD of DI 2's expected value in every 10 mph band
+  (+0.8 at 110–119 and 170–179 mph, −0.3 to −0.7 above 190 mph). Not too weak.
+- The remaining DOD 4 stall (neighborhood, track square to the ridge, seed 7) is a cascade, not a
+  bug: rafters start letting go at 117 mph, the unbraced windward and end walls tear off their
+  sills, the end wall (in suction) opens the house to cpi ≈ −0.43 (ASCE 7's −0.55 × the face's
+  share), and the roof's net uplift drops to ~0.4 q; the rest of the rafters reach 81% at 162 mph.
+  Every step checks out against its source; no single physical cause left to fix. Median DOD
+  in this setup 6.5 against DI 2's 8–9; DI 2 averages over orientation, this case holds the
+  wind square to the ridge from start to eye.

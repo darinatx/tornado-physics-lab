@@ -8,6 +8,7 @@ import type { DebrisFamily } from "../../config/debris";
 import { IMPACT } from "../../config/impacts";
 import type { Fragility } from "../../config/impacts";
 import type { Building, FailureRecord, MissileInfo, QueuedImpact } from "../damage/types";
+import type { Vec3 } from "../math/vec";
 import type { Surface } from "./envelope";
 
 export interface Missile {
@@ -77,7 +78,7 @@ export interface ImpactOutcome {
  * Decide one hit on a standing surface. `vn` is the normal speed into the surface (m/s, > 0);
  * `withForce` is false for representative copies (only the piece itself loads the component).
  */
-export function resolveImpact(b: Building, surface: Surface, m: Missile, vn: number, rng: () => number, withForce = true): ImpactOutcome | null {
+export function resolveImpact(b: Building, surface: Surface, m: Missile, vn: number, rng: () => number, withForce = true, at?: Vec3): ImpactOutcome | null {
   if (surface.kind === "opening" || vn <= 0) return null;
   const p = m.mass * vn;
   const E = 0.5 * m.mass * vn * vn;
@@ -86,6 +87,7 @@ export function resolveImpact(b: Building, surface: Surface, m: Missile, vn: num
     surface: surface.kind, index: surface.index, face: surface.face,
     broke: false, perforated: false, sidingTorn: false, coverTorn: false,
     force: 0, measure: 0, threshold: 0, missile: info("pressure"),
+    ...(at ? { at: { x: at.x, y: at.y, z: at.z } } : {}),
   };
   let response: ImpactOutcome["response"] = "bounce";
   switch (surface.kind) {
@@ -136,7 +138,9 @@ export function resolveImpact(b: Building, surface: Surface, m: Missile, vn: num
         }
       }
       // Walls and the garage door take the push; roof hits push down, which uplift checks don't use.
-      if (withForce && surface.kind !== "roof") q.force = impulseForce(m, vn);
+      // Walls and the garage door take the push; a roof hit's push goes to a detailed house's
+      // sheathing (component uplift checks don't take a downward load).
+      if (withForce) q.force = impulseForce(m, vn);
       break;
     }
   }

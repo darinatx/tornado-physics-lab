@@ -247,7 +247,7 @@ All values live in `src/config/wind.ts`.
   real near-surface outflow from the eye is not modeled); inflow is unchanged.
 - The swirl ratio uses the core radius as the updraft radius; lab definitions vary, so the
   thresholds are calibrated to observed tornado behavior rather than lab values.
-- No suction vortices yet. Multi-vortex mode is planned as a later spec version (WIND-2x), in Phase 7.
+- No suction vortices yet. Multi-vortex mode is planned as a later spec version (WIND-2x), in Phase 8 (storm structure).
 - The core pressure deficit is defined in Spec 02 (loads), not here.
 
 ## Decisions

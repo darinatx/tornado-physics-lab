@@ -9,6 +9,7 @@ import { AIR_DENSITY, GRAVITY } from "../config/atmosphere";
 import { APC_TAU, CP, CPI, CP_FREESTANDING } from "../config/buildings";
 import { DETAIL, FRAMING_DRAG_CD, LUMBER, ROOF_MWFRS, SLAB_TOP } from "../config/structure";
 import { faceCp, faceNormal } from "../core/damage/loads";
+import { studCapacity, studMoment } from "../core/structure/studs";
 import type { Building } from "../core/damage/types";
 import { bodyPlates, plateExtent, pressureForce, rigidAero } from "../core/structure/aero";
 import type { BodyPlate } from "../core/structure/aero";
@@ -37,6 +38,8 @@ export interface StructureFailure {
   capacity: number;
   /** Wind at the house's roof height when it failed (mph). */
   mph: number;
+  /** The connection's id in the framing. */
+  con: number;
 }
 
 export interface MemberPose {
@@ -154,9 +157,11 @@ export class StructureWorld {
   /** Static colliders standing for those houses in this world, by house index. */
   readonly townColliders = new Map<number, RAPIER.Collider[]>();
   /** Stand-in collider handle → the house it stands for (index and center, for "out of it"). */
-  readonly townHouseOf = new Map<number, { x: number; z: number; index: number }>();
+  readonly townHouseOf = new Map<number, { x: number; z: number; index: number; b?: Building }>();
   /** Stand-in collider handle → its envelope plane (0–3 walls, 5/6 roof slopes). */
   readonly townPlaneOf = new Map<number, number>();
+  /** Tornado roof factor on the roof's external pressures (Spec 09 v0.19): 1 in straight wind. */
+  roofFactor = 1;
   /** Hits on stand-ins this step, for the sim to turn into impacts (Spec 10 slice B). */
   readonly townHits: TownHit[] = [];
 
@@ -242,6 +247,10 @@ export class StructureWorld {
   /** Where each light body's colliders were before this step (collider handle → pose): the
    *  side of a surface a piece came from is the side it goes back out to (Spec 10 v0.14). */
   private readonly lightPrev = new Map<number, { t: Vec3; r: RAPIER.Rotation }>();
+  /** Where each light body's colliders last ended a step clear of everything fixed (collider
+   *  handle → pose): a piece already overlapping a surface before the step backs out toward it
+   *  (Spec 10 v0.17). */
+  private readonly lightClear = new Map<number, { t: Vec3; r: RAPIER.Rotation }>();
 
   private recordLightPoses(): void {
     this.lightPrev.clear();
@@ -273,6 +282,7 @@ export class StructureWorld {
         this.lightBodies.delete(handle);
         continue;
       }
+      let clear = false;
       for (let k = 0; k < 40; k++) {
         let hit: { col: RAPIER.Collider; c: RAPIER.ShapeContact; mine: RAPIER.Collider } | null = null;
         for (let i = 0; i < body.numColliders() && !hit; i++) {
@@ -294,14 +304,31 @@ export class StructureWorld {
             RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC,
           );
         }
-        if (!hit) break;
+        if (!hit) {
+          clear = true;
+          break;
+        }
         const h = hit as { col: RAPIER.Collider; c: RAPIER.ShapeContact; mine: RAPIER.Collider };
         const t = body.translation();
         // Back out the side it came from: the surface's normal toward where this collider was
-        // before the step, if it was clear of the surface then.
+        // before the step, if it was clear of the surface then; else toward where it last ended
+        // a step clear of everything (a piece embedded in a wall's thickness can't tell its side
+        // from its center).
         const prev = this.lightPrev.get(h.mine.handle);
         const c0 = prev ? h.col.contactShape(h.mine.shape, prev.t, prev.r, 2) : null;
-        const n = c0 && c0.distance > -0.005 ? c0.normal1 : this.outward(h.col, h.c.normal1, h.mine.translation());
+        // A slab reaches into the ground: its only way out is up through its top.
+        const here = h.mine.translation();
+        let last = c0 && c0.distance > -0.005 ? null : this.lightClear.get(h.mine.handle);
+        // Only a nearby clear pose says which side it's on; from far away the direction is noise.
+        if (last && Math.hypot(last.t.x - here.x, last.t.y - here.y, last.t.z - here.z) > 0.5) last = undefined;
+        const c1 = last ? h.col.contactShape(h.mine.shape, last.t, last.r, 1) : null;
+        const n = isSlabCollider(h.col)
+          ? { x: 0, y: 1, z: 0 }
+          : c0 && c0.distance > -0.005
+            ? c0.normal1
+            : c1 && c1.distance > -0.005
+              ? c1.normal1
+              : this.outward(h.col, h.c.normal1, here);
         this.pushed.add(handle);
         body.setTranslation({ x: t.x + n.x * 0.01, y: t.y + n.y * 0.01, z: t.z + n.z * 0.01 }, true);
         // Colliders follow their body only at the next step: move them now, or the next check
@@ -311,6 +338,13 @@ export class StructureWorld {
         const vn = v.x * n.x + v.y * n.y + v.z * n.z;
         if (vn < 0) body.setLinvel({ x: v.x - vn * n.x, y: v.y - vn * n.y, z: v.z - vn * n.z }, true);
       }
+      if (clear)
+        for (let i = 0; i < body.numColliders(); i++) {
+          const c = body.collider(i);
+          const t = c.translation();
+          const r = c.rotation();
+          this.lightClear.set(c.handle, { t: { x: t.x, y: t.y, z: t.z }, r: { x: r.x, y: r.y, z: r.z, w: r.w } as RAPIER.Rotation });
+        }
     }
   }
 
@@ -322,6 +356,16 @@ export class StructureWorld {
   outward(col: RAPIER.Collider, n: Vec3, at: Vec3): Vec3 {
     const o = this.owner.get(col.handle);
     const town = this.townHouseOf.get(col.handle);
+    // Inside the house's envelope (in through an opening), out of one of its shapes is toward
+    // the inside: away from the house would be through its wall (Spec 13 LAB-10).
+    const hb = o ? o.house.building : town?.b;
+    if (hb && insideEnvelope(hb, at)) {
+      const mid = { x: hb.x + (hb.shift?.x ?? 0), y: SLAB_TOP + hb.wallHeight / 2, z: hb.z + (hb.shift?.z ?? 0) };
+      const toward = { x: mid.x - at.x, y: mid.y - at.y, z: mid.z - at.z };
+      const inn = n.x * toward.x + n.y * toward.y + n.z * toward.z >= 0 ? { x: n.x, y: n.y, z: n.z } : { x: -n.x, y: -n.y, z: -n.z };
+      const li = Math.hypot(inn.x, inn.y, inn.z);
+      if (li > 1e-6) return { x: inn.x / li, y: inn.y / li, z: inn.z / li };
+    }
     const c = o ? { x: o.house.building.x, y: at.y, z: o.house.building.z } : town ? { x: town.x, y: at.y, z: town.z } : col.translation();
     const away = { x: at.x - c.x, y: o || town ? 0 : at.y - c.y, z: at.z - c.z };
     const out = n.x * away.x + n.y * away.y + n.z * away.z < 0 ? { x: -n.x, y: -n.y, z: -n.z } : { x: n.x, y: n.y, z: n.z };
@@ -579,6 +623,9 @@ export class DetailHouse {
   readonly framing: Framing;
   readonly intact: boolean[];
   readonly failures: StructureFailure[] = [];
+  /** Each connection's load at its last solve (N; Spec 13 member inspector): cladding from the
+   *  local pressures, framing from the area-averaged ones, as each is checked. */
+  readonly conLoad: Float32Array;
   /** Members retired with their body (left the area, invalid state, or removed on entry). */
   readonly lost: boolean[];
   /** Members dropped because their body's state became invalid (should stay 0). */
@@ -641,6 +688,7 @@ export class DetailHouse {
     this.rng = createRng(0x6c8e9cf5 ^ Math.imul(building.id + 1, 0x9e3779b1));
     const f = this.framing;
     this.intact = f.connections.map(() => true);
+    this.conLoad = new Float32Array(f.connections.length);
     this.attached = f.members.map(() => true);
     this.lost = f.members.map(() => false);
     this.contact = f.members.map(() => ({ x: 0, y: 0, z: 0 }));
@@ -942,7 +990,7 @@ export class DetailHouse {
         const reach = (wallLost / wallArea) * box * (core ? DETAIL.coreShelter : 1);
         net = -q * CP_FREESTANDING * c * reach; // positive c: wind blows along +n, pushing the wall that way
       } else if (m.kind === "roofShingle") {
-        net = -q * (-(local ? (m.edge ? CP.coverEdge : CP.coverField) : roofCp(m)) + cpi) - apc;
+        net = -q * (-(local ? (m.edge ? CP.coverEdge : CP.coverField) : roofCp(m)) * this.sw.roofFactor + cpi) - apc;
       } else if (m.kind === "roofSheet") {
         // Wind acts on the deck only where its shingles are gone.
         const covered = f.carriesOf[m.id]!.reduce((a, c) => {
@@ -951,7 +999,7 @@ export class DetailHouse {
         }, 0);
         area = Math.max(m.area - covered, 0);
         if (area <= 0) return g;
-        net = -q * (-(local ? (m.edge ? CP.deckEdge : CP.deckField) : roofCp(m)) + cpi) - apc;
+        net = -q * (-(local ? (m.edge ? CP.deckEdge : CP.deckField) : roofCp(m)) * this.sw.roofFactor + cpi) - apc;
       } else if (open && m.face >= 0 && m.kind !== "siding") {
         // A standing piece of an opened-up house: free-standing wall loads.
         if (wh < 1e-9) return g;
@@ -980,7 +1028,7 @@ export class DetailHouse {
     });
   }
 
-  private fail(c: number, load: number): void {
+  private fail(c: number, load: number, as?: { label: string; capacity: number }): void {
     const con = this.framing.connections[c]!;
     if (!this.intact[c]) return;
     this.intact[c] = false;
@@ -990,11 +1038,12 @@ export class DetailHouse {
       for (const m of this.framing.members) if (m.pane === pane && m.id !== con.from) for (const s of this.framing.supportsOf[m.id]!) if (this.intact[s]) this.intact[s] = false;
     this.failures.push({
       time: this.sw.time,
-      label: con.label,
+      label: as?.label ?? con.label,
       member: this.framing.members[con.from]!.kind,
       load,
-      capacity: con.capacity,
+      capacity: as?.capacity ?? con.capacity,
       mph: this.refMph,
+      con: c,
     });
   }
 
@@ -1009,7 +1058,22 @@ export class DetailHouse {
     if (pane < 0 || p <= glassThreshold(this.building, pane, family)) return false;
     const c = this.framing.supportsOf[id]!.find((k) => this.intact[k]);
     if (c === undefined) return false;
-    this.fail(c, p);
+    // Broken by the hit, not by a load (the log shows it as an impact).
+    this.fail(c, Infinity);
+    this.detach();
+    return true;
+  }
+
+  /**
+   * A debris hit tore a cladding member (a shingle patch, a siding course) off its fasteners
+   * (Spec 10 v0.17): every connection holding it fails at once, by impact. Returns whether it
+   * was attached.
+   */
+  tearOff(id: number): boolean {
+    if (!this.attached[id]) return false;
+    const cs = this.framing.supportsOf[id]!.filter((k) => this.intact[k]);
+    if (!cs.length) return false;
+    for (const c of cs) this.fail(c, Infinity);
     this.detach();
     return true;
   }
@@ -1269,12 +1333,24 @@ export class DetailHouse {
     const resLocal = solveLoadPath(this.framing, local, this.intact, attachedIds, true, relieve);
     const resAvg = solveLoadPath(this.framing, avg, this.intact, attachedIds, true, relieve);
     const roofToWall = this.rafterHoldDowns();
+    for (let c = 0; c < this.conLoad.length; c++) this.conLoad[c] = (this.framing.connections[c]!.cladding ? resLocal.loads[c] : resAvg.loads[c]) ?? 0;
     const failed = [
       ...resLocal.failed.filter((c) => this.framing.connections[c]!.cladding).map((c) => [c, resLocal.loads[c]!] as const),
       ...resAvg.failed.filter((c) => !this.framing.connections[c]!.cladding && !roofToWall.isHoldDown[c]).map((c) => [c, resAvg.loads[c]!] as const),
       ...this.sharedRafterFailures(resAvg.loads, roofToWall),
     ];
-    if (failed.length) {
+    // Studs broken in bending (STR-36): the frame lets go of the sill and of what bears on its
+    // top plate at once, and blows in as a panel.
+    const broken = this.studCheck(w10, this.apc).filter((s) => s.M > s.cap);
+    for (const s of broken) {
+      const as = { label: "Studs (bending)", capacity: s.cap };
+      for (const c of this.framing.supportsOf[s.id]!) if (this.intact[c]) this.fail(c, s.M, as);
+      for (const c of this.framing.carriesOf[s.id]!) {
+        const from = this.framing.members[this.framing.connections[c]!.from]!;
+        if (this.intact[c] && (from.kind === "rafterPair" || from.kind === "gableFrame")) this.fail(c, s.M, as);
+      }
+    }
+    if (failed.length || broken.length) {
       for (const [c, load] of failed) this.fail(c, load);
       this.detach();
     }
@@ -1302,13 +1378,7 @@ export class DetailHouse {
         };
       }
       if (m.kind !== "wallFrame") return t;
-      // Braced at the top by the roof framing: eave walls by the rafters bearing on them, end
-      // walls by the end rafter on their side (through the ceiling and roof diaphragm). A gable
-      // sitting on a wall doesn't brace it; it only adds load.
-      const braced =
-        m.face === 1 || m.face === 3
-          ? f.carriesOf[id]!.some((c) => this.intact[c] && this.attached[f.connections[c]!.from] && f.members[f.connections[c]!.from]!.kind === "rafterPair")
-          : this.endRafters(m, DETAIL.endWallBraceRafters).some((r) => this.attached[r]);
+      const braced = this.bracedAtTop(id);
       const n = m.normal;
       const out = t.x * n.x + t.z * n.z;
       if (braced) {
@@ -1328,6 +1398,52 @@ export class DetailHouse {
       const extra = out * (k - 1);
       return { x: t.x + extra * n.x, y: t.y, z: t.z + extra * n.z };
     };
+  }
+
+  /** Is a wall frame braced at the top by the roof framing? Eave walls by the rafters bearing on
+   *  them, end walls by the end rafter on their side (through the ceiling and roof diaphragm). A
+   *  gable sitting on a wall doesn't brace it; it only adds load. */
+  bracedAtTop(id: number): boolean {
+    const f = this.framing;
+    const m = f.members[id]!;
+    return m.face === 1 || m.face === 3
+      ? f.carriesOf[id]!.some((c) => this.intact[c] && this.attached[f.connections[c]!.from] && f.members[f.connections[c]!.from]!.kind === "rafterPair")
+      : this.endRafters(m, DETAIL.endWallBraceRafters).some((r) => this.attached[r]);
+  }
+
+  /** Full-height studs in a wall frame (its vertical shapes over half the wall height). */
+  private studCount(id: number): number {
+    const H = this.building.wallHeight;
+    return this.framing.members[id]!.shapes.filter((s) => s.size[1] > 0.5 * H).length;
+  }
+
+  /**
+   * Stud bending (Spec 09 v0.18, STR-36): each standing wall frame's out-of-plane load from the
+   * envelope it still carries, as the moment in its studs, against their bending capacity.
+   */
+  studCheck(w10: Vec3, apc: number): { id: number; W: number; M: number; cap: number; braced: boolean; n: number }[] {
+    const f = this.framing;
+    const b = this.building;
+    const q = 0.5 * AIR_DENSITY * (w10.x * w10.x + w10.z * w10.z);
+    const cpFace = [0, 1, 2, 3].map((k) => faceCp({ x: w10.x, z: w10.z }, faceNormal(b.yaw, k)));
+    const cpi = this.internalCp(cpFace);
+    const cap = studCapacity();
+    const out: { id: number; W: number; M: number; cap: number; braced: boolean; n: number }[] = [];
+    for (const m of f.members) {
+      if (m.kind !== "wallFrame" || !this.attached[m.id]) continue;
+      // The envelope still on this frame: its sheathing and glass (a bare frame lets wind through).
+      let area = 0;
+      for (const c of f.carriesOf[m.id]!) {
+        const from = f.members[f.connections[c]!.from]!;
+        if (this.intact[c] && this.attached[from.id] && (from.kind === "wallSheet" || from.kind === "pane" || from.kind === "door" || from.kind === "garageDoor")) area += from.area;
+      }
+      if (area <= 0) continue;
+      const W = Math.abs(q * (cpFace[m.face]! - cpi) - apc) * area;
+      const braced = this.bracedAtTop(m.id);
+      const n = this.studCount(m.id);
+      out.push({ id: m.id, W, M: studMoment(W, b.wallHeight, n, braced), cap, braced, n });
+    }
+    return out;
   }
 
   private planCache: ReturnType<typeof floorPlan> | null = null;
@@ -2098,4 +2214,36 @@ export function roofMwfrsCp(p: Vec3, u: Vec3, width: number, h: number, edgeDist
       break;
     }
   return cn * cn * across + cp * cp * along;
+}
+
+/** Is a point inside a house's envelope (its shifted walls, slab top to ridge)? */
+function insideEnvelope(b: Building, p: Vec3): boolean {
+  const dx = p.x - (b.x + (b.shift?.x ?? 0));
+  const dz = p.z - (b.z + (b.shift?.z ?? 0));
+  const c = Math.cos(b.yaw);
+  const s = Math.sin(b.yaw);
+  const lx = dx * c - dz * s;
+  const lz = dx * s + dz * c;
+  // Clear of the wall layers (framing, sheathing, siding, or a town house's 0.15 m wall about
+  // its plane): a piece within a wall's thickness is ambiguous and keeps "away from the house".
+  const m = INSIDE_CLEAR;
+  if (Math.abs(lx) >= b.width / 2 - m || Math.abs(lz) >= b.depth / 2 - m || p.y <= SLAB_TOP) return false;
+  // Below the roof's outer surface: a piece lying on the roof is outside (the slope rises from
+  // the eaves to the ridge across the depth); one under it is inside, so "out" is down, never
+  // sideways through the slope.
+  const under = SLAB_TOP + b.wallHeight + b.roofRise * (1 - Math.abs(lz) / (b.depth / 2));
+  return p.y < under - 0.02;
+}
+
+/** How far in from a wall plane (m) a point must be to count as inside a house: the wall's
+ *  thickness on its inner side (a 2×4 frame's half depth plus drywall, or half a town house's
+ *  0.15 m wall) with margin. */
+const INSIDE_CLEAR = 0.15;
+
+/** A slab collider: a box whose top is the slab top and which reaches below the ground. */
+function isSlabCollider(col: RAPIER.Collider): boolean {
+  if (col.shapeType() !== RAPIER.ShapeType.Cuboid) return false;
+  const he = (col.shape as RAPIER.Cuboid).halfExtents;
+  const y = col.translation().y;
+  return y + he.y <= SLAB_TOP + 0.02 && y - he.y < 0;
 }

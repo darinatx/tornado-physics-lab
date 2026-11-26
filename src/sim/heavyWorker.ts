@@ -4,6 +4,7 @@
  * seed (generation is deterministic), then processes steps in order.
  */
 import { generateNeighborhood } from "./city";
+import { layoutHouses } from "./world";
 import type { FromHeavyWorker, ToHeavyWorker } from "./heavyBackend";
 import { HeavyEngine } from "./heavyEngine";
 import { initRapier } from "./structureWorld";
@@ -17,7 +18,7 @@ const post = (m: FromHeavyWorker & { epoch?: number }, transfer: Transferable[] 
 function handle(m: ToHeavyWorker & { epoch: number }): void {
   if (m.type === "reset") {
     engine?.dispose();
-    engine = new HeavyEngine(generateNeighborhood(m.seed).buildings, m.dt);
+    engine = new HeavyEngine(m.houses ? layoutHouses(m.seed, m.houses) : generateNeighborhood(m.seed).buildings, m.dt);
     return;
   }
   if (!engine) return;

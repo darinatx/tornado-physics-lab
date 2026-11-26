@@ -33,14 +33,20 @@ export interface World {
   ): void;
 }
 
+/** An explicit layout's houses (Spec 08 v1.5): these specs, drawing from the seed's stream in
+ *  order (or each from its own `drawSeed`, Spec 13). Workers rebuild the same houses with it. */
+export function layoutHouses(seed: number, houses: readonly HouseSpec[]): Building[] {
+  const rng = createRng(seed ^ 0x9e3779b9);
+  return houses.map((s) => createHouse(s, s.drawSeed !== undefined ? createRng(s.drawSeed) : rng));
+}
+
 export function createWorld(seed: number, withBuildings = true, area?: { x: number; z: number; radius: number }, houses?: readonly HouseSpec[]): World {
   const keep = area ? (b: Building) => Math.hypot(b.x - area.x, b.z - area.z) <= area.radius : undefined;
   // An explicit layout (the wind tunnel, Spec 08 v1.5): these houses, their draws from the seed.
-  const rng = createRng(seed ^ 0x9e3779b9);
   const hood = !withBuildings
     ? { buildings: [] as Building[], buildingAt: () => null, near: () => [] as readonly Building[] }
     : houses
-      ? neighborhoodOf(houses.map((s) => createHouse(s, rng)))
+      ? neighborhoodOf(layoutHouses(seed, houses))
       : generateNeighborhood(seed, keep);
   const histogram = new Array<number>(11).fill(0);
   histogram[0] = hood.buildings.length;

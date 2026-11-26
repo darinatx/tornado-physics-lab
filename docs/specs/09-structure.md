@@ -1,6 +1,6 @@
 # Spec 09 — Structural Physics (Detail Zone)
 
-Status: Approved (v0.16) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
+Status: Approved (v0.19) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
 
 ## Purpose
 
@@ -68,13 +68,13 @@ breaks at), not design values, which are deliberately 2–3× lower:
 |---|---|---|---|
 | Shingle nails & sealant | shingle patch → roof sheet | 1.8 kPa × patch area | sealed shingles (~38 psf; tests ~30–80 psf, aged lower); with the patch-to-patch scatter the weak ones go first |
 | Siding nails | vinyl siding → wall sheathing | 0.4 kPa × area | aged vinyl siding, commonly lost in 60–70 mph gusts (calibrated, DOD 1) |
-| Roof sheathing nails | sheet → rafters under it | 4.0 kPa × sheet area | 8d nails at 6/12 in., ~80 psf mean |
+| Roof sheathing nails | sheet → rafters under it | 4.9 kPa × sheet area | 8d common nails at 6/12 in. on 24 in. framing, ~103 psf mean uplift in tests (v0.18; was 80 psf, the low end) |
 | Gable end nailing | gable frame → end wall frames | 1.75 kN per metre of shared plate | 16d face nails at 16 in., ~0.7 kN lateral each |
 | Partition to slab | partition → slab | 2.5 kN per metre | powder-actuated pins at 24 in. (~1.5 kN each) plus nailing at wall intersections |
 | Ceiling screws | ceiling sheet → joists over it | 0.6 kPa × sheet area | drywall screw pull-through |
 | Rafter-to-wall (toe-nails) | rafter pair → top plates of front and back walls | 2.5 kN each | 3 × 16d toe-nails; tests ~400–700 lbf, calibrated against DI 2 DOD 6 |
 | Ceiling joist toe-nails | rafter pair (its joist) → the same top plates | 1.2 kN each | 3 × 8d toe-nails, scaled with the rafter toe-nails |
-| Wall sheathing nails | sheet → wall frame | 4.0 kPa × sheet area | |
+| Wall sheathing nails | sheet → wall frame | 6.0 kPa × sheet area | 8d at 6/12 in. on 16 in. studs: about 1.5× the fasteners per sheet of 24 in. roof framing (v0.18) |
 | Window glazing | each shard → wall frame | 2.5 kPa × shard area, either direction (glass breaks in bending, no bearing side); when any shard's glazing fails the whole pane breaks | annealed glass |
 | Door latch & hinges | exterior door → wall frame | 2.4 kPa × door area, inward only (pushed outward it bears on the stop) | inswing entry door, ~50 psf |
 | Garage door track | door → wall frame | 1.3 kPa × door area, either direction (it buckles inward or pulls out of its tracks) | standard door |
@@ -171,7 +171,59 @@ events, converted from Rapier's one-step impulse to a realistic 0.1 s wood-on-wo
 duration (framing crushes and flexes; a one-step spike overstates the peak several-fold), and
 are added to the hit member's load when well above its own weight (resting contact).
 
+### Stud bending (v0.18)
+
+A wall's studs carry its out-of-plane wind load between the sill and the top plate, and they
+break in bending when it is too much (DI 2 DOD 7: windward walls blown in). Every load solve
+checks each standing wall frame:
+
+```
+W = |q · (Cp_face − Cp_i) − APC| · A_env          (N)
+M = W · H / (8 · n)     braced at the top (simply supported between sill and top plate)
+M = W · H / (2 · n)     unbraced (a cantilever from the sill)
+fails when M > M_u = MOR · S · k_sys
+```
+
+- A_env: the wall's envelope still on that frame (its sheathing and glass); a bare frame lets the
+  wind through. q and Cp are the area-averaged (MWFRS) values the framing uses; braced and
+  unbraced as for the diaphragm rule above; H the wall height; n the frame's studs (full-height
+  studs, jack and king studs included).
+- MOR 40 MPa: mean modulus of rupture of No. 2 SPF 2×4s (In-Grade Testing Program, Green &
+  Evans 1987: ~5,800 psi). S = b·d²/6 for the 38 × 89 mm section. k_sys 1.15: the repetitive-member
+  factor for studs sharing load through their sheathing (NDS).
+- A frame whose studs break lets go of the sill and top plate at once ("Studs (bending)", one
+  failure per connection) and blows in as a panel.
+
+Walls are framed at 16 in. on center (what US houses are built with), gable ends too; roof
+rafters stay at 24 in.
+
+Decisions:
+- One check per frame, not per stud: studs in a frame share load through the sheathing and plates,
+  and a frame fails as a unit.
+- Area-averaged pressures, not component-and-cladding peaks: a frame spans 3–4 m of wall, past
+  the size where local peaks govern (ASCE 7 C&C effective-area reduction).
+- Gable-end studs aren't checked yet (their span varies along the gable); they still fail at
+  their connections.
+
+### Tornado roof pressures (v0.19)
+
+In a tornado (not the wind tunnel's straight flow), the roof's external pressure coefficients
+(area-averaged and local, decks and shingles) are multiplied by 1.15.
+
+Decisions:
+- The tornado-simulator gap of 2–3× straight-line uplift (Haan, Balaramudu & Sarkar 2010) is
+  mostly the atmospheric pressure drop, which the model applies on its own (APC, with venting).
+  With it removed, tornado peaks on low-rise roofs average ~13% above straight-line (Roueche,
+  Prevatt & Haan 2020), local zones up to +89% (Haan 2017); ASCE 7-22's tornado vertical-wind
+  factor K_vT on roofs is 1.05–1.2. 1.15 sits in that range.
+- Roofs only: the same studies find wall pressures close to straight-line.
+- The component model isn't changed: it is calibrated to DI 2, which already has real tornadoes in it.
+
 ### Structure lab (slice A)
+
+**Superseded by [Spec 13](13-structure-lab.md) (v0.17).** The lab now runs on the real sim;
+its criteria (STR-21, STR-22, STR-23) moved to LAB-02, LAB-05 and LAB-07. The text below is
+kept as the history of the slice A lab.
 
 A separate view (`?lab`) with one detailed standard house on open ground and a steady wind
 whose speed and direction the user controls (mph), plus a log of connection failures with
@@ -494,19 +546,25 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   standing neighbor); rafter hold-downs fail by their neighborhood's mean demand; the roof
   MWFRS coefficients follow the table; siding feels no APC; a house enters in APC equilibrium;
   connection variability is deterministic per house.
-- **STR-08**: The lab is deterministic: same wind history → same failures.
-- **STR-21**: Lab tornado pass: the tornado starts upwind where the house's roof-height wind is
-  under 50 mph (at least 2·R_max and at most R_enter away), moves in a straight line at its translation speed with
-  constant mature V_max and R_max, and the house's wind and outside deficit equal the Spec 01
-  wind (open terrain) and Spec 02 deficit for that tornado state, with no APC jump at the start; the pass ends once the
-  tornado is behind the house and as far away again, and the wind is then calm.
-- **STR-22**: A lab tornado pass is deterministic: same preset, heading and offset → same failures.
-- **STR-23**: The lab builds N houses (1–12) in a grid of ⌈√N⌉ columns at 28 m spacing centered
-  on the origin, in one shared world; a pass starts where every house's roof wind is under
-  50 mph.
+- **STR-36**: Stud bending: a standing wall frame fails (all its supports at once, by bending)
+  exactly when M = W·H/(8n) braced, or W·H/(2n) unbraced, exceeds MOR·S·k_sys, with W from its
+  attached envelope's area-averaged net pressure; walls are framed at 16 in. on center. In an
+  EF5 pass (open field, track headings 0°, 45° and 90°, 4 seeds each), a detailed standard house
+  reaches DOD ≥ 7 by the time the eye arrives (peak roof wind ~196 mph, past DI 2's DOD 7
+  upper bound).
+- **STR-37**: Tornado roof pressures: in a tornado the external part of every roof member's net
+  pressure (decks and shingles, area-averaged and local) is 1.15× its straight-line value; in the
+  wind tunnel's flow it is 1×.
+- **STR-08**: The structure world is deterministic: same houses and wind history → same
+  failures.
 
 ## Simplifications / out of scope (slice A)
 
+- Accepted (2026-11-26, the user): with neighbors and a track that holds the wind square to the
+  ridge, a detailed house can stop short of DI 2 (median DOD 6.5 at 167 mph against 8–9; one in
+  eight at DOD 4). It is a cascade the model gets right step by step: the end wall in suction
+  falls, the house goes to internal suction, and the roof's net uplift drops. DI 2 averages over
+  orientation; on average detailed houses match it (STR-24).
 - Slice A: one house, steady straight-line wind. Slice B: the detail zone in town.
 - Component-model debris (houses outside the zone) passes through detailed houses without
   colliding (debris impacts are Phase 6).
@@ -521,6 +579,24 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
 
 ## Changelog
 
+- v0.18: stud bending (STR-36) and walls framed at 16 in. on center; roof sheathing 4.9 kPa (test
+  mean for its nailing) and wall sheathing 6.0 kPa (its fastener count on 16 in. studs). STR-24
+  passes with them. Still open: in a neighborhood with the track square to the ridge, debris
+  breaks windows on every face, the inside pressure stays near zero, and with straight-line
+  (ASCE 7) roof pressures the rafters reach ~75% at 167 mph (DOD 4 on 5 of 8 seeds); tornado-
+  like vortices load roofs 1.4–2.8× more than straight-line wind (Haan, Sarkar & Gallus 2010),
+  which the detailed model doesn't have yet.
+- v0.19: tornado roof pressures ×1.15 (STR-37); the 2–3× in the v0.18 note includes the pressure
+  drop, which the model already has, so the aerodynamic part is the ~13% above. STR-24 and STR-36
+  pass. The neighborhood EF5 case (track square to the ridge, 167 mph): DOD 4/7/4/4/6/4/9/4 →
+  8/6/6/6/9/7/4/10. Found by the user: in an EF5
+  pass the detailed house stayed at DOD 4 at 196 mph when the track ran straight at it, the wind
+  square to the ridge: the roof had little uplift with a leeward opening, and walls failed only
+  at their connections. At 196 mph a windward wall carries ~5 kPa, enough to break 2×4 studs.
+- v0.17: the structure lab moved to Spec 13 (the lab on the real sim, approved 2026-11-25).
+  STR-21 to STR-23 are now LAB-05, LAB-07 and LAB-02; STR-08 is about the structure world, which
+  the unit tests drive through a test bench (`tests/harness/benchHouse.ts`) instead of the lab.
+  Connection loads are kept per step for the member inspector (LAB-09).
 - v0.16: light pieces held still by something other than the ground (rubble, a wall, a slab
   edge) come to rest (STR-35). Profiled 2–4·R_max behind an EF4: light pieces were 80% of the
   detail cost (10.5 of 13.3 ms per house-step), ~515 per house still stepped and only 8 resting.

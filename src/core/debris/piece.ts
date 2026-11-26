@@ -39,6 +39,9 @@ export interface Piece {
   liftRoll: number;
   /** This piece's current turbulent gust (m/s), added to the mean wind. */
   gust: Vec3;
+  /** Which alternate debris steps a far piece is advanced on (Spec 04 v2.2): its id's parity,
+   *  unless set (a replayed piece keeps the recorded one's, Spec 13). */
+  stepPhase?: number;
   /** Hidden from the debris field (rubble carried off when its slab was swept). */
   hidden?: boolean;
   /** A heavy piece moving as a rigid body in the heavy-debris world (Spec 04 v2.0): the point

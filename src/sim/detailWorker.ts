@@ -4,6 +4,7 @@
  * from the seed (generation is deterministic), then processes detail steps in order.
  */
 import { generateNeighborhood } from "./city";
+import { layoutHouses } from "./world";
 import { DetailEngine } from "./detailZone";
 import type { FromWorker, ToWorker } from "./detailBackend";
 import { initRapier } from "./structureWorld";
@@ -17,7 +18,7 @@ const post = (m: FromWorker & { epoch?: number }, transfer: Transferable[] = [])
 function handle(m: ToWorker & { epoch: number }): void {
   if (m.type === "reset") {
     engine?.dispose();
-    engine = new DetailEngine(generateNeighborhood(m.seed).buildings);
+    engine = new DetailEngine(m.houses ? layoutHouses(m.seed, m.houses) : generateNeighborhood(m.seed).buildings);
     return;
   }
   if (!engine) return;

@@ -524,3 +524,67 @@ describe("Spec 10 v0.14: light bodies pushed clear go back the way they came", (
     expect(Math.abs(r.z - r.after)).toBeLessThan(0.06);
   });
 });
+
+describe("Spec 10 v0.17 — roof and siding hits show", () => {
+  beforeAll(async () => {
+    await initRapier();
+  });
+
+  test("IMP-23: on a detailed house a torn-shingle hit takes the nearest shingle patch off, a torn-siding hit the nearest siding course, and a roof hit pushes the sheet struck", async () => {
+    const { createLab } = await import("../../src/sim/lab");
+    const { createLocalBackend } = await import("../../src/sim/detailBackend");
+    for (const target of ["roof", "wall"] as const) {
+      const engines: ReturnType<typeof createLocalBackend>[] = [];
+      const lab = await createLab({ houses: 1, cls: "standard", surroundings: "open", seed: 3, donors: false, dispersion: false }, { kind: "steady", keys: [{ t: 0, mph: 0, dirDeg: 0 }] }, { passThrough: false, detail: (_s, b) => (engines.push(createLocalBackend(b, 1)), engines[0]!) });
+      const b = lab.sim.world.buildings[0]!;
+      lab.advance(0.5);
+      const hits: QueuedImpact[] = [];
+      lab.sim.observe({ impact: (h, q) => h === 0 && hits.push(q) });
+      // A 2×4 down onto the front slope, or end-on into a solid wall panel of the front.
+      const roofAim = { point: { x: 2, y: 0.1 + b.wallHeight + b.roofRise * 0.6, z: -b.depth * 0.2 } };
+      const wall = b.panels.findIndex((p) => p.face === 3 && !p.hasWindow && !p.isGarage);
+      if (target === "roof") lab.fireMissile("icc500-v", 0, roofAim);
+      else lab.launch({ source: "town", kind: "stud", house: 0, aim: { wall }, standoff: 4, speed: 12 });
+      // A contact force on the sheet: watch the engine's house when the hit arrives.
+      const h = engines[0]!.engines[0]!.houses.get(0)!;
+      const before = h.failures.length;
+      let pushed: number | null = null;
+      const addContact = h.addContact.bind(h);
+      h.addContact = (id, x, y, z) => {
+        if (h.framing.members[id]!.kind === "roofSheet") pushed = id;
+        addContact(id, x, y, z);
+      };
+      lab.advance(1.5);
+      const q = hits[0]!;
+      expect(q, target).toBeDefined();
+      expect(q.at).toBeDefined();
+      const torn = h.failures.slice(before);
+      const near = (kind: string, face?: number) => {
+        let best = -1;
+        let bd = Infinity;
+        for (const m of h.framing.members) {
+          if (m.kind !== kind || (face !== undefined && m.face !== face)) continue;
+          const d = Math.hypot(m.pos.x - q.at!.x, m.pos.y - q.at!.y, m.pos.z - q.at!.z);
+          if (d < bd) (bd = d), (best = m.id);
+        }
+        return best;
+      };
+      if (target === "roof") {
+        expect(q.coverTorn).toBe(true);
+        expect(q.force).toBeGreaterThan(0);
+        const id = near("roofShingle");
+        expect(h.isAttached(id)).toBe(false);
+        expect(torn.map((f) => f.label)).toContain("Shingle nails & sealant");
+        expect(torn.every((f) => f.load === Infinity)).toBe(true);
+        expect(pushed).toBe(near("roofSheet"));
+      } else {
+        expect(q.sidingTorn).toBe(true);
+        const id = near("siding", 3);
+        expect(h.isAttached(id)).toBe(false);
+        expect(torn.some((f) => h.framing.members[h.framing.connections[f.con]!.from]!.id === id)).toBe(true);
+      }
+      lab.dispose();
+    }
+  }, 60000);
+
+});
