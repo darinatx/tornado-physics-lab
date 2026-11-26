@@ -221,6 +221,8 @@ export class RoughnessBuilder {
   private nextVersion = 1;
   private readonly geom: { cell: number; originX: number; originZ: number; nx: number; nz: number; outsideLn: number };
   private readonly cover: Float32Array;
+  /** The cover's own ln z0 per node, before any ground track (Spec 19). */
+  readonly baseCover: Float32Array;
   private readonly foot: Float64Array;
   private readonly front: Float64Array;
   private readonly hFoot: Float64Array;
@@ -243,6 +245,7 @@ export class RoughnessBuilder {
     for (let j = 0; j < nz; j++) {
       for (let i = 0; i < nx; i++) this.cover[i + j * nx] = Math.log(TERRAIN.z0Cover[coverAt(cover, originX + i * cell, originZ + j * cell)]);
     }
+    this.baseCover = this.cover.slice();
     this.foot = new Float64Array(n);
     this.front = new Float64Array(n);
     this.hFoot = new Float64Array(n);
@@ -265,6 +268,19 @@ export class RoughnessBuilder {
     const j = Math.round((z - f.originZ) / f.cell);
     if (i < 0 || j < 0 || i >= f.nx || j >= f.nz) return -1;
     return i + j * f.nx;
+  }
+
+  /** Grid geometry (nodes at originX + i·cell, originZ + j·cell). */
+  get grid(): { cell: number; originX: number; originZ: number; nx: number; nz: number } {
+    const g = this.geom;
+    return { cell: g.cell, originX: g.originX, originZ: g.originZ, nx: g.nx, nz: g.nz };
+  }
+
+  /** Set node q's cover ln z0 (a ground track changed it, Spec 19); returns whether it changed. */
+  setCover(q: number, ln: number): boolean {
+    if (this.cover[q] === ln) return false;
+    this.cover[q] = ln;
+    return true;
   }
 
   /** Add (sign +1) or remove (−1) an obstacle's sums. */

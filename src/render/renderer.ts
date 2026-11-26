@@ -332,6 +332,7 @@ export function createRenderer(
       env.update(s.center, steady ? 60 : s.rMax, curr.cloudBase);
       env.ground.setCover(curr.groundCover);
       env.ground.setRoughness(!!layers.roughness, curr.terrain, curr.tornado, curr.time);
+      env.ground.setTrack(curr.groundTrack);
       houses.sync(getBuildings(), damageColors);
       const det = getDetail();
       if (det) {

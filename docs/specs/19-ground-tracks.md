@@ -1,9 +1,8 @@
 # Spec 19 — Ground Damage Tracks
 
-Status: Draft (v0.1) — Phase 7, slice C. Requested by the user 2026-11-26 (designed in another
-session). Technical choices are made below (CLAUDE.md rule 1); it becomes Approved when slice
-C's build starts, so `npm run trace` keeps passing until its tests exist. Extends Spec 17: the
-track is part of the ground cover and feeds the roughness field.
+Status: Approved (v1.0) — Phase 7, slice C. Requested by the user 2026-11-26 (designed in another
+session). Technical choices are made below (CLAUDE.md rule 1). Extends Spec 17: the track is
+part of the ground cover and feeds the roughness field.
 
 ## Purpose
 
@@ -19,18 +18,27 @@ and with how much debris, and its state and look follow from that. Strength is n
 
 A grid of **2 m cells** in tiles of 32 × 32 cells (64 m), created only where the tornado
 reaches, so an untouched map costs nothing. It lives in `src/sim`, is deterministic, and is
-updated every **0.1 s of sim time** (12 physics steps, fixed times) for the cells within the
-**active radius**: where the near-ground wind can exceed the lowest threshold (crop lodging),
-found from the vortex's tangential profile, and never beyond 3·R_max. Each update samples the
-wind at **2 m** (canopy and turf height) at each active cell's centre with `windAt` (the
-terrain's β included, Spec 17).
+updated every **0.5 s of sim time** (fixed times; the wind at a point changes over
+R_max ÷ forward speed, tens of seconds) for the cells within the **active radius**: where the
+near-ground wind can exceed the lowest threshold (crop lodging), found from the vortex's
+tangential profile, and never beyond 3·R_max. Each update samples the wind at **2 m** (canopy
+and turf height) with `windAt` (the terrain's β included, Spec 17) on an 8 m lattice aligned
+with the tiles, and interpolates it to the cells (the wind is smooth on the core's scale). To
+keep the cost down (TERR-24):
+- an 8 m block is skipped when even its strongest corner can't beat the lowest peak among its
+  cells and is below the scour onset (interpolation never exceeds the corners), which is
+  everything the core has passed;
+- beyond 1.5·R_max, where the wind changes slowly, each block updates every fourth pass
+  (staggered), its dose over that longer interval.
 
 Per cell:
 
 1. **Peak wind and its direction.** The highest 2 m wind so far and the direction it blew
    toward at that moment. This is the way lodged crops and pushed-over grass lie. Because the
-   swirl and the forward motion combine, the peak direction on both sides of the path points
-   inward toward the track centre, ahead of the core; the pattern isn't drawn, it follows.
+   swirl, the inflow and the forward motion combine, the rows on each side point toward a
+   convergence line near the track centre, offset toward one side (as in surveyed tree-fall
+   patterns of cyclonic tornadoes, e.g. Karstens et al. 2013); the pattern isn't drawn, it
+   follows.
 2. **Scour dose.** Grass, crops and topsoil are removed by sustained wind and by debris
    sandblasting the surface, not by one gust (Jarrell, 1997: a slow F5 scoured fields up to
    46 cm deep). The dose grows only while the wind is above the scour onset u_s, at the rate
@@ -43,11 +51,13 @@ Per cell:
    where u is the 2 m wind and φ the **debris load**: the mass of flying debris below 3 m
    within the cell's tile in that update, per m² (kg/m², from the debris pool). A slow tornado
    holds a cell above u_s for longer, so it scours more than a fast one of the same peak.
-3. **Marks.** Debris gouges and drag streaks, taken from the existing debris events (Spec 04):
-   a landing (a piece hits the ground faster than 5 m/s) leaves a gouge sized by the piece's
-   footprint and depth by its momentum; a slide leaves a streak along its path, wider for
-   heavier pieces. Stored per tile as a short list (position, direction, length, width, depth),
-   capped per tile (oldest merged into the cell darkness).
+3. **Marks.** Debris gouges and drag streaks, taken from the debris events (Spec 04): a light
+   piece landing on open ground (not a slab) faster than 5 m/s darkens the cells under its
+   footprint, more for more momentum (log of mass × speed, at most 60 of 255 per landing); each
+   debris step a piece slides on open ground faster than 2 m/s darkens the cell it reaches
+   faintly (log of mass × distance, at most 8), so a slide leaves a streak along its path.
+   Marks are a darkness per cell (0–255), accumulated. Open country has few marks: no houses
+   shed debris there.
 
 ### Cell state
 
@@ -55,16 +65,20 @@ From peak wind (lodging, by the cell's cover) and dose (scouring):
 
 | Cover | State | When | z₀ (m) |
 |---|---|---|---|
-| farmland | standing | peak < 15 m/s | 0.03 (cover) |
-| farmland | **lodged** (flattened, lying in the peak direction) | peak ≥ 15 m/s | 0.010 |
-| farmland | **snapped and shredded** | peak ≥ 30 m/s | 0.015 |
-| lawn | standing | peak < 25 m/s | 0.008 (cover) |
-| lawn | **pushed over** | peak ≥ 25 m/s | 0.006 |
+| farmland | standing | peak < 28 m/s | 0.03 (cover) |
+| farmland | **lodged** (flattened, lying in the peak direction) | peak ≥ 28 m/s | 0.010 |
+| farmland | **snapped and shredded** | peak ≥ 48 m/s | 0.015 |
+| lawn | standing | peak < 35 m/s | 0.008 (cover) |
+| lawn | **pushed over** | peak ≥ 35 m/s | 0.006 |
 | both | **thinned** | D ≥ D₁ | 0.005 |
 | both | **stripped** (vegetation gone, some soil) | D ≥ D₂ | 0.002 |
 | both | **bare soil** (scoured) | D ≥ D₃ | 0.001 |
 
-Scouring states override lodging; states never go back. A **gouge** or **streak** marks the
+Each cell has its own **strength**: its plants' thresholds (lodging, snapping, pushed over)
+and its soil's dose thresholds are each scaled by 1 ± 20%, fixed by the cell's position (a
+deterministic hash mixing the 2 m cell and its 8 m block, so strength varies in patches).
+Real fields and lawns aren't uniform; it gives the track ragged, patchy edges instead of
+smooth contour lines. Scouring states override lodging; states never go back. A **gouge** or **streak** marks the
 look only (too small to matter to z₀ at 20 m). Crops lodge at a lower wind than mowed lawn,
 which is short and sits low in the surface layer.
 
@@ -79,14 +93,17 @@ narrows through town without any special rule.
 
 ### Drawing (Spec 06)
 
-The renderer reads the track tiles (never writes them) into a texture per tile, sampled by the
-ground material (Spec 17's single ground surface):
+The renderer reads the track tiles (never writes them) into a texture atlas (one row per tile)
+sampled by the ground material (Spec 17's single ground surface). It draws continuous amounts
+per cell, not the states, so transitions follow each cell's own strength:
 
-- **lodged / pushed over:** the cover lightened (exposed stems and leaf undersides) with
-  streaks along the stored direction, so the inward pattern shows;
-- **snapped and shredded:** broken, lighter and patchy;
-- **thinned → stripped → bare soil:** the cover fading to brown soil, darkest at bare soil;
-- **gouges and streaks:** dark soil marks.
+- **flattened:** how far the peak wind went past the cell's own lodging threshold (from 85% of
+  it, full at 135%): the vegetation lightens (up to 18%) with streaks along the stored
+  direction, so the convergent rows show; well-flattened crops (not lawn) take a faint straw
+  mottle over ~6 m patches (broken stalks);
+- **soil showing:** rises smoothly with the dose against the cell's own erodibility (from 40%
+  of the thinning dose to the bare-soil dose), toward soil colour with slight patch variation;
+- **marks:** darken toward dark soil, at most 55%.
 
 Marks stay for the rest of the run. The track darkens where the storm strengthens and fades
 where it weakens, because the cells felt that; its width follows the core's size, not its
@@ -109,30 +126,32 @@ strength, because the wind's radial reach scales with R_max.
 // src/config/terrain.ts (TRACK)
 // src/sim/groundTrack.ts
 class GroundTrack {
-  update(t: number, s: TornadoState, terrain: Terrain, debris: readonly Piece[]): void;  // every 0.1 s
-  onLanding(p: Piece, speed: number): void;   onSlide(p: Piece, from: Vec2, to: Vec2): void;
-  tiles(): ReadonlyMap<number, TrackTile>;    version: number;
-  cellAt(x: number, z: number): TrackCell | null;     // peak, dir, dose, state
-  coverLnZ0(x0: number, z0: number, x1: number, z1: number): { lnSum: number; area: number };
+  update(dt: number, s: TornadoState, terrain: Terrain, debris: readonly Piece[]): void;  // every 0.5 s
+  landing(p: Piece, speed: number): void;   slide(p: Piece, x0: number, z0: number): void;
+  readonly list: TrackTile[];   version: number;
+  cellAt(x: number, z: number): { peak; dirRad; dose; state; mark; cover } | null;
+  coverLnZ0(x0: number, z0: number, x1: number, z1: number, baseLn: number): number | null;
 }
 SimSnapshot.groundTrack: GroundTrack (read-only to callers)
+DebrisField.marks: { landing(p, speed); slide(p, x0, z0) } | null   // set by the sim
 ```
 
 ## Parameters
 
 | Name | Unit | Value | Source / note |
 |---|---|---|---|
-| cell / tile | m | 2 / 64 | resolves gouges and lodging rows; tiles keep it sparse |
-| update interval | s (sim) | 0.1 | wind at a cell changes over seconds near the core |
+| cell / tile / lattice | m | 2 / 64 / 8 | resolves gouges and lodging rows; tiles keep it sparse; the wind is sampled on the lattice |
+| update interval | s (sim) | 0.5 (outer ring 2) | wind at a cell changes over tens of seconds |
 | sample height | m | 2 | canopy and turf height (lodging studies measure at 1–2 m) |
-| crop lodging onset | m/s | 15 | wheat/cereal canopy lodging predicted ~11.6 m/s; maize stem/root failure 16–30 m/s in field trials (Berry et al. 2021; Baker et al. 2014 lodging model) |
-| crops snapped | m/s | 30 | top of the maize failure range: stems break rather than bend |
-| lawn pushed over | m/s | 25 | decision: mowed turf is short and stiff and sits low in the surface layer; no field data found, set above crop lodging per the design |
+| crop lodging onset | m/s at 2 m, 3-s gust | 28 | canopy failure 16–30 m/s in sustained wind (Berry et al. 2021; Baker et al. 2014; cereal canopies ~11.6 predicted); the sim's winds are 3-s gusts, so lodging sits at the top of that range; calibrated (TERR-19): EF0–1 patchy, EF2 across the path |
+| crops snapped | m/s at 2 m | 48 | calibrated: EF3 (51–62 m/s at 2 m) snaps them, EF2 (41–50) only lodges them |
+| lawn pushed over | m/s at 2 m | 35 | decision: mowed turf is short and stiff and sits low in the surface layer; no field data found; above crop lodging, per the design |
 | scour onset u_s | m/s at 2 m | 50 | no EF2 scouring, onset within EF3 (EF3 is 61–74 m/s at 10 m, ~51–62 m/s at 2 m over open ground) |
-| debris weight k_d | m²/kg | 2 (initial) | set by TERR-19 calibration |
-| D₁ / D₂ / D₃ | s | 2 / 6 / 15 (initial) | set by TERR-19 calibration against the targets above |
+| debris weight k_d | m²/kg | 2 | debris doubles the rate at 0.5 kg/m² of flying debris below 3 m; not separately calibrated (no debris in the open-country calibration) |
+| D₁ / D₂ / D₃ | s | 0.5 / 1.5 / 8 | calibrated (TERR-19): EF3 core 32% thinned or stripped, EF4 core 81% stripped or bare, EF4 at half speed 100% |
 | z₀ of states | m | see table | Wieringa (1993) classes: flattened canopy ~0.01, short grass 0.005–0.008, bare soil 0.0002–0.005 |
-| gouge landing speed | m/s | 5 | below it a piece settles without marking |
+| gouge landing speed / streak speed | m/s | 5 / 2 | below them a piece settles or creeps without marking |
+| cell strength variation | – | ±20% plants, ±20% soil | patch-to-patch variation in crops, turf and soil; gives ragged edges |
 
 All values go in `src/config/terrain.ts` with these sources. The scour thresholds are the
 weakest-sourced numbers in the model: published scouring is case reports (Jarrell 1997;
@@ -143,18 +162,20 @@ measured thresholds, so they are calibrated to those outcomes and logged as a si
 
 - **TERR-15**: The track is deterministic (same seed and inputs, same cells) and only cells
   within the active radius are updated; a map the tornado never crosses has no tiles.
-- **TERR-16**: Each cell's direction is the 2 m wind's direction at its peak; across an EF2
-  pass the lodged directions on both sides of the path point inward toward the track centre
-  (component toward the centreline > 0 for ≥ 80% of lodged cells on each side).
+- **TERR-16**: Each cell's direction is the 2 m wind's direction at its peak; across an EF2-like
+  pass the lodged rows converge on one line within R_max of the centreline, with ≥ 80% of the
+  lodged cells on each side of it pointing toward it.
 - **TERR-17**: Crops lodge at a lower wind than lawn is pushed over; in an EF1 pass lodging is
   patchy and at least twice as common on the side where swirl and forward motion add.
-- **TERR-18**: Scouring depends on duration and debris: the same peak with half the forward
-  speed gives a larger dose and a later-or-equal state at every cell; a debris load raises the
-  dose; a wind below u_s gives none.
-- **TERR-19**: Calibration: preset passes over farmland give the targets: EF2 no thinned
-  cells; EF3 thinning or stripping only within R_max, under half of the core's cells; EF4
-  stripped or bare across most of the core and lodged-only at the edges; a slow EF5 (half
-  forward speed) more bare soil than at its usual speed.
+- **TERR-18**: Scouring depends on duration and debris: the same storm at half the forward speed
+  gives > 10% more total dose over the core, with ≤ 10% of its cells at an earlier state (cell
+  by cell the passes sample different moments); a debris load raises the dose rate; a wind at
+  or below u_s gives none.
+- **TERR-19**: Calibration: preset passes over farmland give the targets: EF2 > 90% of the core
+  lodged and none scoured; EF3 scoured in under half of the core and less at the edges; EF4
+  > 50% of the core stripped or bare, with more lodged or snapped than scoured at the edges;
+  EF4 at half its forward speed more of the core stripped or bare, and at least as much bare
+  soil. (EF5's core is bare at either speed.)
 - **TERR-20**: Track width follows the core's size, not its strength: doubling R_max at the
   same V_max roughly doubles the lodged width (±25%); raising V_max at the same R_max widens it
   by less than the lodging radius of the profile implies (bounded by 3·R_max).
@@ -162,18 +183,20 @@ measured thresholds, so they are calibrated to those outcomes and logged as a si
   node over a scoured strip has a lower z₀ than before, and the 5 m wind there is higher.
 - **TERR-22**: Debris landings faster than 5 m/s leave gouges and slides leave streaks along
   their paths, at the pieces' positions; slower landings leave none.
-- **TERR-23**: Drawing: the renderer only reads the track; marks persist after the core passes;
-  lodged cells show streaks along their stored direction; scoured cells shade toward soil in
-  stage order.
-- **TERR-24**: Cost: `npm run bench` shows the track adding ≤ 3% to each scene's total ms per
-  physics step.
+- **TERR-23**: Drawing: the renderer only reads the track; ground the core has left behind
+  keeps its marks unchanged; lodged cells carry their stored direction to the shader; scoured
+  cells shade toward soil in stage order.
+- **TERR-24**: Cost: in the `ef4-town` bench scene's approach window the track's updates take
+  ≤ 3% of the physics step (confirmed with `npm run bench` at the slice's benchmark run).
 
 ## Simplifications / out of scope
 
 - Scour thresholds calibrated to case reports, not measured (see Parameters).
 - One sample height (2 m) for crops and turf; no crop growth stage, height or soil moisture
   (wet soil scours differently).
-- Debris load counted per tile, not per cell.
+- Debris load counted per tile, not per cell; only light pieces mark the ground (heavy rigid
+  bodies run in their own engine and don't report landings yet).
+- Cells are drawn as 2 m squares (nearest sampling), softened by the lodging streaks.
 - No ground marks under slabs or inside the town's lots beyond the lawn's own state.
 - Trees (Phase 9) will add their own marks (fallen trunks, root balls).
 
@@ -186,10 +209,23 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
 2. **Scour as an aeolian erosion dose, weighted by debris.** It already models how the soil's
    surface responds to wind (the dust uses it) and captures duration, which observations show
    matters more than the peak.
-3. **2 m cells, sparse tiles, 0.1 s updates near the core.** Fine enough for gouges and
-   lodging rows, cheap enough to stay within a few percent of a step (TERR-24).
+3. **2 m cells, sparse tiles, 0.5 s updates, skipped blocks, a slower outer ring.** Fine enough
+   for gouges and lodging rows. The first version (0.25 s, every cell each pass) cost 12.5% of
+   the EF4 step; these bring it under 3% (TERR-24) without changing the calibrated result.
 4. **Marks from debris events, not drawn decorations.** Every mark has a piece behind it.
+5. **Lodging thresholds on the gust basis.** The published failure speeds are for sustained
+   canopy wind; with them as 3-s gusts, even EF0 flattened its whole core. At the top of the
+   range they give the patchy EF0–1 tracks surveys describe.
 
 ## Changelog
 
+- v1.0 (2026-11-26, slice C build): approved and built. Thresholds calibrated on the gust basis
+  (crop lodging 28, snapping 48, lawn 35 m/s at 2 m; doses 0.5 / 1.5 / 8); updates every 0.5 s on
+  an 8 m lattice with skipped blocks and a slower outer ring (cost); marks are a darkness per
+  cell; TERR-16 restated as convergence on one line near the centre (the line is offset, as in
+  surveys); TERR-18 compares the core as a whole; TERR-19's slow case is EF4 (EF5's core is bare
+  at either speed). After the user's review in the app: per-cell strength (±20%) for ragged,
+  patchy edges; drawing from continuous flatten and soil amounts (the discrete states drew
+  hard contour lines and a speckled straw ring); much lighter debris marks (sliding pieces
+  had painted the lawn nearly black).
 - v0.1 (2026-11-26): drafted at the user's request (another session's design).

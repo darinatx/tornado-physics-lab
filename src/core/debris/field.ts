@@ -119,6 +119,8 @@ export class DebrisField {
   readonly pieces: Piece[] = [];
   /** Heavy pieces become rigid bodies here when set (the sim sets it); else the point model. */
   heavy: HeavySink | null = null;
+  /** Ground marks (Spec 19): told of landings on and slides along open ground. Read-only use. */
+  marks: { landing(p: Piece, speed: number): void; slide(p: Piece, x0: number, z0: number): void } | null = null;
   readonly stats: DebrisStats = { airborne: 0, resting: 0, skipped: 0, lofted: 0, settled: 0, maxSpeed: 0, maxHeight: 0, impacts: 0, lodged: 0, lodgedTotal: 0 };
   /** Permanent debris field: resting pieces the tornado has left behind (append-only). */
   readonly settled: Piece[] = [];
@@ -626,9 +628,16 @@ export class DebrisField {
       w.y += p.gust.y;
       w.z += p.gust.z;
       const fx = p.pos.x, fy = p.pos.y, fz = p.pos.z;
+      const wasGrounded = p.grounded;
+      const v0 = this.marks ? Math.hypot(p.vel.x, p.vel.y, p.vel.z) : 0;
       p.pos.y -= floor;
       stepPiece(p, w, pdt);
       p.pos.y += floor;
+      // Ground marks (Spec 19): a landing on open ground gouges it, a slide streaks it.
+      if (this.marks && floor === 0 && p.grounded) {
+        if (!wasGrounded) this.marks.landing(p, v0);
+        else if (isSliding(p)) this.marks.slide(p, fx, fz);
+      }
       // Houses in the way (Spec 10): bounce, break through a window, or lodge.
       if (targets && this.collide(p, { x: fx, y: fy, z: fz }, targets)) {
         this.pieces[i] = null as unknown as Piece;

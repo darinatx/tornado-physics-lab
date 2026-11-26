@@ -13,6 +13,8 @@ import type { TornadoState } from "../core/wind/types";
 import { fetchDirection } from "../core/wind/windField";
 import { createRng } from "../sim/rng";
 import { CITY } from "../sim/city";
+import { TrackLayer } from "./groundTrackLayer";
+import type { GroundTrack } from "../sim/groundTrack";
 
 const canvas = (w: number, h: number) => {
   const c = document.createElement("canvas");
@@ -231,6 +233,8 @@ export interface Ground {
   setCover(c: GroundCover | null): void;
   /** Show the roughness layer; refreshed for the field and wind at most every 2 s of sim time. */
   setRoughness(on: boolean, terrain: Terrain, s: TornadoState, time: number): void;
+  /** Draw the ground damage tracks (Spec 19); reads the track only. */
+  setTrack(track: GroundTrack | null): void;
 }
 
 const MASK = 2048;
@@ -264,6 +268,8 @@ export function createGround(scene: THREE.Scene): Ground {
     roughRect: { value: new THREE.Vector4(0, 0, 1, 1) },
     groundSize: { value: size },
   };
+  const trackLayer = new TrackLayer();
+  Object.assign(uniforms, trackLayer.uniforms);
   const material = new THREE.MeshLambertMaterial({ map: farm, color: 0xb4b8ae });
   material.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
@@ -283,7 +289,8 @@ uniform float roughOn;
 uniform vec4 roughRect;
 uniform float groundSize;
 uniform mat3 lawnXf;
-uniform mat3 paveXf;`,
+uniform mat3 paveXf;
+${TrackLayer.glslHead}`,
       )
       .replace(
         "#include <map_fragment>",
@@ -295,6 +302,7 @@ uniform mat3 paveXf;`,
   vec4 paveC = texture2D(paveMap, (paveXf * vec3(vGroundUv, 1.0)).xy);
   diffuseColor.rgb = mix(diffuseColor.rgb, lawnC.rgb * 1.25, m.r);
   diffuseColor.rgb = mix(diffuseColor.rgb, paveC.rgb * 1.1, m.g);
+  diffuseColor.rgb = trackTint(diffuseColor.rgb, wxz, m.r);
   if (roughOn > 0.5) {
     vec2 ru = (wxz - roughRect.xy) / roughRect.zw;
     vec4 rc = texture2D(roughMap, clamp(ru, 0.0, 1.0));
@@ -315,6 +323,9 @@ uniform mat3 paveXf;`,
   let roughT = -Infinity;
   return {
     mesh,
+    setTrack(track) {
+      trackLayer.sync(track);
+    },
     setCover(c) {
       if (c === cover) return;
       cover = c;

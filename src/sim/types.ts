@@ -66,6 +66,8 @@ export interface SimSnapshot {
   readonly terrain: Terrain;
   /** What the ground is covered with, for drawing it (Spec 17); stable while unchanged. */
   readonly groundCover: GroundCover | null;
+  /** Ground damage tracks (Spec 19); read-only to callers. */
+  readonly groundTrack: import("./groundTrack").GroundTrack;
   /** Cloud base height (m). */
   readonly cloudBase: number;
   readonly phase: Phase;

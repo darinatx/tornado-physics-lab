@@ -1,6 +1,6 @@
 # Spec 06 — Rendering
 
-Status: Approved (v1.17) — Phases 1–4
+Status: Approved (v1.18) — Phases 1–4
 
 ## Purpose
 
@@ -61,7 +61,9 @@ Phase 1 scope:
   cloud around the tornado; overcast storm lighting and fog; the ground drawn by its cover
   (Spec 17): farmland patchwork in open country, mowed lawn laid out as the town's lots over
   the neighborhood, concrete for urban areas, blended at the edges, with no roads or section
-  lines; one ground material with the roughness layer tinted in.
+  lines; one ground material with the roughness layer tinted in, and the ground damage tracks
+  (Spec 19: lodged rows streaked along their direction, scoured cells shading to soil, debris
+  marks) read from a tile atlas.
   Lighting favors readability over a realistically dark storm, and a Brightness control
   (exposure 0.5–2×) lets the viewer adjust it.
 - **Component houses (Phase 4):** each house is drawn from its components (Spec 03): wall
@@ -232,6 +234,7 @@ class TracerField { constructor(count: number, seed: number); update(dt, s, terr
 
 ## Changelog
 
+- v1.18 (Phase 7 slice C): the ground material draws the ground damage tracks (Spec 19, TERR-23).
 - v1.17 (Phase 7): ground drawn by cover (farmland, lawn, pavement) without section-line roads,
   and the ground roughness layer (Spec 17, TERR-12, TERR-14).
 - v1.16: follow aims at the core's center on the ground, the middle of the R_max ring, not

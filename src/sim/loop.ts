@@ -39,6 +39,8 @@ import { TerrainSender } from "../core/terrain/roughness";
 import type { GroundCover, Terrain } from "../core/terrain/roughness";
 import type { TerrainClass } from "../core/wind/types";
 import { TownRoughness, townCover } from "./terrain";
+import { GroundTrack } from "./groundTrack";
+import { TRACK } from "../config/terrain";
 
 export interface Sim {
   /** Profiling only: the heavy-debris world, if made. */
@@ -102,6 +104,9 @@ export function createSim(
   let debris = new DebrisField(seed);
   /** The roughness field (Spec 17), built on first use when the terrain is "auto". */
   let roughness: TownRoughness | null = null;
+  /** Ground damage tracks (Spec 19), made at reset. */
+  let track!: GroundTrack;
+  const trackEvery = Math.max(1, Math.round(TRACK.updateInterval / dt));
   const heavyTerrain = new TerrainSender();
   const detailTerrain = new TerrainSender();
   const roughnessEvery = Math.max(1, Math.round(TERRAIN.updateInterval / dt));
@@ -424,6 +429,7 @@ export function createSim(
       step: stepCount,
       terrain: terrainNow(),
       groundCover: coverNow(),
+      groundTrack: track,
       cloudBase: params.cloudBase,
       phase: lc.phase,
       lifetime: lifetime(params),
@@ -452,10 +458,12 @@ export function createSim(
     headingDeg += params.turnRate * dt;
     stepCount++;
     // Roughness follows the buildings as they fail, at fixed sim times (Spec 17).
-    if (roughness && params.terrain === "auto" && stepCount % roughnessEvery === 0) roughness.update(world.buildings);
+    if (roughness && params.terrain === "auto" && stepCount % roughnessEvery === 0) roughness.update(world.buildings, track);
     prev = curr;
     const pre = makeSnapshot();
     const damageStep = stepCount % DAMAGE_STEP_INTERVAL === 0;
+    // Ground damage tracks (Spec 19), at fixed sim times.
+    if (stepCount % trackEvery === 0) track.update(trackEvery * dt, pre.tornado, pre.terrain, debris.pieces);
     const T = config.timing;
     let t0 = T ? performance.now() : 0;
     if (stepCount % DETAIL.stepEvery === 0) detailStep(pre);
@@ -509,6 +517,8 @@ export function createSim(
     world = createWorld(currentSeed, withBuildings, config.area, config.houses);
     debris = new DebrisField(currentSeed);
     roughness = null;
+    track = new GroundTrack(coverNow());
+    debris.marks = track;
     heavyTerrain.reset();
     detailTerrain.reset();
     debris.dispersion = config.dispersion ?? true;

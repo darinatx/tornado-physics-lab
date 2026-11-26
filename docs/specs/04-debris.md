@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v2.6) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
+Status: Approved (v2.7) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
 
 ## Purpose
 
@@ -423,6 +423,9 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- v2.7 (Phase 7 slice C): the pool tells the ground track (Spec 19) when a light piece lands on
+  open ground (with its speed before the step) and when it slides along it (`DebrisField.marks`);
+  read-only, no effect on the debris.
 - v2.6 (Phase 7): over a roughness field (Spec 17) the per-terrain tables (turbulence
   intensity, snag mean free path, bump spacing) are read at the piece's local z₀, linear in
   log z₀ between the class values (`tableAt`); a class gives its own values as before.

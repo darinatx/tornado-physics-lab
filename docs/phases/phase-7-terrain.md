@@ -112,6 +112,20 @@ Ground damage tracks (slice C):
 - [ ] The marks stay after the core has passed; the roughness layer shows the track smoother
       than the fields around it
 
+- **C built (2026-11-26).** Spec 19 v1.0; TERR-15 to TERR-24 pass (TERR-19 in validation).
+  - Calibrated on the gust basis: lodging 28, snapping 48, lawn 35 m/s at 2 m; scour doses
+    0.5 / 1.5 / 8. Over farmland: EF0 faint, EF1 patchy, EF2 lodged across the core with no
+    scouring, EF3 32% of the core thinned or stripped, EF4 81% stripped or bare (EF4 at half
+    speed: more), EF5 bare. `npx tsx scripts/track-calibrate.ts [preset] [--slow]`.
+  - The rows converge on a line offset from the centreline, as in surveyed tree-fall patterns.
+  - Cost: the first version took 12.5% of the EF4 step; 0.5 s updates, skipped blocks, a slower
+    outer ring and stored cell strengths bring it under 3% (TERR-24). Full benchmark run still
+    to do (exit criterion below).
+  - After the user's first look: per-cell strength (±20%) for ragged edges, drawing from
+    continuous amounts (no contour lines or straw ring), much lighter debris marks. A shader
+    variable named `flat` (reserved in GLSL ES 3.0) blanked the ground once; the unit tests run
+    in Node and can't catch shader compile errors, so the app has to be checked.
+
 ## Exit criteria
 
 Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):

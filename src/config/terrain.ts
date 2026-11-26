@@ -42,3 +42,46 @@ export const TERRAIN = {
   /** Ground-cover blend at boundaries (m), drawing only. */
   coverBlend: 5,
 } as const;
+
+/** Ground damage tracks (Spec 19). */
+export const TRACK = {
+  /** Cell and tile size (m); a tile is tile × tile cells. */
+  cell: 2,
+  tile: 32,
+  /** Sim time between updates (s). The wind at a point changes over ~R_max / forward speed
+   *  (tens of seconds), so peaks are still caught. */
+  updateInterval: 0.5,
+  /** Wind is sampled on this lattice (m), aligned with the tiles, and interpolated to cells:
+   *  smooth on the core's scale. */
+  lattice: 8,
+  /** Sample height (m): canopy and turf (lodging studies measure at 1–2 m). */
+  sampleHeight: 2,
+  /** Crop lodging onset (m/s at 2 m, 3-s gust): canopy failure is 16–30 m/s in sustained wind
+   *  (Berry et al. 2021; Baker et al. 2014); the sim's winds are 3-s gusts, so lodging starts at the
+   *  top of that range. Calibrated (TERR-19): EF0–1 lodge in patches, EF2 across the path. */
+  cropLodge: 28,
+  /** Crop stems snapped and shredded (m/s at 2 m): calibrated so EF3 (51–62 m/s at 2 m) snaps
+   *  them and EF2 (41–50) only lodges them. */
+  cropSnap: 48,
+  /** Mowed lawn pushed over (m/s at 2 m). Decision: short, stiff turf low in the surface layer;
+   *  no data; above crop lodging. */
+  lawnFlatten: 35,
+  /** Scour onset u_s (m/s at 2 m): no EF2 scouring, onset within EF3 (51–62 m/s at 2 m). */
+  scourOnset: 50,
+  /** Debris weight k_d (m²/kg) on the scour rate; set by TERR-19 calibration. */
+  debrisWeight: 2,
+  /** Dose thresholds (s of scour-rate time) for thinned, stripped, bare soil; TERR-19 calibration. */
+  dose: { thinned: 0.5, stripped: 1.5, bare: 8 },
+  /** Roughness length of each state (m), Wieringa (1993) classes. */
+  z0: { lodged: 0.01, snapped: 0.015, pushedOver: 0.006, thinned: 0.005, stripped: 0.002, bare: 0.001 },
+  /** Patch-to-patch variation (±fraction, uniform per cell, seeded by position): plant
+   *  strength scales the lodging and snapping thresholds, soil erodibility the dose thresholds.
+   *  Real fields and lawns aren't uniform; it gives tracks their ragged, patchy edges. */
+  variation: { plants: 0.2, soil: 0.2 },
+  /** Slides slower than this (m/s) leave no streak (a piece creeping or settling). */
+  streakSpeed: 2,
+  /** Landings faster than this (m/s) gouge the ground. */
+  gougeSpeed: 5,
+  /** Debris below this height (m) counts toward the debris load. */
+  debrisHeight: 3,
+} as const;
