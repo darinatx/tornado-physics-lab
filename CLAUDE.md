@@ -178,5 +178,5 @@ branches are squash-merged.
 - `npm run verify:fast`: typecheck + unit tests + trace (must pass at every gate)
 - `npm run bench`: two seeded scenes only (an EF4 town pass and the 30-house detail-zone core
   passage, each a short window around the core), ms per physics step by subsystem, compared
-  with the saved baseline (end of every slice). Don't add scenes without the user's OK. *Not built yet: spec it, then build it once Phase 6
-  validation finishes.*
+  with the saved baseline (end of every slice). Don't add scenes without the user's OK. Spec 18; `-- --save` makes a new
+  baseline (only for an accepted, explained slowdown).

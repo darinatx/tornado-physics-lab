@@ -84,6 +84,47 @@ Final sign-off (tag `phase-6-done`):
       (2026-11-26: all eleven deferred, none to fix; see `docs/backlog.md`)
 - [ ] User's final sign-off; tag `phase-6-done`
 
+## Slice D notes
+
+- **Benchmark built** (2026-11-26, branch `phase-6-bench`): Spec 18 v1.0, BENCH-01 to BENCH-05;
+  `npm run bench`; a read-only timing hook in the sim loop (Spec 08 v1.8). Baseline saved in
+  `bench/baseline.json` (Apple M5, 10 cores, Node 25.8; 2 runs per scene, 539 s in all):
+
+  | Scene | total | damage | debris | heavy | detail | other (ms per physics step) |
+  |---|---|---|---|---|---|---|
+  | `ef4-town` | 8.93 | 1.93 | 2.49 | 4.51 | 0.00 | 0.00 |
+  | `detail-core` | 50.69 | 1.69 | 3.03 | 2.21 | 43.61 | 0.08 |
+
+  At 120 steps per sim second, `ef4-town` runs at about 1.07× real time on one thread, and
+  `detail-core` about 6× slower than real time, almost all of it the detail zone (BL-002).
+  Heavy debris is half of the town pass.
+- Found while building it: disposing a sim after a full detail-zone core passage throws in
+  Rapier (BL-013, low). The bench catches and reports it.
+- **Profiling pass** (2026-11-26): CPU profiles of both scenes (`node --cpu-prof --import tsx
+  scripts/profile-bench.ts <scene>`). Shares of each run's time:
+  - `ef4-town`: heavy debris 55% (Rapier's step, plus its JavaScript glue: every read of a
+    body's position or velocity allocates, ~14% with the garbage it makes); light debris 21%,
+    13% of it the envelope hit test (`collide` → `clipEnvelope`, `halfExtentAlong`); house damage
+    16%.
+  - `detail-core`: the detail zone 78%: light-piece stepping 29% (shape casts against fixed
+    shapes, `blockLight`/`castLight`, 20%), pose output 5% (`qmul` 4.9% self), aero 6%,
+    keep-clear 5%, overlap checks 4%, load paths 3.5%.
+  - Both: ~5% is `__name` calls that `tsx` adds (esbuild keepNames); the app's bundle doesn't
+    pay it, so the bench slightly overstates the app's cost.
+  - Wall time on this machine swings ±30% with load (the running app, the window server), so
+    gains were checked by alternating old and new code back to back, with the fingerprint
+    compared.
+
+  | Change | Estimate | Measured (old → new, alternating) | Kept |
+  |---|---|---|---|
+  | Heavy debris: read each awake body's velocity and spin once per step, not three times | 3–6% of `ef4-town` | heavy 6.21 → 5.95, 5.97 → 5.71, 5.22 → 4.90 ms/step (−4 to −6%); total −2.5 to −3%; same fingerprint | yes |
+  | Detail zone: write member poses without allocating (`qmul`/`qrot`) | 2–4% of `detail-core` | detail 42.86 → 43.03 ms/step (no gain; a first pair was swamped by load) | no, reverted |
+
+  Bigger items for the user: BL-014 (more heavy-body reads), BL-015 (town envelope hit
+  test), BL-016 (bench under `tsx`); the detail zone's light-piece sweeps are already BL-002.
+  The baseline was saved before the heavy-debris change; it isn't re-saved for a speedup this
+  small (inside the machine's noise).
+
 ## Slice A notes
 
 - Built: Spec 10 v0.1 (envelope clip, fragility by surface and missile, impulse loads with the
