@@ -104,9 +104,11 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 - [ ] `npm run verify:fast` passes
 - [ ] Specs updated, simplifications note and retro written
 - [ ] User's preliminary sign-off; tag `phase-7-prelim`
+- [ ] Pull request from `phase-7-terrain` into `main`, merged when the user says so; branch deleted
 
 Final sign-off (tag `phase-7-done`):
 
-- [ ] Slice D, validation, in its own session; findings in `docs/backlog.md`
+- [ ] Slice D, validation, in its own session on `validate-phase-7` (from the `phase-7-prelim`
+      tag), merged into `main` by pull request; findings in `docs/backlog.md`
 - [ ] Every Phase 7 backlog item decided by the user (fix, defer, accept); "fix" items fixed
-- [ ] User's final sign-off; tag `phase-7-done`
+- [ ] User's final sign-off; tag `phase-7-done` on `main`
