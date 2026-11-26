@@ -57,6 +57,19 @@ export const WIND_PARAMS = {
 
 export type WindParamKey = keyof typeof WIND_PARAMS;
 
+/**
+ * Outer decay (Spec 01 v1.10): r^(−α) out to r_o = radiusRatio·R_max, then a free vortex
+ * r^(−exponent). Radar fits of α (0.5–0.8) cover the near-core flow; farther out the inflow
+ * conserves angular momentum (1/r). radiusRatio 2 puts the presets' EF0 path widths in the
+ * surveyed ranges (EF5 ~1–2.7 km, record 4.2 km at El Reno 2013; WIND-24).
+ */
+export const OUTER_DECAY = {
+  /** r_o / R_max (–). */
+  radiusRatio: 2,
+  /** α_o, free-vortex decay exponent beyond r_o (–). */
+  exponent: 1,
+} as const;
+
 /** Power-law exponent β by terrain roughness (standard wind-engineering values). */
 export const TERRAIN_BETA = {
   open: 0.11,

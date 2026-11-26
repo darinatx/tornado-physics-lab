@@ -1,6 +1,6 @@
 # Spec 01 — Wind Field
 
-Status: Approved (v1.9)
+Status: Approved (v1.10)
 
 ## Purpose
 
@@ -16,9 +16,17 @@ Work in a storm-relative cylindrical frame centered on the vortex axis at ground
 ### Tangential velocity (modified Rankine)
 
 ```
-v_t(r) = V_max · (r / R_max)            for r ≤ R_max
-v_t(r) = V_max · (R_max / r)^α          for r > R_max
+v_t(r) = V_max · (r / R_max)                          for r ≤ R_max
+v_t(r) = V_max · (R_max / r)^α                        for R_max < r ≤ r_o
+v_t(r) = V_max · (R_max / r_o)^α · (r_o / r)^α_o      for r > r_o        (r_o = n_o · R_max)
 ```
+
+Radar fits of α (typically 0.5–0.8) come from the flow within a couple of core radii of the
+axis. Farther out, the air spiralling in keeps its angular momentum, so the swirl falls off
+like a free vortex, 1/r (α_o = 1), and the tornado's own wind fades within a few kilometres
+even for the widest wedges. Carrying the slow r^(−α) decay to any distance gave EF0 winds
+4 km from an EF5 core and a 5.4 km wide EF0 path. Surveyed EF5 paths are about 1–2.7 km
+wide, and the widest tornado on record (El Reno, 2013) was 4.2 km.
 
 ### Vertical profile with near-ground overshoot
 
@@ -92,7 +100,7 @@ surface, so the far-field 10 m wind is not the forward speed. Between them it bl
 vortex's own strength:
 
 ```
-g(r)   = 1 for r ≤ R_max, (R_max / r)^α beyond      (the swirl's radial shape)
+g(r)   = 1 for r ≤ R_max, v_t(r) / V_max beyond      (the swirl's radial shape)
 carried = g·V_trans + (1 − g)·V_env
 V_env  = V_trans · min(1, U_env / |V_trans|)         along the motion, U_env = 10 m/s
 ```
@@ -107,11 +115,14 @@ In a tornado the inward pressure-gradient force balances the centrifugal force o
 pressure drop relative to the far field:
 
 ```
-Δp(r) = ρ·V_max² / (2α) · (R_max / r)^(2α)                         for r ≥ R_max
-Δp(r) = ρ·V_max² · [ 1/(2α) + ½·(1 − r²/R_max²) ]                  for r < R_max
+m = n_o^(−2α)                                                  (= (R_max / r_o)^(2α))
+Δp(r) = ρ·V_max² · m/(2α_o) · (r_o / r)^(2α_o)                                 for r ≥ r_o
+Δp(r) = ρ·V_max² · [ ((R_max / r)^(2α) − m)/(2α) + m/(2α_o) ]                 for R_max ≤ r < r_o
+Δp(r) = ρ·V_max² · [ (1 − m)/(2α) + m/(2α_o) + ½·(1 − r²/R_max²) ]            for r < R_max
 ```
 
-The center deficit is ρ·V_max²·(1/(2α) + ½). For a default EF4 that's about 58 hPa; measured
+The center deficit is ρ·V_max²·((1 − m)/(2α) + m/(2α_o) + ½). For the default tornado (60 m/s,
+α 0.6) that's about 51 hPa; measured
 tornado deficits range from a few hPa to about 100 hPa. Following boundary-layer theory, the
 pressure field is imposed from above and taken as independent of height near the ground.
 Spec 02 uses it for roof uplift; Spec 06 uses it to shape the condensation funnel.
@@ -179,6 +190,8 @@ what's in `TornadoState`.
 | V_peak | m/s | 60 | 15–128 | aloft speed; with the near-ground overshoot and translation this spans sub-EF0 to upper EF5 (EF0 needs only ~18–22 m/s aloft) |
 | R_max | m | 150 | 20–800 | rope to wedge; typical radar values 50–500 m |
 | α | – | 0.6 | 0.5–1.0 | 1.0 = classic Rankine; radar-observed tornadoes typically 0.5–0.8 |
+| n_o | – | 2 | — | r_o / R_max, where the decay turns to a free vortex; radar fits of α span about the first two core radii, and n_o = 2 puts the presets' EF0 path widths in the surveyed ranges (WIND-24) |
+| α_o | – | 1 | — | free-vortex decay beyond r_o (angular momentum conserved by the inflow) |
 | k_r | – | 0.5 | 0.0–1.0 | inflow / tangential ratio near the surface |
 | δ | m | 50 | 10–200 | inflow-layer depth; observed corner-flow depths are tens of meters |
 | W_max | m/s | 30 | 0–80 | core updraft; radar-observed updrafts reach 30–80 m/s |
@@ -206,7 +219,9 @@ All values live in `src/config/wind.ts`.
 - **WIND-05**: The radial component is inward (toward the axis) near the ground for all r > 0.
 - **WIND-06**: In a one-cell vortex (S ≤ S₁) the vertical component is positive (up) in the
   core. In every regime |v_z| at r = 2·R_max is < 5% of W_max.
-- **WIND-07**: At z = 300 m, outside the core, v_t decays as r^(−α) (fitted exponent within ±2%).
+- **WIND-07**: At z = 300 m, between R_max and r_o, v_t decays as r^(−α) (fitted exponent within ±2%).
+- **WIND-23**: At z = 300 m, beyond r_o, v_t decays as r^(−α_o) (fitted exponent within ±2%), and
+  v_t is continuous at r_o (jump < 1e-9 relative).
 - **WIND-08**: `windAt` is deterministic: identical inputs give identical outputs.
 - **WIND-09**: `windAt` returns finite values everywhere, including r = 0 and z = 0.
 - **WIND-10**: `efRating` maps the EF bounds correctly at each boundary (64, 65, 85, 86, ...
@@ -221,18 +236,24 @@ All values live in `src/config/wind.ts`.
 - **WIND-15**: The horizontal speed profile is continuous in z at z = z_p (jump < 1e-6 relative).
 - **WIND-16**: For S ≥ S₂ (two-cell), the flow on the axis is downward and the flow at
   r = R_max is upward, with the updraft peaking at R_max (±2%).
-- **WIND-18**: The center pressure deficit equals ρ·V_max²·(1/(2α) + ½) (±1e-9 relative).
-- **WIND-19**: The pressure deficit is continuous at R_max, decreases monotonically with r, and
+- **WIND-18**: The center pressure deficit equals ρ·V_max²·((1 − m)/(2α) + m/(2α_o) + ½) with
+  m = n_o^(−2α) (±1e-9 relative); with α = α_o it is the single-power-law ρ·V_max²·(1/(2α) + ½).
+- **WIND-19**: The pressure deficit is continuous at R_max and r_o, decreases monotonically with r, and
   satisfies cyclostrophic balance (dΔp/dr = −ρ·v_t²/r, numerically within 0.5%).
 - **WIND-20**: The carried (translation and environmental) wind is unchanged at and above 10 m and
   reduced below it by the terrain power law; far from the core at 1 m it's slower than at 10 m,
   and slower over urban than open terrain.
 - **WIND-22**: The carried wind at 10 m is g·V_trans + (1 − g)·V_env (±1e-9 relative): the full
-  translation at r ≤ R_max, falling monotonically with r, and tending to the environmental wind
+  translation at r ≤ R_max, falling monotonically with r (g = v_t / V_max outside the core), and tending to the environmental wind
   min(|V_trans|, 10 m/s) along the motion (at 50·R_max within 15% of the way from it to V_trans).
 - **WIND-21**: With a typical 15 m/s forward speed, V_peak = 94 m/s gives a 10 m peak at or
   below 135 m/s (the strongest measured tornado winds), and the maximum setting (128 m/s) gives
   380–400 mph, the hypothetical ceiling the user chose.
+- **WIND-24**: Path widths match damage surveys. For the mature Spec 07 presets on open terrain,
+  the EF0 path width (where the peak 10 m wind over the pass is ≥ 65 mph, both sides together)
+  is 0.3–1.5 km for EF3, 0.5–2.5 km for EF4 and 1–3.5 km for EF5. Surveyed EF5 paths:
+  Joplin 2011 ~1.6 km, Moore 2013 ~1.7 km, Greensburg 2007 ~2.7 km; the widest on record is
+  El Reno 2013, 4.2 km, which no realistic preset may exceed.
 - **WIND-17**: The axis vertical velocity decreases monotonically as S rises from S₁ to S₂,
   with no jumps (one-cell and two-cell blend smoothly).
 
@@ -269,8 +290,19 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
    wind of at most 10 m/s at 10 m (typical of tornadic environments; storm motion follows the
    0–6 km mean wind). Adding V_trans everywhere made a 30 m/s tornado blow 67 mph across the
    whole map.
+6. **Outer decay (v1.10):** the r^(−α) decay holds out to r_o = 2·R_max, then turns to a free
+   vortex (1/r). Radar fits of α cover the near-core flow; beyond it, angular-momentum
+   conservation gives 1/r. Calibrated against damage-survey path widths: the old unbounded
+   r^(−α) gave EF0 winds 4 km out on the right of an EF5 (5.4 km EF0 path, wider than the
+   record). Peak winds are unchanged. Found by the user.
 
 ## Changelog
+
+- v1.10: outer decay turns to a free vortex (1/r) beyond r_o = 2·R_max (WIND-23, WIND-24;
+  WIND-07, WIND-18, WIND-19 and WIND-22 reworded). The carried wind's weight follows the same
+  shape, and the pressure deficit and condensation funnel follow from it. Center deficit at
+  default α drops ~11% (58 → 51 hPa for the default tornado). EF0 path widths: EF5 preset
+  5.4 → 3.0 km, EF4 2.4 → 1.7 km, EF3 0.95 → 0.78 km; peaks unchanged. Found by the user (BL-017).
 
 - v1.9: optional tunnel flow on the wind state (`TornadoState.tunnel`, Spec 12): when set, `windAt` and
   `pressureDeficit` return the wind tunnel's power-law wind and uniform deficit instead of the vortex's.

@@ -148,8 +148,8 @@ describe("Spec 06 — rendering", () => {
   test("REND-13: the tracer count follows the total dust emission, within its limits", () => {
     const count = (o: Parameters<typeof baseState>[0]) => dustTracerCount(surveyDust(baseState(o), "open", RENDER.dustLiftSpeed).total);
     const typical = count({ vMax: 52, rMax: 300, alpha: 0.6, velocity: { x: 15, z: 0 } });
-    expect(typical).toBeGreaterThan(10000);
-    expect(typical).toBeLessThan(14000);
+    expect(typical).toBeGreaterThan(7000);
+    expect(typical).toBeLessThan(10500);
     expect(count({ vMax: 60, rMax: 300, alpha: 0.6, velocity: { x: 15, z: 0 } })).toBeGreaterThan(typical); // stronger
     expect(count({ vMax: 52, rMax: 400, alpha: 0.6, velocity: { x: 15, z: 0 } })).toBeGreaterThan(typical); // larger
     expect(count({ vMax: 128, rMax: 800, alpha: 0.5, velocity: { x: 30, z: 0 } })).toBe(RENDER.tracerCap);

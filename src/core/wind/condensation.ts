@@ -4,7 +4,7 @@
  * Δp(r) ≥ ρ·g·(H − z).
  */
 import { AIR_DENSITY, GRAVITY } from "../../config/atmosphere";
-import { pressureDeficit } from "./pressure";
+import { deficitTerms, pressureDeficit } from "./pressure";
 import type { TornadoState } from "./types";
 
 /** Pressure drop needed for condensation at height z (Pa). */
@@ -18,14 +18,15 @@ export function funnelRadius(z: number, s: TornadoState, cloudBase: number, maxR
   const q = AIR_DENSITY * s.vMax * s.vMax;
   if (q <= 0) return need <= 0 ? maxRadius : 0;
   if (need <= 0) return maxRadius;
-  const R = Math.max(s.rMax, 1e-6);
-  const edge = q / (2 * s.alpha);
-  const center = edge + q / 2;
+  // Invert the piecewise deficit (Spec 01 v1.10): core, r^(−α) ring, free-vortex tail.
+  const { R, ro, ao, atRo, atR, center } = deficitTerms(s);
   if (need > center) return 0;
-  const r =
-    need >= edge
-      ? R * Math.sqrt(Math.max(1 - (2 * (need - edge)) / q, 0))
-      : R * Math.pow((2 * s.alpha * need) / q, -1 / (2 * s.alpha));
+  let r: number;
+  if (need >= atR) r = R * Math.sqrt(Math.max(1 - (2 * (need - atR)) / q, 0));
+  else if (need >= atRo) {
+    const x = ((need - atRo) * 2 * s.alpha) / q + Math.pow(R / ro, 2 * s.alpha); // (R / r)^(2α)
+    r = R * Math.pow(x, -1 / (2 * s.alpha));
+  } else r = ro * Math.pow(need / atRo, -1 / (2 * ao));
   return Math.min(r, maxRadius);
 }
 

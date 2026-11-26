@@ -5,16 +5,21 @@
  * World frame: Y up, ground plane X–Z. Cyclonic rotation is positive rotation about +Y
  * (counter-clockwise viewed from above).
  */
-import { CELL_STRUCTURE, ENV_REFERENCE_HEIGHT, ENV_SURFACE_WIND, PROFILE_EPSILON, TERRAIN_BETA } from "../../config/wind";
+import { CELL_STRUCTURE, ENV_REFERENCE_HEIGHT, ENV_SURFACE_WIND, OUTER_DECAY, PROFILE_EPSILON, TERRAIN_BETA } from "../../config/wind";
 import type { Vec3 } from "../math/vec";
 import type { TerrainClass, TornadoState, TunnelFlow } from "./types";
 import { TUNNEL } from "../../config/tunnel";
 
-/** Modified Rankine tangential speed aloft (no height factor). */
+/**
+ * Modified Rankine tangential speed aloft (no height factor): r^(−α) out to r_o, then a free
+ * vortex (Spec 01 v1.10).
+ */
 export function tangentialProfile(r: number, vMax: number, rMax: number, alpha: number): number {
   const R = Math.max(rMax, 1e-6);
   if (r <= R) return vMax * (r / R);
-  return vMax * Math.pow(R / r, alpha);
+  const ro = OUTER_DECAY.radiusRatio * R;
+  if (r <= ro) return vMax * Math.pow(R / r, alpha);
+  return vMax * Math.pow(1 / OUTER_DECAY.radiusRatio, alpha) * Math.pow(ro / r, OUTER_DECAY.exponent);
 }
 
 /** S(r): overshoot strength, strongest at r = R_max, falling to 1 far from the core. */
@@ -90,10 +95,10 @@ export function envFactor(z: number, terrain: TerrainClass): number {
 
 /**
  * The carried wind as a multiple of V_trans (Spec 01 v1.8): g·V_trans + (1 − g)·V_env with
- * g = 1 inside R_max and (R_max / r)^α beyond, and V_env = V_trans·min(1, U_env / |V_trans|).
+ * g = 1 inside R_max and the swirl's shape v_t / V_max beyond (v1.10), and V_env = V_trans·min(1, U_env / |V_trans|).
  */
 export function carriedFactors(r: number, s: TornadoState): number {
-  const g = r <= s.rMax ? 1 : Math.pow(s.rMax / r, s.alpha);
+  const g = r <= s.rMax ? 1 : tangentialProfile(r, 1, s.rMax, s.alpha);
   const speed = Math.hypot(s.velocity.x, s.velocity.z);
   const env = speed > ENV_SURFACE_WIND ? ENV_SURFACE_WIND / speed : 1;
   return g + (1 - g) * env;
