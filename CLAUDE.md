@@ -81,7 +81,7 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
 6. **Validate (its own session, alongside the next phase)**: a separate session runs the
    phase's validation: `npm run verify`, the validation tests, the phase's validation slice
    and any checks it adds against published data. It **records, it doesn't fix**: every bug
-   and suggestion goes in `docs/backlog.md` (ID, phase, what, evidence, severity, suggested
+   and suggestion goes in `docs/backlog.md` (ID, phase, what, evidence, severity and why it has that severity, suggested
    fix). It may add validation tests and measurements; it changes no model code, so it can't
    collide with the next phase's work.
    **Code changes while validation runs.** Before phase N+1 makes its first code change while
