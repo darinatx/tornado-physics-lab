@@ -228,7 +228,9 @@ that has left stays detailed: its pieces keep simulating until they come to rest
 place with their final state; a house that left untouched goes back to the component model.
 After 20 s a piece that only creeps (under 0.2 m/s and 0.2 rad/s with something under it, for
 1 s) no longer holds the freeze up, but one in the air, falling, toppling or sliding faster
-always does: nothing freezes in mid-air or mid-fall. Moving the spot applies at the next step; houses already detailed
+always does: nothing freezes in mid-air or mid-fall. Houses that have left keep getting detail
+steps until every one has frozen, even once no house is left in the zone (a piece lofted by
+the storm's updraft keeps its house simulating until it comes down or leaves the area). Moving the spot applies at the next step; houses already detailed
 stay. Selection uses only the tornado state and the spot, so it's deterministic.
 
 **Light pieces.** A loose piece lighter than 40 kg, a single member (shingle, glass shard,
@@ -311,9 +313,19 @@ Decisions (v0.15):
   pieces in flight or falling (seconds behind the tornado), because a frozen piece in mid-air is
   visibly wrong and the cost of a few falling pieces is small; creeping pieces (≤ 0.2 m/s for
   1 s) may stop where they are, a sub-metre difference.
-- Wake on stand-in change rather than re-checking every rubble body's support each step: the
-  only way support disappears under fixed rubble is a stand-in change (detailed houses' own
-  members wake rubble on them when they detach).
+- Rubble support: checked at the 4 Hz rubble wind check rather than every step (a quarter
+  second of hanging is not visible at the distances involved), plus at once on a stand-in change
+  (the common case).
+- No hard cap on settling: a piece the storm's updraft holds aloft keeps its house simulating
+  (cheap: light pieces only, the rest is fixed rubble) until it lands or leaves the area.
+- Zone exit stays at 6·R_max behind (profiled, v0.15): behind the core 57% (EF4) / 48% (EF5) of
+  the detail cost falls 2–6·R_max back, with only 2% of the failures; the roof-height wind there
+  is still 56–116 mph on average (translation adds to the far-field wind), above the 55 mph calm
+  skip, so a wind-based exit would not leave earlier. And a house that has left is still loaded
+  and its pieces simulated until they rest (6.0 ms per house-step settling against 6.3 in the
+  zone): leaving earlier only starts that clock sooner. The cost there is debris still moving in
+  that wind (8 ms per house-step at 2–4·R_max against 3.6 ms in the first R_max); the only way to
+  save it would be to freeze moving debris, the shortcut that left pieces hanging.
 
 ### Detail zone performance (Phase 5 follow-up)
 
@@ -346,9 +358,11 @@ weight keeps loading the structure (Rapier has no contact between two fixed bodi
 - a moving piece hits it (a contact force event above the impact threshold); or
 - a piece it touches comes back to life (a pile wakes together: a piece resting or leaning
   on another may lose its support).
-- the house around the zone it rests on changes (its stand-in is rebuilt or removed: a roof
-  or wall gone, a slab swept). Rapier never wakes a fixed body when what is under it goes, so
-  rubble (and any sleeping piece) touching the old stand-in wakes first.
+- nothing is under it any more (checked 4 times a second: its colliders, lowered 5 cm, touch
+  nothing): what it rested on moved away or was removed. Rapier never wakes a fixed body when
+  what is under it goes. When a house around the zone changes (its stand-in is rebuilt or
+  removed: a roof or wall gone, a slab swept), rubble and sleeping pieces touching the old
+  stand-in wake at once, before it is removed.
 Moving pieces still hit and pile onto rubble, and impacts on it are reported as before.
 
 **Entry without a stall.** Building a house's colliders (~1,150) takes ~30 ms. Entering
@@ -445,11 +459,14 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   edge of the roof still standing (the last rafter pair before a gap of more than 1.5 bays, or
   the gable); in a rising wind from any direction, a lab house goes from a third of its rafter
   pairs gone to two thirds, and from there to half its wall frames down, within ~15 mph each.
-- **STR-32**: Rubble resting on a town house's stand-in wakes and falls when that house's
-  stand-in is rebuilt without what held it up (roof and walls gone).
+- **STR-32**: Rubble with nothing left under it falls: when a town house's stand-in is rebuilt
+  without what held it up (roof and walls gone), and when its support is removed any other way.
 - **STR-33**: A house past its settle timeout freezes only after every loose piece has been
   down and creeping (under 0.2 m/s and 0.2 rad/s, something under it) for 1 s: a piece thrown
   up or toppling is never frozen in the air or mid-fall.
+- **STR-34**: Houses that left the zone keep getting detail steps after the zone is empty, until
+  they freeze; one still settling a minute later has nothing hanging (every rigid piece has
+  something under it, every unsupported light piece is moving).
 - **STR-24** *(validation)*: Standard detailed houses passed through simulated strong
   tornadoes (the Spec 03 calibration cases) reach each DOD at a Kaplan–Meier median peak wind
   within ±10% of the DI 2 expected value (DOD 5, not represented, is reached with DOD 6), on a
@@ -487,12 +504,16 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
 ## Changelog
 
 - v0.15: no detail pieces left in mid-air (user report: debris floating long after the tornado
-  had passed). Two causes: (1) the 20 s settle timeout froze a house with pieces still flying or
-  toppling; now, past the timeout, a house freezes only once every piece has been down and
-  creeping for 1 s (STR-33). (2) Rubble is a fixed body, and Rapier never wakes a fixed body when
-  the collider under it is removed: rubble on a town house's roof stayed in the air when that
-  roof blew off and its stand-in was rebuilt. Rubble and sleeping pieces touching a stand-in now
-  wake before it is rebuilt or removed (STR-32).
+  had passed). Three causes: (1) once the last house left the zone the sim sent no more detail
+  steps, so houses still settling were never stepped again and their pieces stayed wherever they
+  were, in flight included (every house of an EF4 pass had 150–740 pieces moving then); houses
+  now get steps until they freeze (STR-34). (2) Rubble is a fixed body, and Rapier never wakes a
+  fixed body when what is under it goes: rubble on a town house's roof stayed up when that roof
+  blew off (6 pieces at 3.6–5 m in an EF4 pass). Rubble now wakes when its support goes (a stand-in
+  change at once, anything else within 0.25 s) (STR-32). (3) The 20 s settle timeout froze a house
+  with pieces still flying or toppling; past the timeout a house now freezes only once every
+  piece has been down and creeping for 1 s (STR-33). Zone exit (6·R_max) unchanged; see the
+  decision below.
 
 - v0.14: detail steps can carry launches (`DetailStep.launches`, Spec 12): the listed members of a
   house become one free body at a point with a velocity, through the same body-making code as

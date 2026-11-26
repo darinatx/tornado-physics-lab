@@ -344,45 +344,60 @@ describe("Spec 09 slice B — detail zone", () => {
     expect(shards.every((m) => !h.isAttached(m.id))).toBe(true);
     e.dispose();
   });
-  test("STR-32: rubble resting on a town house's stand-in falls when that house's roof and walls go", async () => {
+  test("STR-32: rubble with nothing left under it falls: a town house's roof and walls going, or its support removed any other way", async () => {
     const { DetailEngine } = await import("../../src/sim/detailZone");
     const { townState } = await import("../../src/sim/townColliders");
-    const a = exactHouse();
-    const b = exactHouse();
-    b.x = 20;
-    b.id = 1;
-    const e = new DetailEngine([a, b]);
-    const t = tornado(-5000, 1);
-    let n = 0;
-    const step = (town?: ReturnType<typeof townState>[]) => e.step({ enter: n === 0 ? [{ index: 0, removed: [] }] : [], n: n++, tornado: t, terrain: "open", exit: [], town });
-    step([townState(1, b)]);
-    const h = e.houses.get(0)!;
-    while (!h.complete) step();
-    // Three of A's rafter pairs, dropped onto B's roof just above B's own rafters: they rest
-    // there like a saddle and become rubble.
-    const rafters = h.framing.members.filter((m) => m.kind === "rafterPair").sort((p, q) => p.pos.x - q.pos.x || p.pos.z - q.pos.z);
-    const ids = rafters.slice(10, 13).map((m) => m.id);
-    const orig = h.memberPose(ids[0]!).pos;
-    const body = h.launch(ids, { x: b.x, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })!;
-    // Exactly over B's own rafters (same house, 20 m along), 5 cm up.
-    const now = h.memberPose(ids[0]!).pos;
-    const bt = body.translation();
-    body.setTranslation({ x: bt.x + orig.x + b.x - now.x, y: bt.y + orig.y + 0.05 - now.y, z: bt.z + orig.z - now.z }, true);
-    const handle = body.handle;
-    for (let k = 0; k < 60 * 4 && !h.rubble.has(handle); k++) step();
-    expect(h.rubble.has(handle)).toBe(true);
-    const eave = b.wallHeight + 0.2;
-    const y0 = h.memberPose(ids[0]!).pos.y;
-    expect(y0).toBeGreaterThan(eave); // on B's roof
+    /** A's rafters resting as rubble on town house B's roof; returns what the test needs. */
+    const setup = () => {
+      const a = exactHouse();
+      const b = exactHouse();
+      b.x = 20;
+      b.id = 1;
+      const e = new DetailEngine([a, b]);
+      const t = tornado(-5000, 1);
+      let n = 0;
+      const step = (town?: ReturnType<typeof townState>[]) => e.step({ enter: n === 0 ? [{ index: 0, removed: [] }] : [], n: n++, tornado: t, terrain: "open", exit: [], town });
+      step([townState(1, b)]);
+      const h = e.houses.get(0)!;
+      while (!h.complete) step();
+      // Three of A's rafter pairs, set exactly over B's own rafters (same house, 20 m along),
+      // 5 cm up: they rest there like a saddle and become rubble.
+      const rafters = h.framing.members.filter((m) => m.kind === "rafterPair").sort((p, q) => p.pos.x - q.pos.x || p.pos.z - q.pos.z);
+      const ids = rafters.slice(10, 13).map((m) => m.id);
+      const orig = h.memberPose(ids[0]!).pos;
+      const body = h.launch(ids, { x: b.x, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })!;
+      const now = h.memberPose(ids[0]!).pos;
+      const bt = body.translation();
+      body.setTranslation({ x: bt.x + orig.x + b.x - now.x, y: bt.y + orig.y + 0.05 - now.y, z: bt.z + orig.z - now.z }, true);
+      const handle = body.handle;
+      for (let k = 0; k < 60 * 4 && !h.rubble.has(handle); k++) step();
+      expect(h.rubble.has(handle)).toBe(true);
+      const y0 = h.memberPose(ids[0]!).pos.y;
+      expect(y0).toBeGreaterThan(b.wallHeight + 0.2); // on B's roof
+      return { e, b, h, ids, y0, step };
+    };
     // B's roof and walls go (every bay and panel): its stand-in is rebuilt without them, and
     // the rafters drop to the ground.
-    const gone = { part: "roofBay", index: 0, time: 0, load: 0, capacity: 0, mph: 0, sign: 0, wind: { x: 0, y: 0, z: 0 } } as const;
-    b.bays.forEach((x) => (x.failed = { ...gone }));
-    b.panels.forEach((x) => (x.failed = { ...gone, part: "wallPanel" }));
-    step([townState(1, b)]);
-    for (let k = 0; k < 60 * 3; k++) step();
-    expect(h.memberPose(ids[0]!).pos.y).toBeLessThan(y0 - 1);
-    e.dispose();
+    {
+      const { e, b, h, ids, y0, step } = setup();
+      const gone = { part: "roofBay", index: 0, time: 0, load: 0, capacity: 0, mph: 0, sign: 0, wind: { x: 0, y: 0, z: 0 } } as const;
+      b.bays.forEach((x) => (x.failed = { ...gone }));
+      b.panels.forEach((x) => (x.failed = { ...gone, part: "wallPanel" }));
+      step([townState(1, b)]);
+      for (let k = 0; k < 60 * 3; k++) step();
+      expect(h.memberPose(ids[0]!).pos.y).toBeLessThan(y0 - 1);
+      e.dispose();
+    }
+    // The support goes without anything telling the rubble (here: B's colliders removed
+    // straight from the world): its support check (4 times a second) finds nothing under it.
+    {
+      const { e, h, ids, y0, step } = setup();
+      const sw = e.worldFor(0)!;
+      for (const c of sw.townColliders.get(1)!) sw.world.removeCollider(c, false);
+      for (let k = 0; k < 60 * 3; k++) step();
+      expect(h.memberPose(ids[0]!).pos.y).toBeLessThan(y0 - 1);
+      e.dispose();
+    }
   }, 60000);
 
   test("STR-33: a house past its settle timeout freezes only once every piece is down and creeping, never in the air", async () => {

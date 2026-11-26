@@ -242,6 +242,8 @@ export function createSim(
     }
   }
   let detailN = 0;
+  /** Houses that left the zone and haven't frozen yet: their pieces still need steps. */
+  const settling = new Set<number>();
   let lagging = false;
   let stepMs = 0;
   // No spot until the user picks one: the detail zone is opt-in (it slows the sim while its
@@ -271,8 +273,11 @@ export function createSim(
       const gone = set?.stripped ? framing.members.map(() => true) : removedOnEntry(b, framing);
       return { index: i, removed: gone.flatMap((g, id) => (g ? [id] : [])), ...(set?.group !== undefined ? { group: set.group } : {}) };
     });
-    // Nothing in the zone and nothing changing: don't make the sim wait on an empty step.
-    if (!enter.length && !ops.exit.length && zone.active.size === 0) return;
+    for (const i of ops.exit) settling.add(i);
+    // Nothing in the zone, nothing settling and nothing changing: don't make the sim wait on an
+    // empty step. (Houses that left keep getting steps until they freeze, Spec 09 v0.15: before,
+    // the last ones to leave were never stepped again, their pieces hanging wherever they were.)
+    if (!enter.length && !ops.exit.length && zone.active.size === 0 && settling.size === 0) return;
     // Sent: these states are now what the engine has.
     for (const st of town) sentRev.set(st.index, revKey(world.buildings[st.index]!));
     // The town's debris hits on detailed houses since the last step (Spec 10 slice B).
@@ -322,6 +327,7 @@ export function createSim(
           list.push({ label: f.label, count: 1, total: glass ? panes.size : cons.length, unit: glass ? "windows" : "connections", time: curr.time, load: f.load, capacity: f.capacity, mph: f.mph });
         }
       }
+      for (const f of r.frozen) settling.delete(f.index);
       for (const f of r.frozen)
         if (f.undamaged) {
           // Untouched: back to the component model, which draws it the same.
@@ -442,6 +448,7 @@ export function createSim(
     indexById = new Map(world.buildings.map((b, i) => [b.id, i]));
     if (taps) debris.onImpact = (b, q, p) => taps.impact?.(indexById.get(b.standInFor ?? b.id) ?? -1, q, "debris", p, stepCount * dt);
     zone = new ZoneSelector(config.detailHouses, fixedZone);
+    settling.clear();
     detailView.clear();
     standIns.clear();
     townHits.length = 0;

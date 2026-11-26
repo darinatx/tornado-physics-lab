@@ -203,6 +203,22 @@ export class StructureWorld {
     return found;
   }
 
+  /** Is anything under this body: do its colliders, lowered 5 cm, touch anything else (the
+   *  ground, a slab, a house, rubble or another piece)? */
+  hasSupport(body: RAPIER.RigidBody): boolean {
+    let under = false;
+    for (let i = 0; i < body.numColliders() && !under; i++) {
+      const c = body.collider(i);
+      const t = c.translation();
+      this.world.intersectionsWithShape({ x: t.x, y: t.y - 0.05, z: t.z }, c.rotation(), c.shape, (o) => {
+        if (o.parent()?.handle === body.handle) return true;
+        under = true;
+        return false;
+      });
+    }
+    return under;
+  }
+
   /** Is a light piece resting or leaning on something: the ground (within 3 cm), or any fixed
    *  collider (its own house included) within 2 cm of its box, lowered 3 cm? */
   lightSupported(p: Piece): boolean {
@@ -1464,11 +1480,17 @@ export class DetailHouse {
   /** Aerodynamic forces on the house's moving groups, per member plate, from the wind where it is. */
   aero(wind: WindSource): void {
     const world = this.sw.world;
-    // Rubble the wind could now move (lift above its weight, or push past friction) wakes.
+    // Rubble the wind could now move (lift above its weight, or push past friction) wakes, and
+    // so does rubble with nothing left under it (what it rested on moved away or was removed:
+    // Rapier never wakes a fixed body).
     if (this.rubble.size && this.rubbleTick++ % DETAIL.rubbleWindEvery === 0) {
       const wake: number[] = [];
       for (const [handle, group] of this.rubble) {
         const body = world.getRigidBody(handle);
+        if (!this.sw.hasSupport(body)) {
+          wake.push(handle);
+          continue;
+        }
         const tr = body.worldCom();
         const wc = wind.at(tr);
         if (Math.hypot(wc.x, wc.y, wc.z) < 0.5) continue;
@@ -1869,18 +1891,7 @@ export class DetailHouse {
       if (body.isSleeping()) continue;
       const v = body.linvel();
       const w = body.angvel();
-      if (Math.hypot(v.x, v.y, v.z) >= DETAIL.creepSpeed || Math.hypot(w.x, w.y, w.z) >= DETAIL.creepSpin) return true;
-      let under = false;
-      for (let i = 0; i < body.numColliders() && !under; i++) {
-        const c = body.collider(i);
-        const t = c.translation();
-        world.intersectionsWithShape({ x: t.x, y: t.y - 0.05, z: t.z }, c.rotation(), c.shape, (o) => {
-          if (o.parent()?.handle === handle) return true;
-          under = true;
-          return false;
-        });
-      }
-      if (!under) return true;
+      if (Math.hypot(v.x, v.y, v.z) >= DETAIL.creepSpeed || Math.hypot(w.x, w.y, w.z) >= DETAIL.creepSpin || !this.sw.hasSupport(body)) return true;
     }
     return false;
   }
