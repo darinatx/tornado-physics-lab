@@ -198,8 +198,15 @@ export const DETAIL = {
   /** Houses detailed around the chosen spot (the most destroyed at once that still runs near
    *  real time: ~1–2 ms per house per step while it's being torn apart). */
   maxHouses: 30,
-  /** A house that left the zone freezes once its pieces rest, or after this long (s). */
+  /** A house that left the zone freezes once its pieces rest, or after this long (s) once
+   *  every piece has been down and only creeping for creepForS (s): under creepSpeed (m/s) and
+   *  creepSpin (rad/s), with something under it (Spec 09 v0.15). A piece falling, toppling or
+   *  sliding off a pile moves faster than this (or pauses for less than a second); one the wind
+   *  nudges along the ground, slower. */
   settleTimeout: 20,
+  creepSpeed: 0.2,
+  creepSpin: 0.2,
+  creepForS: 1,
   /** Calm skip: no load solve below this roof-height wind (mph) and APC push (Pa). Nothing can
    *  fail below 64 mph in any class or direction (first: aged shingles on a weak house at
    *  66 mph); 55 mph leaves ~30% margin on load. */

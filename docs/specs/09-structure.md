@@ -1,6 +1,6 @@
 # Spec 09 — Structural Physics (Detail Zone)
 
-Status: Approved (v0.14) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
+Status: Approved (v0.15) — Phase 5 slices A (structure lab), B (detail zone in town) and C (validation)
 
 ## Purpose
 
@@ -224,9 +224,11 @@ speed (well before it feels damaging wind, so the hand-off is normally invisible
 the tornado first and at most 3 per step (spreading the build cost). A house leaves the zone
 once the tornado has passed it: it is behind the tornado (relative position against the
 direction of travel) and farther than R_exit = 6·R_max, or the tornado has dissipated. A house
-that has left stays detailed: its pieces keep simulating until they come to rest (or for 20 s
-at most), then freeze in place with their final state; a house that left untouched goes back
-to the component model. Moving the spot applies at the next step; houses already detailed
+that has left stays detailed: its pieces keep simulating until they come to rest, then freeze in
+place with their final state; a house that left untouched goes back to the component model.
+After 20 s a piece that only creeps (under 0.2 m/s and 0.2 rad/s with something under it, for
+1 s) no longer holds the freeze up, but one in the air, falling, toppling or sliding faster
+always does: nothing freezes in mid-air or mid-fall. Moving the spot applies at the next step; houses already detailed
 stay. Selection uses only the tornado state and the spot, so it's deterministic.
 
 **Light pieces.** A loose piece lighter than 40 kg, a single member (shingle, glass shard,
@@ -304,6 +306,15 @@ them); intact houses' members are placed once, and only moving members are updat
 frame. With damage colors on, their outer finish (siding, shingles) takes the house's DOD
 color, as the component houses do; bare sheathing and framing keep their materials.
 
+Decisions (v0.15):
+- Settle timeout keeps a floor on physics, not on what's shown: past it a house still waits for
+  pieces in flight or falling (seconds behind the tornado), because a frozen piece in mid-air is
+  visibly wrong and the cost of a few falling pieces is small; creeping pieces (≤ 0.2 m/s for
+  1 s) may stop where they are, a sub-metre difference.
+- Wake on stand-in change rather than re-checking every rubble body's support each step: the
+  only way support disappears under fixed rubble is a stand-in change (detailed houses' own
+  members wake rubble on them when they detach).
+
 ### Detail zone performance (Phase 5 follow-up)
 
 Goal: the 30-house core passage at or near real time, without fewer houses or coarser
@@ -335,6 +346,9 @@ weight keeps loading the structure (Rapier has no contact between two fixed bodi
 - a moving piece hits it (a contact force event above the impact threshold); or
 - a piece it touches comes back to life (a pile wakes together: a piece resting or leaning
   on another may lose its support).
+- the house around the zone it rests on changes (its stand-in is rebuilt or removed: a roof
+  or wall gone, a slab swept). Rapier never wakes a fixed body when what is under it goes, so
+  rubble (and any sleeping piece) touching the old stand-in wakes first.
 Moving pieces still hit and pile onto rubble, and impacts on it are reported as before.
 
 **Entry without a stall.** Building a house's colliders (~1,150) takes ~30 ms. Entering
@@ -431,6 +445,11 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   edge of the roof still standing (the last rafter pair before a gap of more than 1.5 bays, or
   the gable); in a rising wind from any direction, a lab house goes from a third of its rafter
   pairs gone to two thirds, and from there to half its wall frames down, within ~15 mph each.
+- **STR-32**: Rubble resting on a town house's stand-in wakes and falls when that house's
+  stand-in is rebuilt without what held it up (roof and walls gone).
+- **STR-33**: A house past its settle timeout freezes only after every loose piece has been
+  down and creeping (under 0.2 m/s and 0.2 rad/s, something under it) for 1 s: a piece thrown
+  up or toppling is never frozen in the air or mid-fall.
 - **STR-24** *(validation)*: Standard detailed houses passed through simulated strong
   tornadoes (the Spec 03 calibration cases) reach each DOD at a Kaplan–Meier median peak wind
   within ±10% of the DI 2 expected value (DOD 5, not represented, is reached with DOD 6), on a
@@ -466,6 +485,14 @@ class StructureLab { step(): void; setWind(mph, dirDeg): void; startTornado(pass
   on other pieces or other slabs).
 
 ## Changelog
+
+- v0.15: no detail pieces left in mid-air (user report: debris floating long after the tornado
+  had passed). Two causes: (1) the 20 s settle timeout froze a house with pieces still flying or
+  toppling; now, past the timeout, a house freezes only once every piece has been down and
+  creeping for 1 s (STR-33). (2) Rubble is a fixed body, and Rapier never wakes a fixed body when
+  the collider under it is removed: rubble on a town house's roof stayed in the air when that
+  roof blew off and its stand-in was rebuilt. Rubble and sleeping pieces touching a stand-in now
+  wake before it is rebuilt or removed (STR-32).
 
 - v0.14: detail steps can carry launches (`DetailStep.launches`, Spec 12): the listed members of a
   house become one free body at a point with a velocity, through the same body-making code as
