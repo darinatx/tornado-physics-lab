@@ -49,8 +49,7 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
 8. **Phase gates, in two steps.** **Preliminary sign-off** lets phase N+1 start: every
    preliminary exit criterion checked, the user signs off, tag `phase-N-prelim`. **Final
    sign-off** closes phase N: its validation has run and every backlog item from it has a
-   decision from the user (fix, defer to a named phase, or accept as a documented
-   limitation), with the "fix" items fixed; tag `phase-N-done`. See Phase loop.
+   decision from the user (fix, defer, or accept as a documented limitation), with the "fix" items fixed; tag `phase-N-done`. See Phase loop.
 9. **Performance is measured, not guessed.** Performance matters a lot to the user. The target
    is 60 fps on a mid-range laptop (Spec 00): a 16.7 ms frame shared by physics, the detail
    zone and rendering. Every slice runs the benchmark and reports any regression. Every phase
@@ -104,15 +103,16 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    If the validation session works in this same folder, edits reach it immediately, so weigh
    that in the recommendation; if it's in its own worktree, say its results will describe the
    old code. Don't ask when no validation session is running or the change touches no code.
-7. **Final gate**: the user decides each open backlog item from the phase (fix, defer to a
-   named phase, or accept as a documented limitation in its spec); "fix" items are fixed (usual
+7. **Final gate**: the user decides each open backlog item from the phase (fix, defer, or
+   accept as a documented limitation in its spec); "fix" items are fixed (usual
    rules) → final sign-off → tag `phase-N-done`.
 
 ### Backlog
 
 `docs/backlog.md` holds what validation found. Each item gets the user's decision before its
-phase's final gate: **fix** (before the final gate), **defer** (to a named phase, where it
-joins that phase's plan), or **accept** (written into the relevant spec's simplifications).
+phase's final gate: **fix** (before the final gate), **defer** (parked in the
+backlog: it joins a phase's plan only when the user says they're ready to work on it, never
+automatically at the next phase), or **accept** (written into the relevant spec's simplifications).
 Fixing one follows the usual rules (spec change first, tests first). Close an item by moving
 it to "Done" with the commit that fixed it, or the spec that records it as accepted.
 
