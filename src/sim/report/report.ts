@@ -277,10 +277,11 @@ function mapData(record: StormRecord, survey: Survey, rows: SurveyRow[]): MapDat
     z0 = Math.min(z0, z);
     z1 = Math.max(z1, z);
   };
-  // Frame the damage (the survey points), so the contours and points are big enough to read; the
-  // true swath and the track may run off the edge. With no damage, the swath; with no swath
-  // either, the track.
-  for (const p of points) grow(p.x, p.z);
+  // Frame the damage (the wind-damage survey points; all of them if every one is debris damage),
+  // so the contours and points are big enough to read; the true swath, the track and far debris
+  // damage may run off the edge. With no damage, the swath; with no swath either, the track.
+  const wind = survey.points.filter((p) => !p.debrisOnly);
+  for (const p of wind.length ? wind : survey.points) grow(p.x, p.z);
   if (!points.length)
     for (const q of swath) {
       grow(q.x, q.z);
@@ -334,7 +335,7 @@ function failures(record: StormRecord, survey: Survey, rows: SurveyRow[]): Repor
   const rowOf = new Map(rows.map((r) => [r.building, r] as const));
   // Houses: every house at the rated EF, the most damaged first, up to 10.
   const chosen = survey.points
-    .filter((p) => p.ef !== null && p.ef === survey.rating)
+    .filter((p) => !p.debrisOnly && p.ef !== null && p.ef === survey.rating)
     .sort((a, b) => b.dod - a.dod || b.true10Mph - a.true10Mph || a.index - b.index)
     .slice(0, REPORT.failureHouses);
   const houses: FailureHouse[] = chosen.map((p) => {
@@ -410,7 +411,8 @@ function debrisFigures(record: StormRecord): DebrisFigures {
     counts[k]! += p.represents;
   }
   const impacts = record.debris.impacts.bySurface;
-  const debrisOnly = record.buildings.filter((b) => b.dod >= 1 && b.failures.length > 0 && b.failures.every((f) => f.cause === "debris")).length;
+  // The survey's debris-damage rule (Spec 16 v1.11): no wind-caused failure.
+  const debrisOnly = record.buildings.filter((b) => b.dod >= 1 && b.failures.length > 0 && b.failures.every((f) => f.cause !== "wind")).length;
   return {
     launched: P.length,
     launchedReal,
@@ -452,8 +454,8 @@ function methods(record: StormRecord, survey: Survey, event: EventSummary, specs
     "Rating. Every house with visible damage (degree of damage, DOD, 1 or more) is a survey point, rated with the Enhanced Fujita scale's Damage Indicator 2 (one- and two-family residences). The wind assigned to a point is the DOD's expected value for standard construction, its lower bound for weak construction and its upper bound for strong construction, as survey teams adjust for build quality. The tornado is rated by what it hit, so a peak over open ground leaves no mark on the rating.",
     corroborationText(event),
     "True wind. Beside each rating is the wind the simulation itself recorded: the peak ground-relative horizontal wind at 10 m at the house, on the EF scale's basis (an open-terrain 3-second gust), sampled 30 times a second. The roof-height peak is the local wind that actually loaded the house. The true-wind swath holds the same 10 m peak in 10 m cells wherever it reached EF0 (65 mph).",
-    `Bias. Survey speed minus true 10 m wind, over ${survey.points.length} points: mean ${survey.bias.mean.toFixed(1)} mph, spread (standard deviation) ${survey.bias.sd.toFixed(1)} mph; ${survey.bias.outside.length} points had a true wind outside their DOD's published range. The house model's strengths are calibrated on the same basis (each DOD's expected speed matches the median 10 m open-terrain peak at houses in the town), so the bias is the survey method's own.${heightRatio !== null ? ` The local wind that loaded the houses was lower: here the 10 m peak averaged ${heightRatio.toFixed(2)}× the roof-height peak (height and the town's roughness).` : ""}`,
-    `Path and contours. Path length is measured along the track between the first and last damaged houses; width is the widest cross-track spread of damaged houses in any ${REPORT.section} m section along the track. EF contours outline, section by section, the houses rated at or above each level (padded ${REPORT.contourMargin} m), so no contour is drawn where nothing at that level was damaged. True-wind figures use the swath cells at EF0 or more the same way.`,
+    `Bias. Survey speed minus true 10 m wind, over ${survey.points.length - survey.debrisOnly.length} wind-damage points: mean ${survey.bias.mean.toFixed(1)} mph, spread (standard deviation) ${survey.bias.sd.toFixed(1)} mph; ${survey.bias.outside.length} points had a true wind outside their DOD's published range. The house model's strengths are calibrated on the same basis (each DOD's expected speed matches the median 10 m open-terrain peak at houses in the town), so the bias is the survey method's own.${heightRatio !== null ? ` The local wind that loaded the houses was lower: here the 10 m peak averaged ${heightRatio.toFixed(2)}× the roof-height peak (height and the town's roughness).` : ""}`,
+    `Path and contours. Path length is measured along the track between the first and last damaged houses; width is the widest cross-track spread of damaged houses in any ${REPORT.section} m section along the track.${survey.debrisOnly.length ? ` ${survey.debrisOnly.length} damaged house${survey.debrisOnly.length === 1 ? " had" : "s had"} no failure caused by the wind, only debris impacts: debris can carry damage far outside the damaging wind, so ${survey.debrisOnly.length === 1 ? "it is" : "they are"} marked "debris damage" in the table and left out of the rating, the path, the contours and the bias.` : ""} EF contours outline, section by section, the houses rated at or above each level (padded ${REPORT.contourMargin} m), so no contour is drawn where nothing at that level was damaged. True-wind figures use the swath cells at EF0 or more the same way.`,
     "Narrative. The narrative is written by fixed sentence rules from the numbers in this report, with no randomness; every sentence traces to a figure in the tables.",
   ];
   const fmtParams = Object.entries(m.params)

@@ -371,6 +371,62 @@ describe("Spec 16 — storm report: record and survey", () => {
     expect(Math.max(...s.contours.survey.map((c) => c.ef))).toBe(4);
   });
 
+  test("REP-18: debris-damage points are marked and kept in the table, map and DOD counts, but not used for the rating, path, contours, ends or bias", () => {
+    const fail = (cause: "wind" | "debris" | "collapse", time = 5) => ({ time, part: cause === "collapse" ? "roofBay" : "wall", index: 0, load: 2, capacity: 1, mph: 90, cause });
+    const strong = { cls: "strong" as const };
+    // Wind damage along the track (peaks set so the bias is defined).
+    const base = [
+      house(0, 100, 0, 9, { peak10: mphToMs(150), failures: [fail("wind")] }),
+      house(1, 160, 20, 8, { peak10: mphToMs(140) }),
+      house(2, 400, -60, 4, { peak10: mphToMs(110), failures: [fail("debris", 3), fail("wind", 4)] }),
+      house(3, 800, 40, 2, { peak10: mphToMs(90), failures: [fail("wind")] }),
+    ];
+    const debris = [
+      // Far off the track, and past both ends.
+      house(4, 500, -1200, 2, { peak10: mphToMs(28), failures: [fail("debris")] }),
+      house(5, -300, 0, 3, { peak10: mphToMs(40), failures: [fail("debris"), fail("collapse", 6)] }),
+      house(6, 1400, 10, 2, { peak10: mphToMs(30), failures: [fail("debris")] }),
+      // Next to the highest point, at a higher DOD and strong (220 mph): would corroborate or rate.
+      house(7, 120, 30, 10, { ...strong, peak10: mphToMs(150), failures: [fail("debris")] }),
+      house(8, 140, -30, 10, { ...strong, peak10: mphToMs(150), failures: [fail("collapse")] }),
+    ];
+    const a = buildSurvey(scripted(base));
+    const recB = scripted([...base, ...debris]);
+    const b = buildSurvey(recB);
+    // Marked: only the points with no wind-caused failure (a point with none recorded is wind).
+    expect(b.points.map((p) => p.debrisOnly)).toEqual([false, false, false, false, true, true, true, true, true]);
+    expect(b.debrisOnly).toEqual([4, 5, 6, 7, 8]);
+    // Kept: points, with their own DOD and speed.
+    expect(b.points.length).toBe(9);
+    expect([b.points[7]!.dod, b.points[7]!.mph]).toEqual([10, 220]);
+    // Not used: rating and corroboration, path, contours, start and end, bias.
+    const id = (s: Survey, i: number | null) => (i === null ? null : s.points[i]!.id);
+    expect([b.rating, b.ratingMph, b.corroborated, id(b, b.ratingPoint), id(b, b.corroboratingPoint)]).toEqual([a.rating, a.ratingMph, a.corroborated, id(a, a.ratingPoint), id(a, a.corroboratingPoint)]);
+    expect(b.uncorroborated).toEqual(a.uncorroborated);
+    expect(b.path).toEqual(a.path);
+    expect(b.contours).toEqual(a.contours);
+    expect([b.start, b.end]).toEqual([a.start, a.end]);
+    expect([b.bias.mean, b.bias.sd]).toEqual([a.bias.mean, a.bias.sd]);
+    expect(b.bias.outside.map((i) => b.points[i]!.id)).toEqual(a.bias.outside.map((i) => a.points[i]!.id));
+    // Table and CSV mark them; the map shows them; counts by DOD and the damaged total keep them.
+    const rows = surveyRows(b);
+    expect(rows.length).toBe(9);
+    for (const r of rows) expect(r.debrisOnly).toBe(r.building >= 104);
+    expect(SURVEY_COLUMNS).toContain("debrisOnly");
+    const csv = surveyCsv(b).trim().split(/\r?\n/);
+    const head = csvCells(csv[0]!);
+    const col = head.indexOf("debrisOnly");
+    const bcol = head.indexOf("building");
+    for (const line of csv.slice(1).map(csvCells)) expect(line[col]).toBe(String(Number(line[bcol]) >= 104));
+    const R = buildReport(recB, b, { preliminary: false });
+    expect(R.map.points.length).toBe(9);
+    expect(R.stats.damaged).toBe(9);
+    expect(R.stats.byDod[10]).toBe(2);
+    expect(R.debris.debrisOnly).toBe(5);
+    const html = renderReport(R);
+    expect(html).toContain("debris damage");
+  });
+
   test("REP-07: path length and maximum width match hand-computed values, survey and true swath", () => {
     const rec = scripted(
       [house(0, 100, 10, 2), house(1, 120, -30, 3), house(2, 130, 40, 1), house(3, 600, 0, 5), house(4, 640, -5, 2), house(5, 300, 0, 0)],
@@ -517,7 +573,7 @@ describe("Spec 16 — storm report: record and survey", () => {
     });
 
     test("REP-10: failure sequences list each chosen house's failures in time order, matching the records", () => {
-      const chosen = surveyA.points.filter((p) => p.ef === surveyA.rating);
+      const chosen = surveyA.points.filter((p) => !p.debrisOnly && p.ef === surveyA.rating);
       expect(R.failures.houses.length).toBe(Math.min(10, chosen.length));
       expect(R.failures.houses.length).toBeGreaterThan(0);
       for (const h of R.failures.houses) {
@@ -566,7 +622,7 @@ describe("Spec 16 — storm report: record and survey", () => {
       expect(D.impactsTotal).toBe(Object.values(recA.debris.impacts.bySurface).reduce((n, t) => n + t.hits, 0));
       expect(D.impactsTotal).toBeGreaterThan(0);
       expect(D.loftedMass).toBe(recA.debris.massLofted);
-      expect(D.debrisOnly).toBe(recA.buildings.filter((b) => b.dod >= 1 && b.failures.length > 0 && b.failures.every((f) => f.cause === "debris")).length);
+      expect(D.debrisOnly).toBe(recA.buildings.filter((b) => b.dod >= 1 && b.failures.length > 0 && b.failures.every((f) => f.cause !== "wind")).length);
     });
 
     test("REP-12: the narrative names the rating, peak wind, path length, worst-hit area and the end, with no randomness", () => {
