@@ -1,8 +1,8 @@
-# Contributing to Tornado Sim
+# Contributing to Tornado Physics Lab
 
-Thanks for helping. Tornado Sim is a physics-based tornado simulator: every broken window and
-flying 2×4 should be traceable to an equation, a spec and a test. That makes contributing a
-little more structured than usual. This page says how it works.
+Thanks for helping. Tornado Physics Lab is a physics-based tornado simulator: every broken
+window and flying 2×4 should be traceable to an equation, a spec and a test. That makes
+contributing a little more structured than usual. This page says how it works.
 
 The full working agreement is in [CLAUDE.md](CLAUDE.md). It's written for the AI assistant
 that does much of the development, but the rules apply to everyone. Where it says "the user",
@@ -32,8 +32,8 @@ read "the maintainer".
 You need Node.js 22 or later.
 
 ```bash
-git clone https://github.com/<your-username>/tornado-sim.git
-cd tornado-sim
+git clone https://github.com/<your-username>/tornado-physics-lab.git
+cd tornado-physics-lab
 npm install
 npm run dev           # the app, at http://localhost:5173
 npm run verify:fast   # typecheck + unit tests + traceability (seconds)
@@ -100,7 +100,7 @@ or open one, so two people don't take the same item.
 
 ## License
 
-Tornado Sim is [MIT licensed](LICENSE). By sending a pull request, you agree that your
+Tornado Physics Lab is [MIT licensed](LICENSE). By sending a pull request, you agree that your
 contribution is released under the same license.
 
 ## Conduct

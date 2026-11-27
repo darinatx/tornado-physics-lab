@@ -1,4 +1,4 @@
-# Tornado Sim — Working Agreement
+# Tornado Physics Lab — Working Agreement
 
 A physics-based tornado simulator (Three.js + TypeScript + Vite). A tornado moves through a
 procedural city; all damage comes from wind-engineering physics that can be inspected and
@@ -125,7 +125,7 @@ it to "Done" with the commit that fixed it, or the spec that records it as accep
 
 ## Branches and GitHub
 
-The repo is public at `github.com/darinatx/tornado-sim`. `main` is protected: changes reach it
+The repo is public at `github.com/darinatx/tornado-physics-lab`. `main` is protected: changes reach it
 only through a pull request with CI (`verify:fast`) passing. Never push to `main` directly.
 Work happens on a working branch: a phase branch (e.g. `phase-6-wind-tunnel`) or a short
 branch for one fix.
