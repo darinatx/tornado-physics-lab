@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.0) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.1) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -32,18 +32,21 @@ user can see where the standard method rates too high or too low.
 A recorder in `src/sim/` observes the sim and never changes it (like Spec 12's run record):
 
 - **Track**, every 1 s of sim time: center position, heading, forward speed, V_max, R_max,
-  peak ground-relative wind (V_max + forward speed), EF of that peak (Spec 01), lifecycle phase.
+  peak ground-relative wind at 10 m (the EF readout's, Spec 01 and INST-02, which includes the
+  near-ground overshoot), EF of that peak, lifecycle phase.
 - **True wind swath:** a sparse grid of 10 m cells in tiles (like Spec 19's), created only
   where the tornado passed, each holding the peak ground-relative horizontal wind at 10 m
-  above ground seen at the cell center (`windAt`, with the terrain, as the EF readout uses).
+  above ground seen at the cell center, on the EF scale's basis: the open-terrain wind
+  (`windAt` with the open class, as the EF readout uses since Spec 17 v1.1, TERR-25).
   The field's speeds are already 3-second-gust equivalent (Spec 01), so the peak is taken
   directly, with no further averaging. Cells are sampled at the damage rate (30 Hz) within the
   **active radius**: where an upper bound on the 10 m wind (tangential profile at that radius
   plus forward speed, with the overshoot and radial factors at their largest) can exceed EF0
   (29 m/s); a ring of cells whose bound can't beat the lowest peak already recorded in it is
   skipped.
-- **Per building:** peak wind at 10 m at its center (sampled like the swath, every damage
-  update while it's within 6·R_max), the existing peak at roof height (Spec 03 `peakMph`),
+- **Per building:** peak wind at 10 m at its center (sampled like the swath, on the same
+  open-terrain basis, every damage update while it's within 6·R_max), the existing peak at
+  roof height (Spec 03 `peakMph`, the local wind that loaded it),
   closest approach to the core, time of first and last failure, DOD over time (each change
   with its time, read by the recorder after each damage update; Spec 03 is unchanged), and the
   failure list (Spec 03, and Spec 09 connection failures for detailed houses), with impact
@@ -217,6 +220,10 @@ function showReport(report: Report): void;
   peak, while the EF scale (and the survey) means 10 m. The Methods section states this and
   gives the mean 10 m ÷ roof-height ratio over the survey points, so the user can tell the
   height effect from the method's own bias.
+- **True 10 m wind on the open-terrain basis (v1.1, after BL-021):** the DOD speeds the survey
+  assigns are open-terrain 10 m gusts, and the EF readout reports that basis (Spec 17 v1.1), so
+  the true wind beside each rating is on it too; otherwise town roughness would show up as a
+  survey bias. The roof-height peak stays the local wind, since that's what loaded the house.
 - **Swath sampled at the damage rate within an active radius:** the cheapest sampling that
   keeps REP-04's 1%; skipping rings that can't raise any peak is Spec 19's trick and changes no
   result.
@@ -243,6 +250,8 @@ function showReport(report: Report): void;
 
 ## Changelog
 
+- v1.1 (2026-11-26, slice A, after merging BL-021 from `main`): the track peak, swath and
+  building 10 m peaks are on the open-terrain basis, like the EF readout (Spec 17 v1.1).
 - v1.0 (2026-11-26, Phase 8 start): approved. The true wind is the field's 10 m peak with no
   second 3-second mean (Spec 01 speeds are already gust equivalent); the swath is a sparse
   tiled grid sampled at 30 Hz within an EF0 active radius instead of a fixed ± 3·R_max band

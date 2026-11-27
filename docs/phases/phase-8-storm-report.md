@@ -48,14 +48,32 @@ Each of A–C ends with `npm run bench` against the saved baseline, noted below.
 
 ## Slice notes
 
-(benchmark results per slice go here)
+- **Slice A — record and survey** (2026-11-26). `StormRecorder` (`src/sim/stormRecord.ts`),
+  `buildSurvey` and the survey table (`src/sim/report/`), `scripts/storm-survey.ts`. The sim
+  loop gained `stop()`/`stopped`, `dt`/`seed`, a `step` observer tap and a `debrisGone` tap
+  (the debris field's read-only `onGone`). REP-02 to REP-09 pass.
+  - Merged `main` mid-slice (Phase 7 validation and close, BL-021). After BL-021 the report's
+    true 10 m wind is on the open-terrain basis like the EF readout (Spec 16 v1.1).
+  - The first record kept every impact event: 3.4 million in 50 s, a 498 MB JSON. Impacts are
+    now tallied by surface and result, and per house (9 MB for the EF4 pass).
+  - Recorder cost (`storm-survey.ts --cost`, the benchmark's 15–35 s window of the EF4 town
+    pass): 8.74 → 9.11 ms per step, +4.2% (under REP-15's 5%; measured before the switch to the
+    open-terrain basis, which skips the roughness lookup and only makes it cheaper). Record and
+    survey build: 22 ms.
+  - Seed 1, EF4 pass, 35 s: rated EF4 (200 mph) against a true 10 m peak of 180 mph; survey
+    minus true wind −11.7 ± 17.6 mph; 476 of 1,296 points outside their DOD's bounds; 10 m ÷
+    roof-height peak 1.13. For the validation slice to examine.
+  - Benchmark (`npm run bench`, against the Phase 6 baseline): `ef4-town` 8.93 → 8.46,
+    `detail-core` 50.69 → 62.92 ms per step. The flagged sections (debris, other, detail) are
+    Phase 7's, already recorded and explained in its slice notes (same end state: 1,296 houses
+    damaged); the benchmark runs without the recorder, so slice A adds nothing there.
 
 ## Exit criteria
 
 Preliminary (lets Phase 9 start):
 
 - [x] Spec 16 approved (v1.0); Specs 07 (v1.17) and 08 (v1.9) updated
-- [ ] Slice A: REP-02 to REP-09 pass
+- [x] Slice A: REP-02 to REP-09 pass
 - [ ] Slice B: REP-01, REP-10 to REP-13 pass; demo reviewed by the user
 - [ ] Slice C: REP-14, REP-15 pass
 - [ ] Benchmark run at the end of slices A, B and C; regressions over 10% explained

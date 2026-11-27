@@ -34,9 +34,10 @@ and provide deterministic, replayable runs.
 
 - **Stopped (Spec 16):** `stop()` ends the run: no further physics steps run, whatever the
   time scale, and the last snapshot stays current, so the scene, camera, inspector and probe
-  keep working on the frozen state. Only `reset` leaves it. When the lifecycle ends (V_max back
-  to 0 after rope-out) the sim stops by itself, unless repeat is on (Spec 07), which restarts
-  as before.
+  keep working on the frozen state. Only `reset` leaves it. Observers (`observe`) also get a
+  `step` call after every physics step, once its snapshot is made (Spec 16's recorder). When
+  the lifecycle ends, the app stops the run (Spec 07) unless repeat is on; the loop itself only
+  provides `stop`, so it stays free of UI settings.
 
 - **Test area (validation):** a sim can be limited to the houses within a radius of a point
   (`area`), and the tornado can start at a given point (`start`) instead of halfway back along
@@ -103,8 +104,8 @@ function createRng(seed: number): () => number;   // uniform in [0, 1)
 
 ## Changelog
 
-- v1.9 (Phase 8): a stopped state (`stop()`, `stopped`) for Stop & Report; the end of the
-  lifecycle stops the run unless repeat is on (Spec 16, REP-01).
+- v1.9 (Phase 8): a stopped state (`stop()`, `stopped`) for Stop & Report; the app stops the
+  run at the end of the lifecycle unless repeat is on (Spec 16, REP-01); a `step` observer tap.
 - v1.8 (Phase 6 slice D): an optional, read-only timing hook (`SimConfig.timing`, Spec 18)
   adds wall-clock ms per section of each step (damage, debris, heavy, detail, total). Nothing
   in the physics reads it (BENCH-02).

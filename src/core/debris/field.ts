@@ -189,6 +189,10 @@ export class DebrisField {
    *  v1.9; the wind tunnel's record). `b` is the house hit (a detailed house's stand-in). */
   onImpact: ((b: Building, q: QueuedImpact, p: Piece) => void) | null = null;
 
+  /** Read-only observer of a piece leaving the pool for good: carried above the cloud base
+   *  ("lofted") or off the map (Spec 16's storm record). */
+  onGone: ((p: Piece, why: "lofted" | "leftMap") => void) | null = null;
+
   /** Turbulent dispersion (Spec 13): off holds every gust at zero, so a piece's flight draws
    *  nothing from the shared stream (exact debris replay). On in every real run. */
   dispersion = true;
@@ -668,6 +672,7 @@ export class DebrisField {
         } else {
           this.massLeftMap += p.def.mass * p.represents;
         }
+        this.onGone?.(p, lofted ? "lofted" : "leftMap");
         this.pieces[i] = null as unknown as Piece;
         removed = true;
         continue;

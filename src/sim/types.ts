@@ -153,6 +153,10 @@ export interface SimTaps {
   detailFailure?(house: number, f: { label: string; load: number; capacity: number; mph: number; con?: number }, time: number): void;
   /** After every debris step (`time` = the step's start), once the debris has moved (Spec 13). */
   debrisStep?(time: number): void;
+  /** A debris piece left the pool for good: lofted above the cloud base or off the map. */
+  debrisGone?(piece: Piece, why: "lofted" | "leftMap", time: number): void;
+  /** After every physics step, once its snapshot is made (Spec 16's storm recorder). */
+  step?(): void;
 }
 
 export interface SimFrame {
