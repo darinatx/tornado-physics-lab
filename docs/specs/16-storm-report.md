@@ -257,7 +257,7 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
   3-second gust at 10 m, and Spec 01's speeds are already 3-second-gust equivalent, so a second
   running mean would average twice and bias the true wind low. The roof-height peak is shown
   too, since that's what loaded the house.
-- **Bias is measured against the 10 m wind, on the same basis as the calibration (v1.7):**
+- **Bias is measured against the 10 m wind, on the same basis as the calibration (v1.8):**
   since Spec 03 v2.5 the capacities are calibrated so each DOD's expected speed matches the
   median 10 m open-terrain peak at town houses, the basis the survey assigns, so the bias
   measures the EF method itself, not the height or the town's roughness. The Methods section
