@@ -481,7 +481,7 @@ describe("Spec 16 — storm report: record and survey", () => {
       expect(R.summary.narrative.length).toBeLessThanOrEqual(5);
       for (const s of R.summary.narrative) expect(R.narrative).toContain(s);
       const html = renderReport(R);
-      const summary = html.slice(html.indexOf('id="rp-summary"'), html.indexOf('id="rp-event"'));
+      const summary = html.slice(html.indexOf('id="rp-summary"'), html.indexOf('id="rp-narrative"'));
       expect(summary).toContain('class="rp-block"');
       expect(summary).toContain('class="rp-map"');
       expect(summary).toContain("rp-contour");
@@ -490,8 +490,11 @@ describe("Spec 16 — storm report: record and survey", () => {
       expect(summary).toContain(`${Math.round(R.event.ratingMph)} mph`);
       expect(summary).toContain(`${R.stats.destroyed.toLocaleString("en-US")}</b>`);
       expect(summary).toContain(`${(R.event.pathLengthM / 1609.344).toFixed(2)} mi`);
+      // The block appears once, on the summary page (v1.3: no separate event-summary page).
+      expect(html.split('class="rp-block"').length - 1).toBe(1);
+      expect(summary).toContain(R.event.casualties.replace(/'/g, "&#39;"));
       // The full report has every section, with the summary first.
-      const ids = ["rp-summary", "rp-event", "rp-narrative", "rp-map", "rp-table", "rp-timeline", "rp-failures", "rp-debris", "rp-stats", "rp-methods"];
+      const ids = ["rp-summary", "rp-narrative", "rp-map", "rp-table", "rp-timeline", "rp-failures", "rp-debris", "rp-stats", "rp-methods"];
       let at = -1;
       for (const id of ids) {
         const k = html.indexOf(`id="${id}"`);

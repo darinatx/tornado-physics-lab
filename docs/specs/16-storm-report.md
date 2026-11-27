@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.2) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.3) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -84,34 +84,34 @@ Built from the record by pure functions in `src/sim/report/`, the way survey tea
 
 In order (the summary page first):
 
-1. **Summary** (one page, below).
-2. **Event summary block:** rating, estimated peak wind (survey), path length, maximum width,
-   start and end time and position, forward speed and heading, duration. Deaths and injuries
-   are left out (no people are simulated), with a line saying so.
-3. **Narrative:** generated from the record by fixed sentence rules (no randomness): where it
+1. **Summary** (one page, below), which holds the **event summary block**: rating, estimated
+   peak wind (survey), true peak wind, path length, maximum width, start and end time and
+   position, forward speed and heading, duration. Deaths and injuries are left out (no people
+   are simulated), with a line saying so. The block appears once, as in a survey statement.
+2. **Narrative:** generated from the record by fixed sentence rules (no randomness): where it
    formed, how it grew, where the worst damage was and what it was, what it did to the
    neighborhood, how it ended.
-4. **Track map:** top-down map of the town with the track, EF contours, survey points colored
+3. **Track map:** top-down map of the town with the track, EF contours, survey points colored
    by DOD (Spec 06 colors), debris landing points (toggle), the true-wind swath (toggle).
    Click a point for its row in the survey table.
-5. **Damage survey table:** one row per survey point: ID, position, DI, DOD and its
+4. **Damage survey table:** one row per survey point: ID, position, DI, DOD and its
    description, construction class, survey speed and EF with the DOD's range, true peak at
    10 m and at roof height, bias, time first damaged. Sortable.
-6. **Intensity timeline:** charts of peak wind with EF bands, R_max, forward speed and
+5. **Intensity timeline:** charts of peak wind with EF bands, R_max, forward speed and
    lifecycle phase over time, and damaged buildings over time.
-7. **How the houses failed:** for the most damaged houses (every house at the rated EF, up to
+6. **How the houses failed:** for the most damaged houses (every house at the rated EF, up to
    10), the failure sequence in order: time, part, roof-height wind, load against capacity,
    cause (wind: the net pressure beat the part's capacity; debris impact, with its missile;
    or a roof bay that fell with its bearing wall, which no wind load broke). Then the failure modes across the town: how often each part was
    the first to fail, and which cascades led to the highest DODs (Spec 03).
-8. **Debris:** counts by kind, lofted mass, heaviest piece lofted, farthest travel and its
+7. **Debris:** counts by kind, lofted mass, heaviest piece lofted, farthest travel and its
    piece, a travel-distance histogram, impacts by surface and result (tallied in the record,
    not kept one by one: a strong pass resolves millions of contacts), buildings damaged by
    debris alone.
-9. **Statistics:** buildings by DOD, by EF, share destroyed (DOD ≥ 8), damaged area.
-10. **Methods and limitations:** how the survey was rated, the true-wind definition, the
-    model's simplifications (from each spec's Simplifications section), and the run metadata,
-    enough to rerun the same storm.
+8. **Statistics:** buildings by DOD, by EF, share destroyed (DOD ≥ 8), damaged area.
+9. **Methods and limitations:** how the survey was rated, the true-wind definition, the
+   model's simplifications (from each spec's Simplifications section), and the run metadata,
+   enough to rerun the same storm.
 
 ### Summary
 
@@ -256,6 +256,8 @@ function showReport(report: Report): void;
 
 ## Changelog
 
+- v1.3 (2026-11-26, the user's demo review): the event summary block is on the summary page
+  only; its separate page repeated it word for word. Sections renumbered 1–9.
 - v1.2 (2026-11-26, slice B): the run stops 3 s after the lifecycle ends (the repeat wait, so
   debris lands); failure causes are wind, debris impact or a bay falling with its wall (the
   model has no separate "pressure" failure: wind failures are net pressure); impacts tallied;

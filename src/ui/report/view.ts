@@ -37,8 +37,8 @@ export function showReport(report: Report, o: { onClose?: () => void; extraButto
   const nav = document.createElement("select");
   nav.title = "Jump to a section";
   for (const [id, name] of [
-    ["rp-summary", "1. Summary"], ["rp-event", "2. Event summary"], ["rp-narrative", "3. Narrative"], ["rp-map", "4. Track map"], ["rp-table", "5. Damage survey"],
-    ["rp-timeline", "6. Intensity timeline"], ["rp-failures", "7. How the houses failed"], ["rp-debris", "8. Debris"], ["rp-stats", "9. Statistics"], ["rp-methods", "10. Methods"],
+    ["rp-summary", "1. Summary"], ["rp-narrative", "2. Narrative"], ["rp-map", "3. Track map"], ["rp-table", "4. Damage survey"],
+    ["rp-timeline", "5. Intensity timeline"], ["rp-failures", "6. How the houses failed"], ["rp-debris", "7. Debris"], ["rp-stats", "8. Statistics"], ["rp-methods", "9. Methods"],
   ]) {
     const opt = document.createElement("option");
     opt.value = id!;

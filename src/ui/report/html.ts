@@ -348,7 +348,7 @@ function section(r: Report, id: string, n: number, title: string, body: string):
   return `<section class="rp-page" id="${id}">${pageMark(r, `${n}. ${title}`)}<h2>${n}. ${esc(title)}</h2>${body}</section>`;
 }
 
-/** The full report: the summary page first, then sections 2–10 (Spec 16). */
+/** The full report: the summary page (with the event summary block) first, then sections 2–9 (Spec 16 v1.3). */
 export function renderReport(r: Report): string {
   const tl = r.timeline;
   const timelineBody =
@@ -359,17 +359,15 @@ export function renderReport(r: Report): string {
     lineChart("Damaged houses (DOD 1+)", "houses", [{ t: tl.t, v: tl.damaged, color: "#c0392b", label: "damaged" }]);
   const toggles = `<div class="rp-toggles rp-noprint"><label><input type="checkbox" data-layer="swath"> True-wind swath and contours (dashed)</label><label><input type="checkbox" data-layer="landings"> Debris landing points</label><span class="rp-hint">Click a survey point for its row in the table.</span></div>`;
   const tableIntro = `<p>One row per survey point, along the track (P1 first). The survey speed comes from the DOD and construction class alone; the true peaks are what the simulation recorded at the house. Bias is survey minus true 10 m wind; <span class="rp-out">highlighted</span> rows had a true wind outside their DOD's range. Click a column to sort.</p>`;
-  const blockIntro = `<p>${esc(r.event.casualties)}</p>`;
   return `<article class="rp-doc">
 ${summaryPage(r)}
-${section(r, "rp-event", 2, "Event summary", summaryBlock(r) + blockIntro)}
-${section(r, "rp-narrative", 3, "Narrative", `<div class="rp-narr">${r.narrative.map((s) => `<p>${esc(s)}</p>`).join("")}</div>`)}
-${section(r, "rp-map", 4, "Track map", toggles + mapSvg(r.map, { width: 900, height: 620, interactive: true, labels: true }) + mapLegend())}
-${section(r, "rp-table", 5, "Damage survey", tableIntro + tableHtml(r.table))}
-${section(r, "rp-timeline", 6, "Intensity timeline", timelineBody)}
-${section(r, "rp-failures", 7, "How the houses failed", failuresHtml(r))}
-${section(r, "rp-debris", 8, "Debris", debrisHtml(r))}
-${section(r, "rp-stats", 9, "Statistics", statsHtml(r))}
-${section(r, "rp-methods", 10, "Methods and limitations", methodsHtml(r))}
+${section(r, "rp-narrative", 2, "Narrative", `<div class="rp-narr">${r.narrative.map((s) => `<p>${esc(s)}</p>`).join("")}</div>`)}
+${section(r, "rp-map", 3, "Track map", toggles + mapSvg(r.map, { width: 900, height: 620, interactive: true, labels: true }) + mapLegend())}
+${section(r, "rp-table", 4, "Damage survey", tableIntro + tableHtml(r.table))}
+${section(r, "rp-timeline", 5, "Intensity timeline", timelineBody)}
+${section(r, "rp-failures", 6, "How the houses failed", failuresHtml(r))}
+${section(r, "rp-debris", 7, "Debris", debrisHtml(r))}
+${section(r, "rp-stats", 8, "Statistics", statsHtml(r))}
+${section(r, "rp-methods", 9, "Methods and limitations", methodsHtml(r))}
 </article>`;
 }
