@@ -1,6 +1,6 @@
 # Phase 7 — Terrain from the Town
 
-Status: In progress (build started 2026-11-26)
+Status: Preliminary sign-off (2026-11-26); validation (slice E) and the final gate to come
 
 ## Goal
 
@@ -173,7 +173,7 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
       done, the rest in the backlog (`perf`); before/after numbers recorded
 - [x] `npm run verify:fast` passes
 - [x] Specs updated, simplifications note and retro written
-- [ ] User's preliminary sign-off; tag `phase-7-prelim`
+- [x] User's preliminary sign-off (2026-11-26); tag `phase-7-prelim`
 - [ ] Pull request from `phase-7-terrain` into `main`, merged when the user says so; branch deleted
 - [ ] After the merge: remove the temporary `tornado-sim-phase-7` entry from `.claude/launch.json`
       in the main folder (uncommitted there; it serves this worktree on port 5173)
