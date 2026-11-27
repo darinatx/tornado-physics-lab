@@ -41,7 +41,8 @@ export function calibrationTown(): CalibrationTown {
  */
 export function sampleTownPassCase(rng: () => number): { state: TornadoState; offset: number } {
   const ids = CALIBRATION.presets;
-  const pr = PRESETS.find((x) => x.id === ids[Math.floor(rng() * ids.length)])!;
+  const id = ids[Math.floor(rng() * ids.length)];
+  const pr = PRESETS.find((x) => x.id === id)!;
   const p = { ...defaultParams(), ...pr.params };
   const heading = rng() * Math.PI * 2;
   const v = p.translationSpeed;
