@@ -1,6 +1,7 @@
 # Phase 8 — Storm Report
 
-Status: Gate review (preliminary). Slices A–D done; demo reviewed by the user (2026-11-26).
+Status: Preliminary sign-off (2026-11-26); validation (slice E) and the final gate to come.
+Slices A–D done; demo reviewed by the user.
 Built on `phase-8-storm-report`, branched from `main` after Phase 7's preliminary sign-off.
 Spec 16 approved (v1.0, now v1.6).
 
@@ -172,8 +173,9 @@ Preliminary (lets Phase 9 start):
 - [x] Slice D, profiling: hotspots with estimated and confirmed gains; before/after recorded
 - [x] `npm run verify:fast` passes (251 tests, slice D)
 - [x] Specs updated, simplifications note and retro written; README updated
-- [ ] User's preliminary sign-off; tag `phase-8-prelim`; pull request into `main`, merged when
-      the user says so; branch deleted
+- [x] User's preliminary sign-off (2026-11-26); tag `phase-8-prelim`
+- [ ] Pull request from `phase-8-storm-report` into `main`, merged when the user says so; branch
+      deleted
 
 Final:
 
