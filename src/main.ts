@@ -13,6 +13,12 @@ import { createProbeUI } from "./ui/probe";
 import { computeReadout, mountReadout } from "./ui/readout";
 import "./style.css";
 import { mountRoughnessLegend } from "./ui/roughnessLegend";
+import { createReportControl } from "./ui/report/runControl";
+import type { ReportControl } from "./ui/report/runControl";
+import { APP_VERSION, SPEC_DOCS } from "./ui/report/specFiles";
+import { showReport } from "./ui/report/view";
+import { specVersions } from "./sim/report/specDocs";
+import { reportFromJson } from "./sim/report/export";
 
 const app = document.getElementById("app")!;
 // Member-level detail zone in a worker (Spec 09 slice B).
@@ -49,6 +55,12 @@ detailStatus.className = "detail-status";
 detailStatus.hidden = true;
 bottomCol.appendChild(detailStatus);
 let roughLegend: ReturnType<typeof mountRoughnessLegend> | null = null;
+// Storm report (Spec 16): made once the panel exists (it reads the repeat setting).
+let reports: ReportControl | null = null;
+let reportView: ReturnType<typeof showReport> | null = null;
+const openReport = (report = reports!.current()) => {
+  reportView = showReport(report);
+};
 const panel = createPanel(sim, (state) => {
   view.setFollow(state.follow);
   view.setLayers({ arrows: state.arrows, funnel: state.funnel, tracers: state.tracers, debris: state.debris, roughness: state.roughness });
@@ -67,7 +79,43 @@ const panel = createPanel(sim, (state) => {
     panel.state.follow = false;
     view.lookAt(f.x, f.z, Math.max(120, sim.detailSpotRadius * 2.2));
   },
+  stopAndReport: () => {
+    if (!reports || panel.waiting) return;
+    openReport(reports.stopAndReport());
+  },
+  previewReport: () => {
+    if (!reports || panel.waiting) return;
+    openReport(reports.preview());
+  },
+  openReport: () => reports && openReport(),
+  openSavedReport: () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.addEventListener("change", async () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      try {
+        openReport(reportFromJson(await f.text(), SPEC_DOCS));
+      } catch (e) {
+        alert((e as Error).message);
+      }
+    });
+    input.click();
+  },
+  onRestart: () => {
+    reportView?.close();
+    reportView = null;
+    reports?.reset();
+  },
 });
+reports = createReportControl(sim, {
+  autoRepeat: () => panel.state.autoRepeat,
+  specs: SPEC_DOCS,
+  recorder: { appVersion: APP_VERSION, specs: specVersions(SPEC_DOCS) },
+  preset: () => panel.preset,
+});
+reports.onOffer = (on) => panel.setStopped(on);
 // Panning or flying the camera stops it following the tornado (the panel checkbox shows it).
 view.onCameraMoved(() => {
   panel.state.follow = false;
@@ -122,8 +170,14 @@ function frame(now: number): void {
   if (panel.state.autoRepeat && f.curr.phase === "dissipated" && f.curr.time > f.curr.lifetime + REPEAT_DELAY) {
     sim.reset();
   }
-  view.draw(f.prev, f.curr, f.alpha);
-  probe.update(f.curr, panel.state.probeHeight);
+  // The end of the lifecycle stops the run and offers the report (Spec 16), unless repeat is on.
+  reports?.tick();
+  // While a report covers the screen, the scene under it isn't redrawn (the physics runs on, and
+  // the scene catches up when the report closes): ~6 ms a frame back for the sim (Phase 8 slice D).
+  if (!reportView?.open) {
+    view.draw(f.prev, f.curr, f.alpha);
+    probe.update(f.curr, panel.state.probeHeight);
+  }
 
   readoutTimer -= realDt;
   if (readoutTimer <= 0) {
@@ -133,6 +187,7 @@ function frame(now: number): void {
     const parts: string[] = [];
     if (n > 0) parts.push(`${n} house${n === 1 ? "" : "s"} in full structural detail`);
     if (panel.waiting) parts.push("Press 🌪 Spawn tornado to start");
+    else if (sim.stopped) parts.push("Run ended · 📄 Open report in the Run panel, or ↻ Restart");
     else if (slow) parts.push(`slow motion${n > 0 ? " while they come apart" : ""} · ${rateText(simRate.rate!)}`);
     detailStatus.hidden = parts.length === 0;
     detailStatus.textContent = parts.join(" · ");
@@ -145,5 +200,5 @@ requestAnimationFrame(frame);
 window.addEventListener("resize", () => view.resize(app.clientWidth, app.clientHeight));
 
 if (import.meta.env.DEV) {
-  Object.assign(window, { sim, view });
+  Object.assign(window, { sim, view, reports });
 }

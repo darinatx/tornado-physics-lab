@@ -82,6 +82,20 @@ Debris never passes through a standing house, and the tests check this.
   - every part type that failed, in order, with the wind speed, load and capacity at the
     first failure;
   - for houses in the detail zone, which connections broke and the force in each.
+- **Storm report:** press **⏹ Stop & Report** (or let the tornado run out) for the report a
+  real tornado gets:
+  - **Damage survey:** laid out like a National Weather Service one, with a summary block, a
+    narrative, a track map with EF contours, and every damaged house rated by the EF method
+    from its damage alone.
+  - **True wind:** beside each rating, the peak wind the simulation actually recorded there, so
+    you can see where the standard method rates too high or too low.
+  - **Engineering assessment:** the storm's intensity over time, how the worst houses failed
+    (each part in order, with load against capacity), where the debris went, and statistics.
+  - **Methods:** how it was rated, the model's simplifications, and enough metadata to rerun
+    the storm.
+  - **Preview and export:** **📋 Preview report** gives a preliminary one mid-storm. Print the
+    one-page summary or the whole report (Save as PDF), or download it as JSON (which reopens
+    in the app) and the survey table as CSV.
 - **Structure lab:** a close-up bench for a few houses, using the same physics and renderer
   as the town. Watch them come apart, inspect any member, set the ground roughness, and fire
   debris at them with a launcher. Open it from the panel, or with `?lab` in the URL.
@@ -102,7 +116,8 @@ npm install
 npm run dev           # the app, at http://localhost:5173
 ```
 
-The town opens in calm air. Pick a preset and press **🌪 Spawn tornado**. To watch houses come apart member by member, press **📍 Pick detail spot** and click the ground to
+The town opens in calm air. Pick a preset and press **🌪 Spawn tornado**. Press **⏹ Stop &
+Report** in the Run folder at any point for the storm report. To watch houses come apart member by member, press **📍 Pick detail spot** and click the ground to
 put the structural detail zone there.
 
 ```bash
@@ -153,10 +168,8 @@ Development runs in phases, each ending with a demo and a sign-off. Phases 1–7
 - debris impacts, with the wind tunnel and structure lab;
 - terrain worked out from the town, with ground damage tracks.
 
-Phase 8, the **storm report**, is being built: stop a run and get a damage survey laid out
-like a National Weather Service one, rated by the EF method from the damage alone, with the
-simulation's true wind beside every rating, followed by an engineering assessment of how the
-houses failed and where the debris went. Up next:
+Phase 8, the **storm report**, has its preliminary sign-off and is being validated. Up
+next:
 - **Richer houses and trees:** trusses, porches, chimneys, room contents, and trees that
   snap and uproot.
 - **The parent supercell:** wall cloud, rain and hail curtains, a radar view with the hook

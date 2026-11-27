@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.16) — Phases 1–4
+Status: Approved (v1.18) — Phases 1–4
 
 ## Purpose
 
@@ -22,7 +22,10 @@ Phase 1 scope:
 - **Parameter panel, in plain language:**
   - *Basic* (open): strength, size, forward speed, heading, cloud base height.
   - *Display*: wind arrows, funnel, dust, ground roughness (Spec 17), probe height.
-  - *Run*: sim speed, camera follow, repeat (off by default), restart.
+  - *Run*: sim speed, camera follow, repeat (off by default), restart, **Stop & Report**,
+    **Preview report** and **Open saved report** (a report saved as JSON) (Spec 16). After Stop & Report, or when the lifecycle ends the run, the
+    sim-speed control is disabled and an **Open report** button stays in the panel until
+    Restart.
   - Damage colors are off by default.
   - *Advanced physics* (collapsed): every other Spec 01 parameter. There is no terrain
     setting: the ground roughness comes from the town (Spec 17).
@@ -190,6 +193,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.18 (Phase 8 slice C): Open saved report in the Run panel.
+- v1.17 (Phase 8): Stop & Report, Preview report and Open report in the Run panel (Spec 16).
 - v1.16 (Phase 7): the terrain dropdown is gone (the town sets the roughness); the probe shows
   the ground's class, z₀ and β; a Ground roughness display toggle (Spec 17, TERR-10, TERR-14).
 - v1.15: at the user's request, the tornado waits to be spawned (Spawn tornado button;

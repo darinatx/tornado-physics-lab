@@ -52,6 +52,12 @@ export interface Sim {
   setTimeScale(k: number): void;
   /** Restart the run (new start position, time 0). Applies any queued params first. */
   reset(seed?: number): void;
+  /** End the run (Spec 08 v1.9): no further physics steps until reset; the last snapshot stays. */
+  stop(): void;
+  readonly stopped: boolean;
+  /** Physics step (s) and the current run's seed. */
+  readonly dt: number;
+  readonly seed: number;
   readonly time: number;
   readonly params: Readonly<TornadoParams>;
   readonly snapshot: SimSnapshot;
@@ -258,6 +264,12 @@ export function createSim(
     debrisStep: (...a) => {
       for (const o of observers) o.debrisStep?.(...a);
     },
+    debrisGone: (...a) => {
+      for (const o of observers) o.debrisGone?.(...a);
+    },
+    step: () => {
+      for (const o of observers) o.step?.();
+    },
   };
   const fixedZone = config.detailSet?.map((d) => d.index);
   const detailSet = new Map((config.detailSet ?? []).map((d) => [d.index, d] as const));
@@ -271,6 +283,7 @@ export function createSim(
   let center: Vec2 = { x: 0, z: 0 };
   let acc = 0;
   let timeScale = 1;
+  let stopped = false;
   let prev: SimSnapshot;
   let curr: SimSnapshot;
   let detail: DetailBackend | null = null;
@@ -509,6 +522,7 @@ export function createSim(
       if (observers.size) taps.debrisStep?.(pre.time);
     }
     curr = makeSnapshot();
+    if (observers.size) taps.step?.();
   }
 
   function reset(newSeed?: number): void {
@@ -537,6 +551,9 @@ export function createSim(
     debris.onImpact = (b, q, p) => {
       if (observers.size) taps.impact?.(indexById.get(b.standInFor ?? b.id) ?? -1, q, "debris", p, stepCount * dt);
     };
+    debris.onGone = (p, why) => {
+      if (observers.size) taps.debrisGone?.(p, why, stepCount * dt);
+    };
     zone = new ZoneSelector(config.detailHouses, fixedZone, config.detailPinned);
     settling.clear();
     detailView.clear();
@@ -551,6 +568,7 @@ export function createSim(
     }
     stepCount = 0;
     acc = 0;
+    stopped = false;
     headingDeg = params.heading;
     center = startPosition();
     curr = makeSnapshot();
@@ -566,6 +584,8 @@ export function createSim(
 
   return {
     advance(realDtSeconds: number): SimFrame {
+      // Stopped (Spec 08 v1.9): the frozen state, no steps.
+      if (stopped) return { prev: curr, curr, alpha: 0 };
       const real = Math.min(Math.max(realDtSeconds, 0), maxFrameDt);
       acc += real * timeScale;
       // Tolerance keeps step counts identical however the same time is split across calls.
@@ -609,6 +629,17 @@ export function createSim(
       timeScale = Math.max(0, k);
     },
     reset,
+    stop() {
+      stopped = true;
+      acc = 0;
+    },
+    get stopped() {
+      return stopped;
+    },
+    dt,
+    get seed() {
+      return currentSeed;
+    },
     get time() {
       return stepCount * dt;
     },

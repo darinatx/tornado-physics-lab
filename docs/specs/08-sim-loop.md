@@ -1,6 +1,6 @@
 # Spec 08 — Simulation Loop
 
-Status: Approved (v1.8)
+Status: Approved (v1.9)
 
 ## Purpose
 
@@ -32,6 +32,13 @@ and provide deterministic, replayable runs.
 - **Snapshots:** after each step, an immutable `SimSnapshot` (time, tornado state) is made
   available to the renderer and UI.
 
+- **Stopped (Spec 16):** `stop()` ends the run: no further physics steps run, whatever the
+  time scale, and the last snapshot stays current, so the scene, camera, inspector and probe
+  keep working on the frozen state. Only `reset` leaves it. Observers (`observe`) also get a
+  `step` call after every physics step, once its snapshot is made (Spec 16's recorder). When
+  the lifecycle ends, the app stops the run (Spec 07) unless repeat is on; the loop itself only
+  provides `stop`, so it stays free of UI settings.
+
 - **Test area (validation):** a sim can be limited to the houses within a radius of a point
   (`area`), and the tornado can start at a given point (`start`) instead of halfway back along
   its path. With `tUp = 0` it is mature from the first step. Validation runs use this to pass a
@@ -53,6 +60,8 @@ interface Sim {
   setParams(p: Partial<TornadoParams>): void;   // applied at the next step
   setTimeScale(k: number): void;
   reset(seed?: number): void;
+  stop(): void;                                 // Spec 16: no further steps until reset
+  readonly stopped: boolean;
   readonly time: number;
 }
 
@@ -95,6 +104,8 @@ function createRng(seed: number): () => number;   // uniform in [0, 1)
 
 ## Changelog
 
+- v1.9 (Phase 8): a stopped state (`stop()`, `stopped`) for Stop & Report; the app stops the
+  run at the end of the lifecycle unless repeat is on (Spec 16, REP-01); a `step` observer tap.
 - v1.8 (Phase 6 slice D): an optional, read-only timing hook (`SimConfig.timing`, Spec 18)
   adds wall-clock ms per section of each step (damage, debris, heavy, detail, total). Nothing
   in the physics reads it (BENCH-02).
