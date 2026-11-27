@@ -181,6 +181,10 @@ export const HEAVY = {
   /** m: overlaps are judged with the piece this much smaller at its edges (touching neighbors
    *  aren't overlaps). */
   edgeShrink: 0.1,
+  /** m: an own-house surface it overlaps is passed only while it tears away: once its center
+   *  comes this much closer to that surface than it has been, the surface stops it (Spec 04
+   *  v2.8; rounding and a body's wobble stay well under it). */
+  separationSlack: 0.02,
   /** m: look-ahead of Rapier's soft CCD (Spec 10: as the detail zone's loose bodies). */
   softCcd: 0.5,
   /** …and at least this many times how far the body can move in a step (as the detail zone). */

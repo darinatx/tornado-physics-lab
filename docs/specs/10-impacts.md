@@ -1,6 +1,6 @@
 # Spec 10 — Debris Impacts
 
-Status: Approved (v0.18) — Phase 6 slice A (impact physics and component houses) and the first
+Status: Approved (v0.19) — Phase 6 slice A (impact physics and component houses) and the first
 part of slice B (detail-zone pieces hit the houses around them). The rest of slice B is outlined
 at the end.
 
@@ -59,7 +59,9 @@ each plane of the solid is moved out by half the piece's box extent along that p
 (in its current orientation); from inside, moved in by it. A piece that turns into a surface
 without its center moving (tumbling next to a wall) is a hit at the start of the step on the
 least-penetrated plane. The contact point (the center projected onto the real surface) picks
-the component.
+the component. A step that moves into a standing surface stops at it even when the piece's
+velocity no longer points into it (v0.19: a landing in the same step took that speed); with
+no normal speed left, that contact is not an impact.
 
 **Slabs.** Every house keeps its slab, a 0.3 m concrete box (component houses: 0.3 m wider
 than the walls on each side, as drawn; detailed houses: flush with the wall frames), even when
@@ -74,9 +76,14 @@ tips over; lying flat, half of it would be inside the slab's overhang).
 Nothing stays inside a slab: a piece whose box ends a step overlapping one (after a bounce at
 a wall's base, tumbling, or spawning) is pushed out the shortest way, up onto the top or out
 past the nearest side, and loses its speed into the slab; a piece whose center is off the slab
-always goes out past the side (it can't hang half on the slab). This is checked after the
+always goes out past the side (it can't hang half on the slab). A box within 1 cm of the top
+counts as resting on it, but a center below the top never does (v0.19: a sheet thinner than
+2 cm landing fast from beside the slab ended with its center just inside it). This is checked after the
 piece has moved, bounced and snagged. A piece that snags while sliding on a slab is laid flat
-on the slab top.
+on the slab top. A piece that slides off a slab's edge in a step (v0.19) falls from it: it
+neither snags nor hits a bump in that step, since it is no longer on what it slid on (laid flat
+on the ground beyond the edge at once, its path cut through the slab's corner, and inside a
+house shifted off its slab, through the floor).
 
 Decisions:
 - Box extent along each plane normal (the exact separation for a box against a plane): cheap
@@ -85,6 +92,10 @@ Decisions:
   segment test never tunnels.
 - The slab is a step to climb, not a ramp: a piece crosses onto it only from above (flying or
   bouncing), as debris against a real 0.3 m slab edge does.
+- Off the edge, it falls (v0.19, BL-001): snagging and bumps are the ground's obstacles under
+  a sliding piece; a piece that ran off the slab this step has nothing under it yet. The 0.3 m
+  fall takes 0.25 s, so the piece reaches the ground a few steps later, and only then slides,
+  snags or rests there.
 - Detailed houses (Spec 09) are skipped until slice B.
 
 ### What an impact does
@@ -402,8 +413,14 @@ Values live in `src/config/impacts.ts`.
 - **IMP-15**: Slabs: a piece sliding into a slab's side stays outside it; a piece falling onto
   a slab comes to rest on its top; a swept house's slab still does both.
 - **IMP-16**: Nothing ends a step inside a slab: a piece overlapping one is pushed out the
-  shortest way (onto the top or past the nearest side), and a piece snagging on a slab lies
-  on its top.
+  shortest way (onto the top or past the nearest side), no piece over a slab ends with its
+  center below the top, and a piece snagging on a slab lies on its top.
+- **IMP-27**: A piece sliding off a slab's edge falls from it (v0.19): it is never set down on
+  the ground beyond the edge in the step it leaves, even where every slide snags, and inside a
+  house shifted off its slab its path doesn't cross the floor.
+- **IMP-28**: A piece that lands on a slab at a wall's foot in the step it reaches the wall
+  stops at the wall, from outside or inside, though the landing took its speed into the wall
+  (v0.19).
 - **IMP-17** *(validation)*: Detail-zone pieces hit the houses around them: in the detail
   pass-through check (12 s, 30 detailed houses at the town center), no detail member crosses
   another house's standing wall or roof or ends up inside its slab (about 1,600 before), and
@@ -491,6 +508,16 @@ n + lead, which they are certain to have reached):
 
 ## Changelog
 
+- v0.19 (BL-001): a sliding piece that runs off a slab's edge in a step doesn't snag or hit a
+  bump in that step; it falls from the edge (IMP-27). A snag there laid it flat on the ground
+  beyond the edge at once, from slab height: a path through the slab's corner, which inside a
+  house shifted off its slab is through the floor (20 s town pass on `main`, seeds 1–12: 3 of 7
+  crossings). A snag on a slab lays the piece on the floor it slid on.
+  Also: a step that goes into a standing surface while the piece's velocity no longer does
+  (the landing in the same step took it) stops at the surface with no impact (IMP-28); it was
+  let through, the center ending up to 5 cm on the far side. And a thin piece whose center
+  ends a step below the slab top is put on the top (IMP-16): the 1 cm resting tolerance let a
+  sheet thinner than 2 cm keep its center in the slab.
 - v0.18: impacts only on arrival (BL-031). A piece held against a surface by the wind is in one
   contact episode: the first contact is the impact; later contacts on the same plane within
   0.1 s of the last are presses (no impact, no rebound). Before, each 60 Hz step made a new

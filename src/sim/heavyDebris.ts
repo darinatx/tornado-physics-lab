@@ -42,8 +42,9 @@ interface Heavy {
   plates: BodyPlate[];
   dims: [number, number, number];
   /** Its own house's surfaces it overlapped when made (it is tearing away from them: no
-   *  contact with them for HEAVY.separationS); null until found, after its first step. */
-  ignore: Set<number> | null;
+   *  contact with them for HEAVY.separationS), each with the farthest its center has been from
+   *  that surface since (m); null until found, before its first step (Spec 04 v2.8). */
+  ignore: Map<number, number> | null;
   /** Order it was taken in (staggers its wind sampling). */
   k: number;
   /** Full CCD on (fast). */
@@ -170,9 +171,8 @@ export class HeavyDebris implements HeavySink {
       const other = a ? c2 : c1;
       const house = this.houseOf.get(other);
       if (house === undefined || house !== h.source || !this.planeOf.has(other) || this.time - h.bornAt >= HEAVY.separationS) return RAPIER.SolverFlags.COMPUTE_IMPULSE;
-      // Its own house's walls and roof: not those it overlaps as it tears away (all of them
-      // until that's known, its first step); the rest stop it.
-      return !h.ignore || h.ignore.has(other) ? null : RAPIER.SolverFlags.COMPUTE_IMPULSE;
+      // Its own house's walls and roof: not those it overlaps as it tears away; the rest stop it.
+      return h.ignore?.has(other) ? null : RAPIER.SolverFlags.COMPUTE_IMPULSE;
     },
     filterIntersectionPair: () => true,
   };
@@ -317,6 +317,10 @@ export class HeavyDebris implements HeavySink {
     }
     this.ms.aero += performance.now() - t0;
     t0 = performance.now();
+    // New bodies: the surfaces of their own house they overlap where they were made, before
+    // they move (Spec 04 v2.8: found after the first step, a fast piece had already slid into
+    // a standing neighbor, and it then passed that neighbor too).
+    for (const h of this.bodies) if (!h.ignore) h.ignore = this.overlapsOwn(h, null);
     // Soft CCD reaches past how far each body can move this step, spin included (Spec 10
     // v0.13, as the detail zone's loose bodies): fast thin sheets would end a step inside a wall.
     const dt = this.world.timestep;
@@ -332,7 +336,7 @@ export class HeavyDebris implements HeavySink {
       // landing hard ends the step sunk into the ground.
       // (Not while it still overlaps a surface of its own house it is tearing away from: Rapier's
       // CCD doesn't consult the contact filter, so it would stop the piece there.)
-      const clear = this.time - h.bornAt >= HEAVY.separationS || (h.ignore !== null && h.ignore.size === 0);
+      const clear = this.time - h.bornAt >= HEAVY.separationS || h.ignore!.size === 0;
       const fast = clear && Math.hypot(v.x, v.y, v.z) * dt > h.dims[2] / 2;
       if (fast !== h.ccd) {
         h.body.enableCcd(fast);
@@ -340,25 +344,15 @@ export class HeavyDebris implements HeavySink {
       }
     }
     this.world.step(this.events, this.hooks);
-    // New bodies: which of their own house's surfaces they overlap (queries see colliders added
-    // this step only now).
-    // Young bodies: which of their own house's surfaces they still overlap. Only those are
-    // passed (new bodies: queries see colliders added this step only now); once clear of a
-    // surface, it stops them again.
+    // Young bodies: which of their own house's surfaces they still overlap while moving away
+    // from them. Once clear of a surface, or coming back toward it, it stops them again.
     for (const h of this.bodies) {
-      if (h.ignore && (h.ignore.size === 0 || this.time - h.bornAt >= HEAVY.separationS)) continue;
-      const now = new Set<number>();
-      if (h.source >= 0) {
-        // Shrunk in its plane: neighbors that only touch it along an edge (the next roof
-        // section, the next wall panel) still stop it.
-        const [L, W, T] = h.dims;
-        const core = new RAPIER.Cuboid(Math.max(L / 2 - HEAVY.edgeShrink, 0.01), T / 2, Math.max(W / 2 - HEAVY.edgeShrink, 0.01));
-        this.world.intersectionsWithShape(h.body.translation(), h.body.rotation(), core, (c) => {
-          if (this.houseOf.get(c.handle) === h.source && this.planeOf.has(c.handle) && (!h.ignore || h.ignore.has(c.handle))) now.add(c.handle);
-          return true;
-        });
+      if (h.ignore!.size === 0) continue;
+      if (this.time - h.bornAt >= HEAVY.separationS) {
+        h.ignore!.clear();
+        continue;
       }
-      h.ignore = now;
+      h.ignore = this.overlapsOwn(h, h.ignore);
     }
     this.drainHits();
     this.ms.physics += performance.now() - t0;
@@ -581,6 +575,34 @@ export class HeavyDebris implements HeavySink {
     return t.y - 0.5 * (Math.abs(rxY) * L + Math.abs(ryY) * T + Math.abs(rzY) * W);
   }
 
+  /**
+   * The walls, roof sections and gables of a body's own house its core overlaps now (shrunk in
+   * its plane: neighbors that only touch it along an edge, the next roof section or wall panel,
+   * aren't overlaps), each with the farthest its center has been from it. With `was`, only
+   * those already passed, and only while it is tearing away from them (Spec 04 v2.8): one its
+   * center has come back toward by more than HEAVY.separationSlack stops it from now on.
+   */
+  private overlapsOwn(h: Heavy, was: Map<number, number> | null): Map<number, number> {
+    const now = new Map<number, number>();
+    const built = h.source >= 0 ? this.built.get(h.source) : undefined;
+    if (!built) return now;
+    const [L, W, T] = h.dims;
+    const core = new RAPIER.Cuboid(Math.max(L / 2 - HEAVY.edgeShrink, 0.01), T / 2, Math.max(W / 2 - HEAVY.edgeShrink, 0.01));
+    const at = h.body.translation();
+    const rot = h.body.rotation();
+    for (const c of built.colliders) {
+      if (!this.planeOf.has(c.handle)) continue;
+      const far = was?.get(c.handle);
+      if (was && far === undefined) continue;
+      if (!c.intersectsShape(core, at, rot)) continue;
+      const pr = c.projectPoint(at, true);
+      const d = pr ? Math.hypot(at.x - pr.point.x, at.y - pr.point.y, at.z - pr.point.z) : 0;
+      if (far !== undefined && d < far - HEAVY.separationSlack) continue;
+      now.set(c.handle, Math.max(d, far ?? d));
+    }
+    return now;
+  }
+
   /** Contacts with houses' walls, roofs and gables: impacts there (Spec 10), resting contact and
    *  a piece's own house during its first moments left out. */
   private drainHits(): void {
@@ -592,7 +614,7 @@ export class HeavyDebris implements HeavySink {
         const plane = this.planeOf.get(other);
         const house = this.houseOf.get(other);
         if (plane === undefined || house === undefined) continue;
-        if (house === h.source && this.time - h.bornAt < HEAVY.separationS && (!h.ignore || h.ignore.has(other))) continue;
+        if (house === h.source && this.time - h.bornAt < HEAVY.separationS && h.ignore?.has(other)) continue;
         const col = this.world.getCollider(other);
         if (!col) continue;
         // Held against it (Spec 10 v0.18): only the arrival is an impact.
