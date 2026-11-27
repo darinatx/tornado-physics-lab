@@ -9,7 +9,8 @@ import { EF_LOWER_MPH } from "../../core/wind/efScale";
 import type { EFRating } from "../../core/wind/efScale";
 import { distText, M_PER_MI, M_PER_YD, placeText, speedText, timeText } from "../../sim/report/format";
 import type { MapData, Report } from "../../sim/report/report";
-import { dodText } from "../../sim/report/report";
+import { dodText, namedText } from "../../sim/report/report";
+import { REPORT } from "../../config/report";
 import type { SurveyRow } from "../../sim/report/table";
 import { EF_COLORS } from "../../render/arrowStyle";
 import { DOD_COLORS } from "../../render/houses";
@@ -231,8 +232,10 @@ export function summaryBlock(r: Report): string {
   const e = r.event;
   const width = e.maxWidthM;
   const rows: [string, string][] = [
-    ["Rating", efText(e.rating)],
+    ["Rating", e.rating === null ? efText(e.rating) : `${efText(e.rating)}${e.ratingBy && !e.ratingBy.corroboratedBy ? " (one house, uncorroborated)" : ""}`],
     ["Estimated peak wind", e.rating === null ? "—" : speedText(e.ratingMph)],
+    ...(e.ratingBy?.corroboratedBy ? ([["Rated by", `${e.ratingBy.point.point} and ${e.ratingBy.corroboratedBy.point}, ${Math.round(e.ratingBy.distanceM!)} m apart`]] as [string, string][]) : []),
+    ...(e.uncorroborated.length ? ([["Not corroborated", `${e.uncorroborated.map(namedText).join("; ")}: no second house within ${REPORT.corroborationRadius} m reached ${e.uncorroborated.length === 1 ? "its" : "their"} speed, so the rating doesn't use ${e.uncorroborated.length === 1 ? "it" : "them"}`]] as [string, string][]) : []),
     ["True peak wind (simulation, 10 m)", e.truePeakMph ? `${speedText(e.truePeakMph)} · ${efText(e.truePeakEf)}` : "—"],
     ["Path length", distText(e.pathLengthM)],
     ["Maximum path width", `${n0(width / M_PER_YD)} yd (${n0(width)} m)`],
@@ -263,7 +266,7 @@ function summaryPage(r: Report): string {
 const COL_LABEL: Record<keyof SurveyRow, string> = {
   point: "Point", building: "Bldg", x: "x (m)", z: "z (m)", along: "Along (m)", cross: "Cross (m)", di: "DI", dod: "DOD", description: "Damage", construction: "Construction",
   surveyMph: "Survey (mph)", surveyMs: "(m/s)", ef: "EF", rangeMph: "DOD range (mph)", rangeEf: "EF range", true10Mph: "True 10 m (mph)", trueRoofMph: "True roof (mph)", biasMph: "Bias (mph)",
-  outsideBounds: "Outside range", firstDamagedS: "First damaged (s)",
+  outsideBounds: "Outside range", firstDamagedS: "First damaged (s)", corroborated: "Corroborated",
 };
 
 /** Columns shown on the page (the CSV has every one). */
@@ -275,7 +278,7 @@ export function tableHtml(rows: SurveyRow[]): string {
     .map((r) => {
       const cells = PAGE_COLS.map((c) => {
         const v = r[c];
-        const shown = c === "construction" ? String(v).split(" ")[0] : c === "firstDamagedS" && v !== null ? timeText(Number(v)) : v === null ? "—" : v;
+        const shown = c === "construction" ? String(v).split(" ")[0] : c === "firstDamagedS" && v !== null ? timeText(Number(v)) : c === "ef" && !r.corroborated ? `${v} (not corroborated)` : v === null ? "—" : v;
         const cls = c === "biasMph" && r.outsideBounds ? ' class="rp-out"' : c === "dod" ? ` style="--dod:${dodColor(r.dod)}" class="rp-dod"` : "";
         return `<td${cls} data-v="${esc(v ?? "")}">${esc(shown)}</td>`;
       }).join("");
@@ -372,7 +375,7 @@ export function renderReport(r: Report): string {
     lineChart("Forward speed", "mph", [{ t: tl.t, v: tl.speed.map((s) => s / MS_PER_MPH), color: "#7d3c98", label: "speed" }]) +
     lineChart("Damaged houses (DOD 1+)", "houses", [{ t: tl.t, v: tl.damaged, color: "#c0392b", label: "damaged" }]);
   const toggles = `<div class="rp-toggles rp-noprint"><label><input type="checkbox" data-layer="contours" checked> EF contours (survey)</label><label><input type="checkbox" data-layer="points" checked> Survey points</label><label><input type="checkbox" data-layer="swath"> True-wind swath and contours (dashed)</label><label><input type="checkbox" data-layer="landings"> Debris landing points</label><span class="rp-hint">Click a survey point for its row in the table.</span></div>`;
-  const tableIntro = `<p>One row per survey point, along the track (P1 first). The survey speed comes from the DOD and construction class alone; the true peaks are what the simulation recorded at the house. Bias is survey minus true 10 m wind; <span class="rp-out">highlighted</span> rows had a true wind outside their DOD's range. Click a column to sort.</p>`;
+  const tableIntro = `<p>One row per survey point, along the track (P1 first). The survey speed comes from the DOD and construction class alone; the true peaks are what the simulation recorded at the house. Bias is survey minus true 10 m wind; <span class="rp-out">highlighted</span> rows had a true wind outside their DOD's range. A point marked "not corroborated" is rated above the tornado's rating with no second house within ${REPORT.corroborationRadius} m at its speed (see Methods). Click a column to sort.</p>`;
   return `<article class="rp-doc">
 ${summaryPage(r)}
 ${section(r, "rp-narrative", 2, "Narrative", `<div class="rp-narr">${r.narrative.map((s) => `<p>${esc(s)}</p>`).join("")}</div>`)}

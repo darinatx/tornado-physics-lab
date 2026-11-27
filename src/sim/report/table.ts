@@ -30,12 +30,14 @@ export interface SurveyRow {
   biasMph: number;
   outsideBounds: boolean;
   firstDamagedS: number | null;
+  /** False for a point above the rating with no second point near it (Spec 16 v1.9). */
+  corroborated: boolean;
 }
 
 export const SURVEY_COLUMNS: readonly (keyof SurveyRow)[] = [
   "point", "building", "x", "z", "along", "cross", "di", "dod", "description", "construction",
   "surveyMph", "surveyMs", "ef", "rangeMph", "rangeEf", "true10Mph", "trueRoofMph", "biasMph",
-  "outsideBounds", "firstDamagedS",
+  "outsideBounds", "firstDamagedS", "corroborated",
 ];
 
 /** EF of a speed; below EF0 (65 mph) reads "<EF0", as a DOD's lower bound can be. */
@@ -67,5 +69,6 @@ export function surveyRows(survey: Survey, center = { x: 0, z: 0 }): SurveyRow[]
       biasMph: r1(p.biasMph),
       outsideBounds: p.outside,
       firstDamagedS: p.firstDamaged === null ? null : r1(p.firstDamaged),
+      corroborated: !p.uncorroborated,
     }));
 }

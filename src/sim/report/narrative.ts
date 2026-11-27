@@ -2,7 +2,7 @@
  * The narrative (Spec 16): plain sentences written by fixed rules from the record and the
  * survey. No randomness; every sentence traces to a number in the report (REP-12).
  */
-import { COMPASS16 } from "../../config/report";
+import { COMPASS16, REPORT } from "../../config/report";
 import type { StormRecord, TrackSample } from "../stormRecord";
 import { compassOf } from "../stormRecord";
 import { compassWord, distText, mphOf, placeText, speedText, timeText, widthText } from "./format";
@@ -60,7 +60,7 @@ function sentences(record: StormRecord, survey: Survey): Record<string, string> 
   if (!rp) {
     out.rating = "No house was damaged, so the survey could not rate it.";
   } else {
-    out.rating = `The damage survey rates it EF${survey.rating}, with estimated peak winds of ${speedText(survey.ratingMph)}, from a house ${placeText(placeOf(rp.x, rp.z, c))} rated DOD ${rp.dod} (${rp.description.toLowerCase()}) with ${BASIS[rp.cls]}.`;
+    out.rating = `The damage survey rates it EF${survey.rating}, with estimated peak winds of ${speedText(survey.ratingMph)}, from a house ${placeText(placeOf(rp.x, rp.z, c))} rated DOD ${rp.dod} (${rp.description.toLowerCase()}) with ${BASIS[rp.cls]}${corroboration(survey)}.`;
     out.path = `Its damage path was ${distText(survey.path.survey.length)} long and up to ${widthText(survey.path.survey.maxWidth)} wide.`;
     const destroyed = record.buildings.filter((b) => b.dod >= 8 && Math.hypot(b.x - rp.x, b.z - rp.z) <= WORST_AREA_M).length;
     const where = placeText(placeOf(rp.x, rp.z, c));
@@ -94,6 +94,18 @@ const ORDER = ["formed", "grew", "rating", "path", "worst", "town", "truth", "en
 const SUMMARY = ["rating", "path", "worst", "end"];
 
 /** The full narrative, in order. */
+/** The rating sentence's corroboration clause (Spec 16 v1.9). */
+function corroboration(survey: Survey): string {
+  const rp = survey.points[survey.ratingPoint!]!;
+  const cp = survey.corroboratingPoint === null ? null : survey.points[survey.corroboratingPoint]!;
+  const lone = survey.uncorroborated.length;
+  const top = lone ? Math.max(...survey.uncorroborated.map((i) => survey.points[i]!.ef ?? 0)) : 0;
+  const set = lone ? `; ${lone === 1 ? "one house rated" : `${lone} houses rated`} higher (up to EF${top}) had no neighbour within ${REPORT.corroborationRadius} m at that level and ${lone === 1 ? "was" : "were"} set aside` : "";
+  return cp
+    ? `, corroborated by a house ${distText(Math.hypot(cp.x - rp.x, cp.z - rp.z))} away rated DOD ${cp.dod}${set}`
+    : `, with no second damaged house within ${REPORT.corroborationRadius} m to corroborate it${set}`;
+}
+
 export function narrative(record: StormRecord, survey: Survey): string[] {
   const s = sentences(record, survey);
   return ORDER.flatMap((k) => (s[k] ? [s[k]!] : []));

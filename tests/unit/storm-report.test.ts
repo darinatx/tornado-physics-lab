@@ -256,11 +256,11 @@ describe("Spec 16 — storm report: record and survey", () => {
     for (const b of recA.buildings) expect(b.dod).toBe(A.sim.world.buildings[b.index]!.dod);
   });
 
-  test("REP-06: the rating is the highest survey-point EF; a peak over open ground is rated below its true peak", () => {
-    // Houses near the start (DOD 4 standard: 97 mph, EF1; DOD 6 strong: 142 mph, EF3), and an
-    // EF4 core over open fields further on, where nothing stands.
+  test("REP-06: the rating is the EF of the corroborated speed; a peak over open ground is rated below its true peak", () => {
+    // Houses near the start (DOD 6 strong: 142 mph, EF3, twice, 50 m apart, so the EF3 is
+    // corroborated), and an EF4 core over open fields further on, where nothing stands.
     const rec = scripted(
-      [house(0, 100, 10, 4), house(1, 140, -20, 6, { cls: "strong" }), house(2, 200, 400, 0)],
+      [house(0, 100, 10, 6, { cls: "strong" }), house(1, 140, -20, 6, { cls: "strong" }), house(2, 200, 400, 0)],
       [
         [10, 0, mphToMs(100)],
         [14, -2, mphToMs(140)],
@@ -270,14 +270,105 @@ describe("Spec 16 — storm report: record and survey", () => {
     );
     const s = buildSurvey(rec);
     expect(s.points.length).toBe(2);
-    expect(s.rating).toBe(Math.max(...s.points.map((p) => p.ef!)));
     expect(s.rating).toBe(3);
     expect(s.ratingMph).toBe(142);
     expect(s.truePeak!.ef).toBe(4);
     expect(s.truePeak!.mph).toBeCloseTo(185, 3);
     expect(s.rating!).toBeLessThan(s.truePeak!.ef!);
-    // The real pass's rating is its highest point EF too.
-    expect(surveyA.rating).toBe(Math.max(...surveyA.points.map((p) => p.ef ?? -1)));
+    // The real pass's rating is the EF of its corroborated speed (REP-16).
+    expect(surveyA.rating).toBe(efRating(mphToMs(surveyA.ratingMph)));
+  });
+
+  test("REP-16: the rating speed is the highest that two points within 100 m both reach; a lone point can't set it", () => {
+    const strong = { cls: "strong" as const };
+    const weak = { cls: "weak" as const };
+    // A lone strong DOD 10 (220 mph, EF5) beside a standard DOD 9 (170, EF4) 60 m away and a
+    // strong DOD 9 (198, EF4) 90 m away; far down the track, two strong DOD 9s 101 m apart.
+    // Pairs within 100 m: (A, B) 170, (A, C) 198, (B, C) 170 … so 198 mph, EF4, set by C, with A.
+    const rec = scripted([
+      house(0, 100, 0, 10, strong),
+      house(1, 160, 0, 9),
+      house(2, 100, 90, 9, strong),
+      house(3, 600, 0, 9, strong),
+      house(4, 701, 0, 9, strong),
+      house(5, 650, 300, 4, weak),
+    ]);
+    const s = buildSurvey(rec);
+    // By hand: every pair within 100 m, the lower speed, the largest.
+    let hand = 0;
+    for (const a of s.points)
+      for (const b of s.points)
+        if (a !== b && Math.hypot(a.x - b.x, a.z - b.z) <= REPORT.corroborationRadius) hand = Math.max(hand, Math.min(a.mph, b.mph));
+    expect(hand).toBe(198);
+    expect(s.ratingMph).toBe(hand);
+    expect(s.rating).toBe(4);
+    expect(s.corroborated).toBe(true);
+    expect(s.points[s.ratingPoint!]!.id).toBe(102);
+    expect(s.points[s.corroboratingPoint!]!.id).toBe(100);
+    // The lone EF5 point is set aside, not re-rated.
+    expect(s.points[0]!.mph).toBe(220);
+    expect(s.points[0]!.ef).toBe(5);
+    // 101 m doesn't corroborate; 100 m does.
+    const apart = (d: number) => buildSurvey(scripted([house(0, 100, 0, 9, strong), house(1, 100 + d, 0, 9, strong), house(2, 130, 30, 6)]));
+    expect(apart(101).ratingMph).toBe(122);
+    expect(apart(100).ratingMph).toBe(198);
+    // With no two points within 100 m, the highest point rates alone, marked uncorroborated.
+    const lone = buildSurvey(scripted([house(0, 100, 0, 8), house(1, 400, 0, 6, strong), house(2, 800, 0, 3)]));
+    expect(lone.rating).toBe(3);
+    expect(lone.ratingMph).toBe(152);
+    expect(lone.corroborated).toBe(false);
+    expect(lone.points[lone.ratingPoint!]!.id).toBe(100);
+    expect(lone.corroboratingPoint).toBeNull();
+    expect(lone.uncorroborated).toEqual([]);
+    // A single damaged house rates alone too; nothing damaged, nothing rated.
+    const one = buildSurvey(scripted([house(0, 100, 0, 5)]));
+    expect([one.rating, one.ratingMph, one.corroborated]).toEqual([2, 121, false]);
+    const none = buildSurvey(scripted([house(0, 100, 0, 0)]));
+    expect([none.rating, none.ratingPoint, none.corroboratingPoint]).toEqual([null, null, null]);
+    // The real pass: no pair within 100 m reaches a higher speed than the rating.
+    const P = surveyA.points.filter((p) => p.ef !== null);
+    let best = 0;
+    for (let i = 0; i < P.length; i++)
+      for (let k = i + 1; k < P.length; k++)
+        if (Math.hypot(P[i]!.x - P[k]!.x, P[i]!.z - P[k]!.z) <= REPORT.corroborationRadius) best = Math.max(best, Math.min(P[i]!.mph, P[k]!.mph));
+    expect(surveyA.ratingMph).toBe(surveyA.corroborated ? best : Math.max(...P.map((p) => p.mph)));
+  });
+
+  test("REP-17: points above the rating are listed as uncorroborated and kept in the table, CSV, statistics, summary and Methods", () => {
+    const strong = { cls: "strong" as const };
+    const rec = scripted([house(0, 100, 0, 10, strong), house(1, 160, 0, 9), house(2, 100, 90, 8), house(3, 900, 0, 9, strong), house(4, 905, 40, 2)]);
+    const s = buildSurvey(rec);
+    // Pairs within 100 m: (0,1) 170, (0,2) 152, (3,4) 79 → 170 mph, EF4.
+    expect(s.rating).toBe(4);
+    const above = s.points.flatMap((p, i) => (p.ef !== null && p.ef > s.rating! ? [i] : []));
+    expect(s.uncorroborated).toEqual(above);
+    expect(s.uncorroborated.map((i) => s.points[i]!.id)).toEqual([100]);
+    // Point 3 (strong DOD 9, 198 mph, EF4) is lone but not above the rating: not listed.
+    for (const [i, p] of s.points.entries()) expect(p.uncorroborated).toBe(s.uncorroborated.includes(i));
+    // Kept with its own DOD, speed and bias.
+    const p0 = s.points[0]!;
+    expect([p0.dod, p0.mph, p0.ef]).toEqual([10, 220, 5]);
+    expect(s.bias.mean).toBeCloseTo(s.points.reduce((a, p) => a + p.biasMph, 0) / s.points.length, 9);
+    const rows = surveyRows(s);
+    expect(rows.length).toBe(5);
+    for (const r of rows) expect(r.corroborated).toBe(r.building !== 100);
+    expect(SURVEY_COLUMNS).toContain("corroborated");
+    const csv = surveyCsv(s).trim().split(/\r?\n/);
+    const head = csvCells(csv[0]!);
+    const col = head.findIndex((h) => /corroborated/i.test(h));
+    expect(col).toBeGreaterThanOrEqual(0);
+    const p0row = csv.slice(1).map(csvCells).find((c) => c[head.findIndex((h) => /building/i.test(h))] === "100")!;
+    expect(p0row[col]).toMatch(/not corroborated|false/i);
+    // Summary block and Methods name it.
+    const R = buildReport(rec, s, { preliminary: false });
+    const html = renderReport(R);
+    expect(R.event.uncorroborated.length).toBe(1);
+    expect(R.event.uncorroborated[0]).toMatchObject({ building: 100, dod: 10, mph: 220, ef: 5 });
+    const pid = R.event.uncorroborated[0]!.point;
+    expect(R.methods.paragraphs.some((t) => t.includes(pid) && /not corroborated|uncorroborated/i.test(t))).toBe(true);
+    expect(html).toContain("Not corroborated");
+    // No contour above the rating; every point inside the contours of its capped EF.
+    expect(Math.max(...s.contours.survey.map((c) => c.ef))).toBe(4);
   });
 
   test("REP-07: path length and maximum width match hand-computed values, survey and true swath", () => {
@@ -310,12 +401,15 @@ describe("Spec 16 — storm report: record and survey", () => {
     // Scripted: two separate damaged stretches give two runs, with no contour across the gap.
     const rec = scripted([house(0, 100, 0, 8), house(1, 110, 30, 3), house(2, 160, -20, 6), house(3, 700, 5, 9), house(4, 720, -10, 2)]);
     const s = buildSurvey(rec);
-    checkContours(s.points, s.contours.survey);
+    const capped = (v: Survey) => v.points.map((p) => ({ ...p, ef: p.ef === null || v.rating === null ? p.ef : (Math.min(p.ef, v.rating) as EFRating) }));
+    checkContours(capped(s), s.contours.survey);
+    for (const c of s.contours.survey) expect(c.ef).toBeLessThanOrEqual(s.rating!);
     const ef0 = s.contours.survey.find((c) => c.ef === 0)!;
     expect(ef0.runs.length).toBe(2);
     for (const run of ef0.runs) for (const sec of run) expect(sec.a0 < 200 || sec.a0 >= 700).toBe(true);
     // The real pass, survey and true contours.
-    checkContours(surveyA.points, surveyA.contours.survey);
+    checkContours(capped(surveyA), surveyA.contours.survey);
+    for (const c of surveyA.contours.survey) expect(c.ef).toBeLessThanOrEqual(surveyA.rating!);
     const line = new TrackLine(recA.track);
     const T = recA.swath.tile;
     const cells = recA.swath.tiles.flatMap((t) =>

@@ -43,6 +43,9 @@ export interface SurveyPoint {
   outside: boolean;
   /** Sim time it was first damaged (s), from its DOD history. */
   firstDamaged: number | null;
+  /** Its EF is above the rating: no second point within the corroboration radius reaches its
+   *  speed, so it was set aside for the rating (kept in the table, map and statistics). */
+  uncorroborated: boolean;
 }
 
 /** One along-track section of a contour: its along range and the cross-track span it covers. */
@@ -82,12 +85,19 @@ export interface Survey {
   points: SurveyPoint[];
   /** Buildings in the true swath (EF0 wind or more at 10 m) with no damage: mapped, not rated. */
   noDamage: { index: number; x: number; z: number; true10Mph: number }[];
-  /** The rating: the highest survey-point EF (null: nothing damaged). */
+  /** The rating (Spec 16 v1.9): the EF of the corroborated speed (null: nothing rated). */
   rating: EFRating | null;
-  /** Estimated peak wind (mph): the highest survey speed. */
+  /** Estimated peak wind (mph): the highest survey speed two points within the corroboration
+   *  radius both reach (the lower of the pair); with no such pair, the highest point's. */
   ratingMph: number;
-  /** The point that set the rating (index into points), or null. */
+  /** The point that set the rating, the pair's lower one (index into points), or null. */
   ratingPoint: number | null;
+  /** The pair's other point, at the rating speed or above (index), or null if uncorroborated. */
+  corroboratingPoint: number | null;
+  /** The rating is backed by two points within the corroboration radius. */
+  corroborated: boolean;
+  /** Points whose EF is above the rating (indices into points), in point order. */
+  uncorroborated: number[];
   /** The true peak: the swath's maximum (mph), its EF and where. */
   truePeak: { mph: number; ef: EFRating | null; x: number; z: number } | null;
   path: { survey: PathFigures; true: PathFigures };
@@ -273,6 +283,56 @@ export function swathCells(record: StormRecord): { x: number; z: number; v: numb
   return out;
 }
 
+/**
+ * The corroborated rating (Spec 16 v1.9, REP-16): over every pair of rated points within the
+ * corroboration radius, the lower of the two speeds; the largest of those sets the rating. The
+ * pair's lower point is the rating point, the other the corroborating point. With no pair, the
+ * highest point rates alone (an isolated house), uncorroborated. Ties go to the lower index.
+ * Points are visited from the fastest down, so the search stops at the first speed with a
+ * neighbour at or above it.
+ */
+export function corroboratedRating(
+  points: readonly { x: number; z: number; mph: number; ef: EFRating | null }[],
+  radius: number = REPORT.corroborationRadius,
+): { ratingPoint: number | null; corroboratingPoint: number | null } {
+  const order = points.flatMap((p, i) => (p.ef === null ? [] : [i])).sort((a, b) => points[b]!.mph - points[a]!.mph || a - b);
+  if (!order.length) return { ratingPoint: null, corroboratingPoint: null };
+  const r2 = radius * radius;
+  // Points at or above the current speed, in a grid of radius-sized cells.
+  const grid = new Map<string, number[]>();
+  const key = (cx: number, cz: number) => `${cx},${cz}`;
+  for (let g = 0; g < order.length; ) {
+    // One speed at a time: every point at this speed joins before any is checked, so two
+    // equal points corroborate each other.
+    const mph = points[order[g]!]!.mph;
+    let h = g;
+    while (h < order.length && points[order[h]!]!.mph === mph) {
+      const p = points[order[h]!]!;
+      const k = key(Math.floor(p.x / radius), Math.floor(p.z / radius));
+      (grid.get(k) ?? grid.set(k, []).get(k)!).push(order[h]!);
+      h++;
+    }
+    const group = order.slice(g, h).sort((a, b) => a - b);
+    for (const i of group) {
+      const p = points[i]!;
+      const cx = Math.floor(p.x / radius);
+      const cz = Math.floor(p.z / radius);
+      let best: number | null = null;
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++)
+          for (const j of grid.get(key(cx + dx, cz + dz)) ?? []) {
+            if (j === i) continue;
+            const q = points[j]!;
+            if ((q.x - p.x) ** 2 + (q.z - p.z) ** 2 > r2) continue;
+            if (best === null || q.mph > points[best]!.mph || (q.mph === points[best]!.mph && j < best)) best = j;
+          }
+      if (best !== null) return { ratingPoint: i, corroboratingPoint: best };
+    }
+    g = h;
+  }
+  return { ratingPoint: order[0]!, corroboratingPoint: null };
+}
+
 /** The survey (Spec 16): survey points, rating, path, contours, start and end, and bias. */
 export function buildSurvey(record: StormRecord): Survey {
   const line = new TrackLine(record.track);
@@ -311,17 +371,22 @@ export function buildSurvey(record: StormRecord): Survey {
       biasMph: est.mph - t10,
       outside: t10 < row.lower || t10 > row.upper,
       firstDamaged: first ? first[0] : b.firstFail,
+      uncorroborated: false,
     });
   }
 
-  // Rating: the highest EF, and the highest survey speed among the points at that EF.
-  let ratingPoint: number | null = null;
-  points.forEach((p, i) => {
-    if (p.ef === null) return;
-    const best = ratingPoint === null ? null : points[ratingPoint]!;
-    if (!best || p.ef! > best.ef! || (p.ef === best.ef && p.mph > best.mph)) ratingPoint = i;
-  });
+  const { ratingPoint, corroboratingPoint } = corroboratedRating(points);
   const rp = ratingPoint === null ? null : points[ratingPoint]!;
+  const rating = rp ? rp.ef : null;
+  const uncorroborated: number[] = [];
+  points.forEach((p, i) => {
+    if (rating !== null && p.ef !== null && p.ef > rating) {
+      p.uncorroborated = true;
+      uncorroborated.push(i);
+    }
+  });
+  // Contours: each point at its EF or the rating, whichever is lower (v1.9).
+  const contourPts = points.map((p) => ({ along: p.along, cross: p.cross, ef: rating === null || p.ef === null ? p.ef : (Math.min(p.ef, rating) as EFRating) }));
 
   // True swath.
   const cells = swathCells(record);
@@ -344,12 +409,15 @@ export function buildSurvey(record: StormRecord): Survey {
   return {
     points,
     noDamage,
-    rating: rp ? rp.ef : null,
+    rating,
     ratingMph: rp ? rp.mph : 0,
     ratingPoint,
+    corroboratingPoint,
+    corroborated: corroboratingPoint !== null,
+    uncorroborated,
     truePeak: top ? { mph: mph(top.v), ef: efRating(top.v), x: top.x, z: top.z } : null,
     path: { survey: pathFigures(points), true: pathFigures(located, record.swath.cell) },
-    contours: { survey: contours(points), true: contours(located) },
+    contours: { survey: contours(contourPts), true: contours(located) },
     start: first ? pathEnd({ x: first.x, z: first.z, t: first.firstDamaged }, record.townCenter) : null,
     end: last ? pathEnd({ x: last.x, z: last.z, t: last.firstDamaged }, record.townCenter) : null,
     bias: { mean, sd, outside: points.flatMap((p, i) => (p.outside ? [i] : [])) },

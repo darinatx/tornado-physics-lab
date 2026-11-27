@@ -86,7 +86,9 @@ Debris never passes through a standing house, and the tests check this.
   real tornado gets:
   - **Damage survey:** laid out like a National Weather Service one, with a summary block, a
     narrative, a track map with EF contours, and every damaged house rated by the EF method
-    from its damage alone.
+    from its damage alone. The tornado's rating needs two damaged houses within 100 m that
+    both reach it, as surveyors corroborate one structure with its neighbours; a lone house
+    rated higher stays in the table, marked "not corroborated".
   - **True wind:** beside each rating, the peak wind the simulation actually recorded there, so
     you can see where the standard method rates too high or too low.
   - **Engineering assessment:** the storm's intensity over time, how the worst houses failed
