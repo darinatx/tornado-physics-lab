@@ -447,8 +447,9 @@ span.rp-out {
   body.rp-printing .rp-table thead th {
     position: static;
   }
-  body.rp-printing details > *:not(summary) {
-    display: block;
+  body.rp-printing .rp-chart,
+  body.rp-printing .rp-table tr {
+    break-inside: avoid;
   }
   body.rp-print-summary .rp-page:not(.rp-summary) {
     display: none;

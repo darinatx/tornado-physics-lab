@@ -54,6 +54,8 @@ export function showReport(report: Report, o: { onClose?: () => void; extraButto
     el.remove();
     document.body.classList.remove("rp-printing", "rp-print-summary");
     window.removeEventListener("keydown", onKey);
+    window.removeEventListener("beforeprint", beforePrint);
+    window.removeEventListener("afterprint", afterPrint);
     if (current?.el === el) current = null;
     o.onClose?.();
   };
@@ -64,14 +66,29 @@ export function showReport(report: Report, o: { onClose?: () => void; extraButto
   el.append(bar, body);
   document.body.appendChild(el);
 
-  function print(what: "summary" | "all") {
+  // Printing (Spec 16): every collapsible section open, so the paper has the full detail; the
+  // page goes back as it was afterwards. Works for the buttons and for the browser's own print
+  // (Cmd/Ctrl+P), which prints the whole report.
+  let wasOpen: Map<HTMLDetailsElement, boolean> | null = null;
+  const beforePrint = () => {
     document.body.classList.add("rp-printing");
+    if (wasOpen) return;
+    wasOpen = new Map();
+    for (const d of el.querySelectorAll("details")) {
+      wasOpen.set(d, d.open);
+      d.open = true;
+    }
+  };
+  const afterPrint = () => {
+    document.body.classList.remove("rp-printing", "rp-print-summary");
+    if (wasOpen) for (const [d, o] of wasOpen) d.open = o;
+    wasOpen = null;
+  };
+  window.addEventListener("beforeprint", beforePrint);
+  window.addEventListener("afterprint", afterPrint);
+  function print(what: "summary" | "all") {
+    beforePrint();
     document.body.classList.toggle("rp-print-summary", what === "summary");
-    const done = () => {
-      document.body.classList.remove("rp-printing", "rp-print-summary");
-      window.removeEventListener("afterprint", done);
-    };
-    window.addEventListener("afterprint", done);
     window.print();
   }
   const onKey = (e: KeyboardEvent) => {
