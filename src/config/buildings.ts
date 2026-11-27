@@ -113,18 +113,18 @@ export const PART_UNIT: Record<Part, string> = {
  */
 export const BASE_CAPACITY: Record<Part, number> = {
   siding: 425,
-  roofCover: 1671,
-  window: 2810,
+  roofCover: 1695,
+  window: 3156,
   /** Fixed, not calibrated: standard non-reinforced garage door, ~27 psf. */
   garage: 1300,
   /** Fixed, not calibrated: 8d nails at typical spacing, ~56 psf. */
   roofDeck: 2700,
-  anchorage: 2059,
-  roofBay: 984,
-  wallPanel: 945,
-  partition: 2379,
-  coreRoom: 3498,
-  sweep: 5550,
+  anchorage: 2097,
+  roofBay: 1014,
+  wallPanel: 950,
+  partition: 2383,
+  coreRoom: 3553,
+  sweep: 5580,
 };
 
 /**
@@ -180,11 +180,12 @@ export const CLASS_LABEL: Record<ConstructionClass, string> = {
 };
 
 export const CLASS_FACTORS: Record<ConstructionClass, Partial<Record<Part, number>>> = {
-  weak: { roofBay: 0.7, anchorage: 0.6, sweep: 0.6, wallPanel: 0.85, partition: 0.85, coreRoom: 0.85 },
+  // Calibrated in full town runs (Spec 03 v2.6, scripts/calibrate-town.ts): weak houses reach
+  // each DOD at DI 2's lower bound, strong houses at its upper bound, as the survey assumes
+  // (DMG-08, DMG-15). Garage door and deck factors are fixed engineering ratios (not calibrated).
+  weak: { siding: 0.67, roofCover: 0.6, window: 0.78, anchorage: 0.57, roofBay: 0.53, wallPanel: 0.66, partition: 0.64, coreRoom: 0.64, sweep: 0.62 },
   standard: {},
-  // Sweep: DI 2 rates well-built houses at the upper bound, 220 mph for DOD 10 against 200
-  // expected, so (220/200)² on the lateral pressure (Spec 03 v2.3).
-  strong: { roofBay: 1.6, anchorage: 1.6, sweep: 1.21, wallPanel: 1.3, partition: 1.3, coreRoom: 1.3, window: 1.4, garage: 1.5, roofDeck: 1.3 },
+  strong: { siding: 1.54, roofCover: 1.65, window: 2.17, garage: 1.5, roofDeck: 1.3, anchorage: 1.75, roofBay: 1.82, wallPanel: 1.47, partition: 1.43, coreRoom: 1.42, sweep: 1.22 },
 };
 
 /** Layout geometry (m). */
