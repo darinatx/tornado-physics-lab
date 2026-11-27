@@ -1,6 +1,6 @@
 # Phase 8 — Storm Report
 
-Status: In progress (started 2026-11-26 on `phase-8-storm-report`, from `main` after Phase 7's
+Status: In progress, slice B built and awaiting the demo review (started 2026-11-26 on `phase-8-storm-report`, from `main` after Phase 7's
 preliminary sign-off). Spec 16 approved (v1.0).
 
 ## Goal
@@ -67,6 +67,32 @@ Each of A–C ends with `npm run bench` against the saved baseline, noted below.
     `detail-core` 50.69 → 62.92 ms per step. The flagged sections (debris, other, detail) are
     Phase 7's, already recorded and explained in its slice notes (same end state: 1,296 houses
     damaged); the benchmark runs without the recorder, so slice A adds nothing there.
+
+- **Slice B — report page and summary** (2026-11-26). `buildReport` and the narrative
+  (`src/sim/report/report.ts`, `narrative.ts`, `format.ts`, `specDocs.ts`); the page
+  (`src/ui/report/`: `html.ts` renders the report as HTML with inline SVG maps and charts,
+  `view.ts` the overlay with sorting, map layers, point → row and print, `runControl.ts` Stop &
+  Report, Preview and the lifecycle-end stop); Run panel buttons; spec documents and the
+  commit bundled at build time for Methods. REP-01, REP-10 to REP-13 pass.
+  - Checked in the app (default EF4 wedge, seed 1): Preview mid-run (labeled preliminary, sim
+    keeps running), Stop & Report (sim frozen, scene and readout stay, Open report shown, speed
+    disabled), map point → its table row, column sorting, Close, Restart (everything cleared).
+    No console errors. The lifecycle-end stop is covered by REP-01 in the unit tests; not yet
+    watched in the app (a full lifecycle is 370 s).
+  - Fixed while checking: the report sat under the control panel; the maps framed the whole
+    track (damage was a corner cluster) and now frame the damage; EF band labels overlapped;
+    width in yards in the narrative; load/capacity printed with enough digits that a load just
+    over its capacity doesn't read as a tie.
+  - For the validation slice: impacts on houses run to about 400 per launched piece (973,538
+    in 74 s of the EF4 wedge, matching the sim's own counter), almost all on walls with no
+    effect. The report labels them as every contact the impact model resolved; whether Spec
+    10 counts repeated contacts of resting or sliding pieces is worth a look.
+  - Benchmark: `ef4-town` 8.05, `detail-core` 57.91 ms per step (slice A's run: 8.46 and
+    62.92), same fingerprints as slice A (`3486b6bd`, `5c536255`): the report changes no
+    physics and costs nothing while the sim runs without it. Flags unchanged (Phase 7's,
+    against the Phase 6 baseline).
+  - `verify:fast` once failed TERR-13 (the timing ratio) with the dev server and browser
+    running; it passed alone. That's BL-025, already logged.
 
 ## Exit criteria
 

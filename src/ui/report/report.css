@@ -1,0 +1,456 @@
+/* Storm report page (Spec 16): paper-like, print-ready. */
+.rp-overlay {
+  --rp-ink: #1d232a;
+  --rp-mute: #5c6670;
+  --rp-line: #d5dadf;
+  --rp-paper: #fbfaf7;
+  --rp-accent: #8c2f1b;
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(8, 10, 13, 0.82);
+  color: var(--rp-ink);
+}
+.rp-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #15191f;
+  color: #e6ebf1;
+  font: 13px system-ui, sans-serif;
+  flex-wrap: wrap;
+}
+.rp-bar-title {
+  flex: 1;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.rp-bar button,
+.rp-bar select {
+  font: inherit;
+  color: #e6ebf1;
+  background: #262c35;
+  border: 1px solid #3a424d;
+  border-radius: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.rp-bar button:hover {
+  background: #323a45;
+}
+.rp-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 24px 16px 60px;
+}
+.rp-doc {
+  max-width: 960px;
+  margin: 0 auto;
+  font: 14px/1.5 Georgia, "Times New Roman", serif;
+}
+.rp-page {
+  background: var(--rp-paper);
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  padding: 18px 36px 30px;
+  margin-bottom: 22px;
+}
+.rp-mark {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font: 600 10.5px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.06em;
+  color: var(--rp-accent);
+  border-bottom: 1px solid var(--rp-line);
+  padding-bottom: 6px;
+  margin-bottom: 14px;
+}
+.rp-mark span:nth-child(2) {
+  color: var(--rp-mute);
+  font-weight: 400;
+}
+.rp-head h1 {
+  font-size: 26px;
+  margin: 4px 0 2px;
+}
+.rp-sub {
+  color: var(--rp-mute);
+  margin: 0 0 12px;
+}
+.rp-page h2 {
+  font-size: 20px;
+  margin: 4px 0 12px;
+}
+.rp-page h3 {
+  font-size: 15px;
+  margin: 18px 0 8px;
+}
+.rp-nums {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+.rp-num {
+  border: 1px solid var(--rp-line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: #fff;
+}
+.rp-num b {
+  display: block;
+  font: 700 26px/1.1 system-ui, sans-serif;
+}
+.rp-num span {
+  font: 12px system-ui, sans-serif;
+  color: var(--rp-mute);
+}
+.rp-num-ef b {
+  color: var(--rp-accent);
+}
+.rp-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.rp-block {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  margin: 0;
+  font: 13px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.rp-block dt {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  padding-top: 1px;
+}
+.rp-block dd {
+  margin: 0;
+}
+.rp-block-tight {
+  margin-bottom: 14px;
+}
+.rp-narr p {
+  margin: 0 0 8px;
+}
+.rp-narr-short {
+  margin-top: 14px;
+  border-top: 1px solid var(--rp-line);
+  padding-top: 10px;
+}
+.rp-map {
+  display: block;
+  border: 1px solid var(--rp-line);
+  border-radius: 4px;
+  font: 11px system-ui, sans-serif;
+}
+.rp-map-bg {
+  fill: #eef0ea;
+}
+.rp-map-house {
+  stroke: #b9bfc4;
+  stroke-linecap: round;
+  fill: none;
+}
+.rp-track {
+  fill: none;
+  stroke: #1d232a;
+  stroke-width: 1.6;
+  stroke-dasharray: 6 4;
+}
+.rp-landing {
+  stroke: #6e5a3b;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.55;
+}
+.rp-nodamage {
+  fill: #fff;
+  stroke: #7d8790;
+  stroke-width: 0.8;
+}
+.rp-pt {
+  stroke: #1d232a;
+  stroke-width: 0.5;
+}
+.rp-pt[data-point] {
+  cursor: pointer;
+}
+.rp-pt[data-point]:hover {
+  stroke-width: 2;
+}
+.rp-center circle {
+  fill: none;
+  stroke: #1d232a;
+  stroke-width: 1.4;
+}
+.rp-center line,
+.rp-scale line {
+  stroke: #1d232a;
+  stroke-width: 1.4;
+}
+.rp-north path {
+  fill: #1d232a;
+}
+.rp-north text,
+.rp-scale text,
+.rp-map-label {
+  fill: #1d232a;
+  font-weight: 600;
+}
+.rp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font: 11.5px system-ui, sans-serif;
+  color: var(--rp-mute);
+  margin: 6px 0 0;
+  align-items: center;
+}
+.rp-legend b {
+  color: var(--rp-ink);
+}
+.rp-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 10px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  border-radius: 2px;
+}
+.rp-legend i.dot {
+  border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  border: 0.5px solid #1d232a;
+}
+.rp-legend i.nd {
+  background: #fff;
+  border-color: #7d8790;
+}
+.rp-legend i.line {
+  height: 0;
+  border-top: 2px dashed #1d232a;
+  border-radius: 0;
+}
+.rp-toggles {
+  display: flex;
+  gap: 18px;
+  font: 13px system-ui, sans-serif;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.rp-hint {
+  color: var(--rp-mute);
+}
+.rp-table-wrap {
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid var(--rp-line);
+}
+.rp-table {
+  border-collapse: collapse;
+  width: 100%;
+  font: 12px/1.35 system-ui, sans-serif;
+}
+.rp-table th,
+.rp-table td {
+  border-bottom: 1px solid var(--rp-line);
+  padding: 3px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.rp-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f0eee8;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rp-table thead th[aria-sort="ascending"]::after {
+  content: " ▲";
+}
+.rp-table thead th[aria-sort="descending"]::after {
+  content: " ▼";
+}
+#rp-table .rp-table td {
+  white-space: nowrap;
+}
+#rp-table .rp-table td:nth-child(3) {
+  white-space: normal;
+  min-width: 210px;
+}
+.rp-table tr.rp-hl td {
+  background: #ffe9a8;
+}
+.rp-table td.rp-out,
+span.rp-out {
+  background: #f7d9d2;
+}
+.rp-dod {
+  border-left: 5px solid var(--dod) !important;
+  font-weight: 600;
+}
+.rp-small {
+  width: auto;
+  min-width: 46%;
+}
+.rp-small thead th {
+  position: static;
+  cursor: default;
+}
+.rp-two {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.rp-two > * {
+  flex: 1 1 380px;
+}
+.rp-seq {
+  border: 1px solid var(--rp-line);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin: 6px 0;
+  background: #fff;
+}
+.rp-seq summary {
+  cursor: pointer;
+  font: 13px system-ui, sans-serif;
+}
+.rp-seq table {
+  margin-top: 6px;
+}
+.rp-chart {
+  margin: 8px 0 14px;
+}
+.rp-chart figcaption {
+  font: 600 13px system-ui, sans-serif;
+}
+.rp-chart small {
+  color: var(--rp-mute);
+  font-weight: 400;
+}
+.rp-chart svg {
+  font: 10.5px system-ui, sans-serif;
+  fill: var(--rp-mute);
+}
+.rp-chart-legend span {
+  margin-left: 12px;
+  font-weight: 400;
+}
+.rp-chart-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  margin-right: 4px;
+  vertical-align: 3px;
+}
+.rp-grid {
+  stroke: #e3e6e9;
+}
+.rp-axis {
+  stroke: #8a929c;
+}
+.rp-band {
+  fill: var(--rp-mute);
+  font-weight: 600;
+}
+.rp-phase-text {
+  fill: #fff;
+  font-weight: 600;
+}
+.rp-hist {
+  fill: #8c6d46;
+}
+.rp-hbar {
+  display: inline-block;
+  height: 9px;
+  background: #b86b52;
+  border-radius: 2px;
+}
+.rp-sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.rp-meta th {
+  white-space: nowrap;
+  width: 1%;
+}
+.rp-simp details {
+  margin: 4px 0;
+}
+.rp-simp summary {
+  cursor: pointer;
+  font: 600 13px system-ui, sans-serif;
+}
+.rp-simp ul {
+  margin: 4px 0 8px;
+}
+.rp-chart-empty {
+  color: var(--rp-mute);
+  font-style: italic;
+  margin: 8px 0;
+}
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.5in;
+  }
+  body.rp-printing > *:not(.rp-overlay) {
+    display: none !important;
+  }
+  body.rp-printing {
+    overflow: visible !important;
+    height: auto !important;
+    background: #fff !important;
+  }
+  body.rp-printing .rp-overlay {
+    position: static;
+    background: #fff;
+    display: block;
+  }
+  body.rp-printing .rp-scroll {
+    overflow: visible;
+    padding: 0;
+  }
+  body.rp-printing .rp-noprint {
+    display: none !important;
+  }
+  body.rp-printing .rp-page {
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
+    break-after: page;
+    background: #fff;
+  }
+  body.rp-printing .rp-table-wrap {
+    max-height: none;
+    overflow: visible;
+  }
+  body.rp-printing .rp-table thead th {
+    position: static;
+  }
+  body.rp-printing details > *:not(summary) {
+    display: block;
+  }
+  body.rp-print-summary .rp-page:not(.rp-summary) {
+    display: none;
+  }
+}

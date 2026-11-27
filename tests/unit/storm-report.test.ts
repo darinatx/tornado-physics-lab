@@ -1,8 +1,10 @@
-import { beforeAll, describe, expect, test } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { DI2_DODS } from "../../src/config/buildings";
 import { REPORT } from "../../src/config/report";
 import { MS_PER_MPH } from "../../src/config/units";
-import { efFromDamage } from "../../src/core/damage/building";
+import { allFailures, efFromDamage } from "../../src/core/damage/building";
 import { efRating } from "../../src/core/wind/efScale";
 import type { EFRating } from "../../src/core/wind/efScale";
 import { windAt } from "../../src/core/wind/windField";
@@ -14,6 +16,19 @@ import { surveyRows } from "../../src/sim/report/table";
 import { activeRadius, StormRecorder } from "../../src/sim/stormRecord";
 import type { BuildingRecord, StormRecord, TrackSample } from "../../src/sim/stormRecord";
 import { defaultParams } from "../../src/sim/types";
+import { buildReport } from "../../src/sim/report/report";
+import type { Report } from "../../src/sim/report/report";
+import { narrative, placeOf } from "../../src/sim/report/narrative";
+import { distText, placeText, speedText } from "../../src/sim/report/format";
+import { parseSpecDoc } from "../../src/sim/report/specDocs";
+import { createReportControl } from "../../src/ui/report/runControl";
+import { renderReport } from "../../src/ui/report/html";
+
+const SPEC_DIR = join(import.meta.dirname, "..", "..", "docs", "specs");
+const SPECS = readdirSync(SPEC_DIR)
+  .filter((f) => f.endsWith(".md"))
+  .sort()
+  .map((f) => parseSpecDoc(f, readFileSync(join(SPEC_DIR, f), "utf8")));
 
 /** A mature tornado passing a small patch of town, heading east. */
 const PASS = { heading: 0, translationSpeed: 18, vPeak: 72, rMax: 90, tUp: 0, tMature: 600, tRope: 0 } as const;
@@ -300,7 +315,7 @@ describe("Spec 16 — storm report: record and survey", () => {
       expect(row.dod).toBe(b.dod);
       expect(row.description).toBe(d.text);
       expect(row.surveyMph).toBe(est.mph);
-      expect(row.ef).toBe(est.ef === null ? "—" : `EF${est.ef}`);
+      expect(row.ef).toBe(est.ef === null ? "<EF0" : `EF${est.ef}`);
       expect(row.rangeMph).toBe(`${d.lower}–${d.upper}`);
       expect(row.true10Mph).toBeCloseTo(b.peak10 / MS_PER_MPH, 1);
       expect(row.trueRoofMph).toBeCloseTo(b.peakRoof / MS_PER_MPH, 1);
@@ -311,5 +326,182 @@ describe("Spec 16 — storm report: record and survey", () => {
     }
     // Rows run along the track (P1 first).
     for (let i = 1; i < rows.length; i++) expect(rows[i]!.along).toBeGreaterThanOrEqual(rows[i - 1]!.along);
+  });
+
+  // ---------------------------------------------------------------------------------------------
+  // Slice B: ending the run, the report and the summary.
+
+  test("REP-01: Stop & Report stops the sim and keeps the scene; the lifecycle's end stops the run and offers the report", () => {
+    const sim = createSim(PASS_CFG, 11, PASS);
+    let offers = 0;
+    const ctl = createReportControl(sim, { autoRepeat: () => false, specs: SPECS });
+    ctl.onOffer = (on) => (offers += on ? 1 : 0);
+    while (sim.time < 8 - 1e-9) sim.advance(1 / 60);
+    const before = JSON.stringify([sim.snapshot.step, sim.snapshot.tornado.center, sim.world.buildings.map((b) => [b.dod, b.rev]), sim.debris.pieces.map((p) => [p.pos.x, p.pos.y, p.pos.z])]);
+    const report = ctl.stopAndReport();
+    expect(sim.stopped).toBe(true);
+    expect(ctl.offered).toBe(true);
+    expect(offers).toBe(1);
+    expect(report.preliminary).toBe(false);
+    expect(report.survey.points.length).toBeGreaterThan(0);
+    // No further physics steps, whatever the time scale; the frozen state stays readable.
+    const step = sim.snapshot.step;
+    sim.setTimeScale(4);
+    for (let i = 0; i < 30; i++) {
+      const f = sim.advance(0.1);
+      expect(f.curr).toBe(f.prev);
+      expect(f.alpha).toBe(0);
+    }
+    expect(sim.snapshot.step).toBe(step);
+    expect(JSON.stringify([sim.snapshot.step, sim.snapshot.tornado.center, sim.world.buildings.map((b) => [b.dod, b.rev]), sim.debris.pieces.map((p) => [p.pos.x, p.pos.y, p.pos.z])])).toBe(before);
+    // The inspector's lookups still work on the frozen town.
+    const b = sim.world.buildings.find((x) => x.dod > 0)!;
+    expect(sim.world.buildingAt(b.x, b.z)).toBe(b);
+    // The report can be opened again; it is the same final report.
+    expect(JSON.stringify(ctl.current())).toBe(JSON.stringify(report));
+    // Restart leaves the stopped state and the offer.
+    sim.reset();
+    ctl.reset();
+    expect(sim.stopped).toBe(false);
+    expect(ctl.offered).toBe(false);
+    sim.advance(0.1);
+    expect(sim.snapshot.step).toBeGreaterThan(0);
+    sim.dispose();
+
+    // The lifecycle's end: a short-lived tornado over open ground stops the run by itself.
+    const life = { tUp: 2, tMature: 3, tRope: 2 };
+    const short = createSim({ buildings: false }, 4, { ...PASS, ...life });
+    const auto = createReportControl(short, { autoRepeat: () => false });
+    let offered = false;
+    auto.onOffer = (on) => (offered = on);
+    for (let i = 0; i < 20 * 60 && !short.stopped; i++) {
+      short.advance(1 / 60);
+      auto.tick();
+    }
+    expect(short.stopped).toBe(true);
+    expect(offered).toBe(true);
+    expect(short.snapshot.phase).toBe("dissipated");
+    expect(short.time).toBeGreaterThan(7 + REPORT.endDelay);
+    expect(short.time).toBeLessThan(7 + REPORT.endDelay + 0.1);
+    expect(auto.current().preliminary).toBe(false);
+    // With repeat on it never stops (the app restarts it instead).
+    const rep = createSim({ buildings: false }, 4, { ...PASS, ...life });
+    const ctlRep = createReportControl(rep, { autoRepeat: () => true });
+    for (let i = 0; i < 20 * 60; i++) {
+      rep.advance(1 / 60);
+      ctlRep.tick();
+    }
+    expect(rep.stopped).toBe(false);
+    expect(ctlRep.offered).toBe(false);
+  }, 60_000);
+
+  describe("the report", () => {
+    let R: Report;
+    beforeAll(() => {
+      R = buildReport(recA, surveyA, { preliminary: false, specs: SPECS });
+    });
+
+    test("REP-10: failure sequences list each chosen house's failures in time order, matching the records", () => {
+      const chosen = surveyA.points.filter((p) => p.ef === surveyA.rating);
+      expect(R.failures.houses.length).toBe(Math.min(10, chosen.length));
+      expect(R.failures.houses.length).toBeGreaterThan(0);
+      for (const h of R.failures.houses) {
+        const b = recA.buildings.find((x) => x.id === h.building)!;
+        const p = surveyA.points.find((x) => x.id === h.building)!;
+        expect(p.ef).toBe(surveyA.rating);
+        expect(h.steps.length).toBe(b.failures.length);
+        expect(h.steps.length).toBeGreaterThan(0);
+        // The house's own component failures (Spec 03) are all there.
+        const sim = A.sim.world.buildings[b.index]!;
+        const own = sim.detail ? [] : allFailures(sim);
+        expect(b.failures.filter((f) => !f.detail).length).toBe(own.length);
+        for (let i = 0; i < h.steps.length; i++) {
+          const s = h.steps[i]!;
+          const f = b.failures[i]!;
+          if (i > 0) expect(s.time).toBeGreaterThanOrEqual(h.steps[i - 1]!.time);
+          expect(s.time).toBe(f.time);
+          expect(s.load).toBe(f.load);
+          expect(s.capacity).toBe(f.capacity);
+          expect(s.cause).toBe(f.cause);
+          if (s.cause === "wind") expect(s.load).toBeGreaterThan(s.capacity);
+          if (s.cause === "debris") expect(s.missile).toBeTruthy();
+        }
+      }
+      // Houses in order: most damaged first.
+      for (let i = 1; i < R.failures.houses.length; i++) expect(R.failures.houses[i]!.dod).toBeLessThanOrEqual(R.failures.houses[i - 1]!.dod);
+      // First-to-fail counts cover every damaged house with a failure.
+      const withFail = recA.buildings.filter((b) => b.dod >= 1 && b.failures.length).length;
+      expect(R.failures.firstToFail.reduce((n, x) => n + x.count, 0)).toBe(withFail);
+    });
+
+    test("REP-11: debris figures match the record", () => {
+      const P = recA.debris.pieces;
+      const D = R.debris;
+      expect(D.launched).toBe(P.length);
+      expect(D.byKind.reduce((n, k) => n + k.count, 0)).toBeCloseTo(P.reduce((n, p) => n + p.represents, 0), 6);
+      for (const k of D.byKind) expect(k.count).toBeCloseTo(P.filter((p) => p.kind === k.kind).reduce((n, p) => n + p.represents, 0), 6);
+      const lofted = P.filter((p) => p.fate === "lofted");
+      if (lofted.length) expect(D.heaviestLofted!.mass).toBe(Math.max(...lofted.map((p) => p.mass)));
+      else expect(D.heaviestLofted).toBeNull();
+      const landed = P.filter((p) => p.fate === "landed");
+      expect(landed.length).toBeGreaterThan(0);
+      expect(D.farthest!.distance).toBeCloseTo(Math.max(...landed.map((p) => Math.hypot(p.endX - p.x, p.endZ - p.z))), 9);
+      expect(D.travel.counts.reduce((a, b) => a + b, 0)).toBeCloseTo(landed.reduce((n, p) => n + p.represents, 0), 6);
+      expect(D.impacts).toEqual(recA.debris.impacts.bySurface);
+      expect(D.impactsTotal).toBe(Object.values(recA.debris.impacts.bySurface).reduce((n, t) => n + t.hits, 0));
+      expect(D.impactsTotal).toBeGreaterThan(0);
+      expect(D.loftedMass).toBe(recA.debris.massLofted);
+      expect(D.debrisOnly).toBe(recA.buildings.filter((b) => b.dod >= 1 && b.failures.length > 0 && b.failures.every((f) => f.cause === "debris")).length);
+    });
+
+    test("REP-12: the narrative names the rating, peak wind, path length, worst-hit area and the end, with no randomness", () => {
+      const spy = vi.spyOn(Math, "random");
+      const text = narrative(recA, surveyA).join(" ");
+      const again = narrative(recA, surveyA).join(" ");
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+      expect(again).toBe(text);
+      expect(text).toContain(`EF${surveyA.rating}`);
+      expect(text).toContain(speedText(surveyA.ratingMph));
+      expect(text).toContain(distText(surveyA.path.survey.length));
+      const rp = surveyA.points[surveyA.ratingPoint!]!;
+      expect(text).toContain(`The worst damage was ${placeText(placeOf(rp.x, rp.z, recA.townCenter))}`);
+      const last = recA.track[recA.track.length - 1]!;
+      expect(text).toContain(placeText(placeOf(last.x, last.z, recA.townCenter)));
+      expect(text).toContain("still on the ground");
+      // A run that ended at dissipation says so.
+      const ended = { ...recA, track: [...recA.track, { ...last, t: last.t + 1, phase: "dissipated", vMax: 0 }] };
+      expect(narrative(ended, surveyA).join(" ")).toContain("roped out and dissipated");
+    });
+
+    test("REP-13: the summary holds the block, map, narrative and four headline numbers, matching the full report", () => {
+      expect(R.summary.block).toEqual(R.event);
+      expect(R.summary.headline).toEqual({ rating: R.event.rating, peakMph: R.event.ratingMph, destroyed: R.stats.destroyed, pathLengthM: R.event.pathLengthM });
+      expect(R.summary.narrative.length).toBeGreaterThanOrEqual(3);
+      expect(R.summary.narrative.length).toBeLessThanOrEqual(5);
+      for (const s of R.summary.narrative) expect(R.narrative).toContain(s);
+      const html = renderReport(R);
+      const summary = html.slice(html.indexOf('id="rp-summary"'), html.indexOf('id="rp-event"'));
+      expect(summary).toContain('class="rp-block"');
+      expect(summary).toContain('class="rp-map"');
+      expect(summary).toContain("rp-contour");
+      for (const s of R.summary.narrative) expect(summary).toContain(s.replace(/'/g, "&#39;"));
+      expect(summary).toContain(`EF${R.event.rating}`);
+      expect(summary).toContain(`${Math.round(R.event.ratingMph)} mph`);
+      expect(summary).toContain(`${R.stats.destroyed.toLocaleString("en-US")}</b>`);
+      expect(summary).toContain(`${(R.event.pathLengthM / 1609.344).toFixed(2)} mi`);
+      // The full report has every section, with the summary first.
+      const ids = ["rp-summary", "rp-event", "rp-narrative", "rp-map", "rp-table", "rp-timeline", "rp-failures", "rp-debris", "rp-stats", "rp-methods"];
+      let at = -1;
+      for (const id of ids) {
+        const k = html.indexOf(`id="${id}"`);
+        expect(k, id).toBeGreaterThan(at);
+        at = k;
+      }
+      // One table row per survey point.
+      expect((html.match(/<tr id="rp-row-/g) ?? []).length).toBe(surveyA.points.length);
+      // Methods lists the specs' simplifications.
+      expect(R.methods.simplifications.length).toBeGreaterThan(5);
+    });
   });
 });

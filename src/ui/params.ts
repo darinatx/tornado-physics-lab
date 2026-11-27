@@ -16,6 +16,10 @@ export interface Panel {
   readonly state: PanelState;
   /** The tornado is waiting to be spawned (INST-17). */
   readonly waiting: boolean;
+  /** The run was stopped (Spec 16): sim speed disabled, Open report shown until a restart. */
+  setStopped(stopped: boolean): void;
+  /** The chosen preset's id, or null for custom settings. */
+  readonly preset: string | null;
   dispose(): void;
 }
 
@@ -29,7 +33,16 @@ function tip(c: Controller, text: string): Controller {
 export function createPanel(
   sim: Sim,
   onChange: (state: PanelState) => void,
-  actions: { pickDetailSpot?: () => void; viewDetailSpot?: () => void } = {},
+  actions: {
+    pickDetailSpot?: () => void;
+    viewDetailSpot?: () => void;
+    /** Storm report (Spec 16). */
+    stopAndReport?: () => void;
+    previewReport?: () => void;
+    openReport?: () => void;
+    /** After a restart or a new preset. */
+    onRestart?: () => void;
+  } = {},
 ): Panel {
   const gui = new GUI({ title: "Tornado controls", width: 300 });
   const values = { ...sim.params } as Record<string, unknown>;
@@ -68,6 +81,7 @@ export function createPanel(
     sim.setParams(next);
     sim.reset();
     gate.wait();
+    actions.onRestart?.();
     for (const c of controllers) c.updateDisplay();
     descEl.textContent = p.description;
     applyingPreset = false;
@@ -83,7 +97,7 @@ export function createPanel(
     descEl.textContent = "Your own settings.";
   };
   tip(
-    gui.add({ restart: () => (sim.reset(), gate.wait()) }, "restart").name("↻ Restart tornado"),
+    gui.add({ restart: () => (sim.reset(), gate.wait(), actions.onRestart?.()) }, "restart").name("↻ Restart tornado"),
     "Start this tornado over from the beginning. It waits until you spawn it.",
   );
   if (actions.pickDetailSpot)
@@ -177,7 +191,7 @@ export function createPanel(
   const run = { speed: 1 };
   const gateSpeed = (k: number) => gate.setSpeed(k);
   const runFolder = gui.addFolder("Run");
-  tip(
+  const speedCtl = tip(
     runFolder
       .add(run, "speed", Object.fromEntries(TIME_SCALES.map((k) => [k === 0 ? "Paused" : `${k}×`, k])))
       .name("Sim speed")
@@ -186,6 +200,27 @@ export function createPanel(
   );
   tip(runFolder.add(state, "follow").name("Camera follows tornado").listen().onChange(emit), "Keep the camera centered on the tornado.");
   tip(runFolder.add(state, "autoRepeat").name("Repeat when it dissipates"), "Start the tornado again a few seconds after it dies.");
+  // Storm report (Spec 16).
+  let openCtl: Controller | null = null;
+  if (actions.stopAndReport)
+    tip(
+      runFolder.add({ stop: actions.stopAndReport }, "stop").name("⏹ Stop & Report"),
+      "End the run here and open its storm report: a damage survey rated by the EF method from the damage alone, with the sim's true wind beside each rating. The scene stays frozen so you can still look around and inspect houses.",
+    );
+  if (actions.previewReport)
+    tip(
+      runFolder.add({ preview: actions.previewReport }, "preview").name("📋 Preview report"),
+      "Build a preliminary report of the storm so far, without stopping it.",
+    );
+  if (actions.openReport) {
+    openCtl = tip(runFolder.add({ open: actions.openReport }, "open").name("📄 Open report"), "Open the storm report for the run that just ended.");
+    openCtl.hide();
+  }
+  const setStopped = (stopped: boolean) => {
+    speedCtl.enable(!stopped);
+    if (stopped) openCtl?.show();
+    else openCtl?.hide();
+  };
 
   applyPreset(DEFAULT_PRESET_ID);
 
@@ -194,6 +229,10 @@ export function createPanel(
     /** Whether the tornado is waiting to be spawned (INST-17). */
     get waiting() {
       return gate.waiting;
+    },
+    setStopped,
+    get preset() {
+      return presetChoice.preset === CUSTOM ? null : presetChoice.preset;
     },
     dispose: () => gui.destroy(),
   };

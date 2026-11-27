@@ -38,7 +38,8 @@ export const SURVEY_COLUMNS: readonly (keyof SurveyRow)[] = [
   "outsideBounds", "firstDamagedS",
 ];
 
-const efText = (e: EFRating | null) => (e === null ? "—" : `EF${e}`);
+/** EF of a speed; below EF0 (65 mph) reads "<EF0", as a DOD's lower bound can be. */
+const efText = (e: EFRating | null) => (e === null ? "<EF0" : `EF${e}`);
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
 /** Survey points in along-track order, numbered P1… (the ID the map and table share). */

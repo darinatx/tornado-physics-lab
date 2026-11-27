@@ -60,7 +60,9 @@ export interface FailureEntry {
   capacity: number;
   /** Roof-height wind when it failed (mph). */
   mph: number;
-  cause: "wind" | "debris";
+  /** The wind (net pressure on the part beat its capacity), a debris impact, or a roof bay that
+   *  came down because a bearing wall under it fell (no wind load broke it). */
+  cause: "wind" | "debris" | "collapse";
   /** Detail-zone connection failure (Spec 09). */
   detail?: true;
   missile?: MissileInfo;
@@ -455,7 +457,7 @@ export class StormRecorder {
         load: f.load,
         capacity: f.capacity,
         mph: f.mph,
-        cause: f.cause === "debris" ? "debris" : "wind",
+        cause: f.cause === "debris" ? "debris" : f.part === "roofBay" && f.sign === -1 ? "collapse" : "wind",
         ...(f.missile ? { missile: { ...f.missile } } : {}),
       }));
       for (const f of this.detailFails[i] ?? []) failures.push({ ...f });

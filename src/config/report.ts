@@ -30,6 +30,9 @@ export const REPORT = {
   /** Contour margin (m) around the outermost points of a section, so every point lies strictly
    *  inside its contour (half a swath cell). */
   contourMargin: 5,
+  /** After the lifecycle ends, the run stops this long later (s, sim time), so the last debris
+   *  lands first: the same wait as repeat (Spec 07). */
+  endDelay: 3,
 } as const;
 
 /** Compass points for positions from the town center. */

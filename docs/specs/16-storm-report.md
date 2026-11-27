@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.1) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.2) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -20,8 +20,9 @@ user can see where the standard method rates too high or too low.
 
 - A **Stop & Report** control in the Run panel. It stops the sim (no more physics steps), keeps
   the frozen scene viewable (camera, inspector and probe still work) and opens the report.
-- When the tornado's lifecycle ends (Spec 08), the run stops by itself and the report is
-  offered (a button, not a pop-up). Repeat mode (Spec 07) skips the offer.
+- When the tornado's lifecycle ends (Spec 08), the run stops by itself 3 s of sim time later
+  (the same wait as repeat, so the last debris lands) and the report is offered (an Open
+  report button, not a pop-up). Repeat mode (Spec 07) skips the offer.
 - **Restart** after a report starts a new run; the report stays open until closed, and can be
   saved first.
 - The report can also be built mid-run without stopping (**Preview report**), labeled
@@ -99,11 +100,13 @@ In order (the summary page first):
 6. **Intensity timeline:** charts of peak wind with EF bands, R_max, forward speed and
    lifecycle phase over time, and damaged buildings over time.
 7. **How the houses failed:** for the most damaged houses (every house at the rated EF, up to
-   10), the failure sequence in order: time, part, wind, load against capacity, cause (wind,
-   pressure, debris impact). Then the failure modes across the town: how often each part was
+   10), the failure sequence in order: time, part, roof-height wind, load against capacity,
+   cause (wind: the net pressure beat the part's capacity; debris impact, with its missile;
+   or a roof bay that fell with its bearing wall, which no wind load broke). Then the failure modes across the town: how often each part was
    the first to fail, and which cascades led to the highest DODs (Spec 03).
 8. **Debris:** counts by kind, lofted mass, heaviest piece lofted, farthest travel and its
-   piece, a travel-distance histogram, impacts by surface and result, buildings damaged by
+   piece, a travel-distance histogram, impacts by surface and result (tallied in the record,
+   not kept one by one: a strong pass resolves millions of contacts), buildings damaged by
    debris alone.
 9. **Statistics:** buildings by DOD, by EF, share destroyed (DOD ≥ 8), damaged area.
 10. **Methods and limitations:** how the survey was rated, the true-wind definition, the
@@ -113,7 +116,10 @@ In order (the summary page first):
 ### Summary
 
 One page: the event summary block, a small track map with EF contours, a 3–5 sentence
-narrative, and four headline numbers (rating, peak wind, buildings destroyed, path length).
+narrative (the rating, path, worst damage and end sentences of the full narrative), and four
+headline numbers (rating, peak wind, buildings destroyed, path length). The maps frame the
+damage and the true swath (the whole track only when nothing was hit). Path widths are given in
+yards with metres, as surveys give them.
 Printing the report puts the summary on page 1; **Print summary** prints it alone.
 
 ### Look and labeling
@@ -250,6 +256,10 @@ function showReport(report: Report): void;
 
 ## Changelog
 
+- v1.2 (2026-11-26, slice B): the run stops 3 s after the lifecycle ends (the repeat wait, so
+  debris lands); failure causes are wind, debris impact or a bay falling with its wall (the
+  model has no separate "pressure" failure: wind failures are net pressure); impacts tallied;
+  summary narrative sentences and map framing stated; widths in yards.
 - v1.1 (2026-11-26, slice A, after merging BL-021 from `main`): the track peak, swath and
   building 10 m peaks are on the open-terrain basis, like the EF readout (Spec 17 v1.1).
 - v1.0 (2026-11-26, Phase 8 start): approved. The true wind is the field's 10 m peak with no
