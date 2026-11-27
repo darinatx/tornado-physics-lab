@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.5) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.6) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -122,7 +122,10 @@ In order (the summary page first):
 One page: the event summary block, a small track map with EF contours, a 3–5 sentence
 narrative (the rating, path, worst damage and end sentences of the full narrative), and four
 headline numbers (rating, peak wind, buildings destroyed, path length). The maps frame the
-damage and the true swath (the whole track only when nothing was hit). Path widths are given in
+damage (the survey points; the swath when nothing was hit, the track when the swath is empty
+too), so the contours and points are big enough to read; contour outlines are drawn over the
+points with a light casing, and the contours, points, true swath and debris landings each
+have a checkbox. Path widths are given in
 yards with metres, as surveys give them.
 Printing the report puts the summary on page 1; **Print summary** prints it alone.
 
@@ -269,6 +272,9 @@ function showReport(report: Report): void;
 
 ## Changelog
 
+- v1.6 (2026-11-26, the user's demo review): the maps frame the survey points (not the whole
+  swath, which squeezed the damage into a corner); contour outlines over the points with a
+  light casing, smaller points, checkboxes for contours and points.
 - v1.5 (2026-11-26, slice C, REP-15): the wind sampling interval follows the missed-peak bound
   instead of every damage step; debris heights and landings read every 0.25 s (new pieces every
   debris step). The recorder went from 12.8% to about 1% of the EF4 pass's physics step.

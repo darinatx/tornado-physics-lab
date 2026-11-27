@@ -245,19 +245,21 @@ function mapData(record: StormRecord, survey: Survey, rows: SurveyRow[]): MapDat
     z0 = Math.min(z0, z);
     z1 = Math.max(z1, z);
   };
-  // Frame the damage and the true swath; the track only frames the map when nothing was hit.
+  // Frame the damage (the survey points), so the contours and points are big enough to read; the
+  // true swath and the track may run off the edge. With no damage, the swath; with no swath
+  // either, the track.
   for (const p of points) grow(p.x, p.z);
-  for (const q of survey.noDamage) grow(q.x, q.z);
+  if (!points.length)
+    for (const q of swath) {
+      grow(q.x, q.z);
+      grow(q.x + q.w, q.z + q.h);
+    }
   if (!points.length && !swath.length) for (const t of record.track.filter((t) => t.vMax > 0)) grow(t.x, t.z);
-  for (const s of swath) {
-    grow(s.x, s.z);
-    grow(s.x + s.w, s.z + s.h);
-  }
   if (!Number.isFinite(x0)) {
     grow(record.townCenter.x - 500, record.townCenter.z - 500);
     grow(record.townCenter.x + 500, record.townCenter.z + 500);
   }
-  const pad = Math.max(x1 - x0, z1 - z0) * 0.1 + 50;
+  const pad = Math.max(x1 - x0, z1 - z0) * 0.12 + 80;
   return {
     bounds: { x0: x0 - pad, z0: z0 - pad, x1: x1 + pad, z1: z1 + pad },
     track: record.track.filter((t) => t.vMax > 0).map((t) => ({ x: t.x, z: t.z })),

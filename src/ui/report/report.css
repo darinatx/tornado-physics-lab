@@ -180,7 +180,7 @@
 }
 .rp-pt {
   stroke: #1d232a;
-  stroke-width: 0.5;
+  stroke-width: 0.6;
 }
 .rp-pt[data-point] {
   cursor: pointer;

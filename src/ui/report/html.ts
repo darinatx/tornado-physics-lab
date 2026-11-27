@@ -56,7 +56,8 @@ export function mapSvg(m: MapData, o: MapOptions): string {
   const X = (x: number) => (ox + (x - x0) * k).toFixed(1);
   const Y = (z: number) => (oy + (z - z0) * k).toFixed(1);
   const pts = (p: { x: number; z: number }[]) => p.map((q) => `${X(q.x)},${Y(q.z)}`).join(" ");
-  const r = Math.max(1.6, Math.min(4, 9 * k));
+  // Survey points small enough to leave the contours readable around them.
+  const r = Math.max(1.3, Math.min(2.6, 6 * k));
   const parts: string[] = [];
   parts.push(`<rect x="0" y="0" width="${o.width}" height="${o.height}" class="rp-map-bg"/>`);
   // Houses outside the survey, faint, for the town's shape.
@@ -66,17 +67,30 @@ export function mapSvg(m: MapData, o: MapOptions): string {
   for (const s of m.swath) parts.push(`<rect x="${X(s.x)}" y="${Y(s.z)}" width="${(s.w * k + 0.3).toFixed(1)}" height="${(s.h * k + 0.3).toFixed(1)}" fill="${efColor(s.ef)}" fill-opacity="0.45"/>`);
   for (const c of m.contours.true) for (const p of c.polygons) parts.push(`<polygon points="${pts(p)}" fill="none" stroke="${efColor(c.ef)}" stroke-width="1" stroke-dasharray="4 3"/>`);
   parts.push(`</g>`);
-  // Survey EF contours, weakest first so stronger ones sit on top.
-  for (const c of m.contours.survey) for (const p of c.polygons) parts.push(`<polygon class="rp-contour" points="${pts(p)}" fill="${efColor(c.ef)}" fill-opacity="0.16" stroke="${efColor(c.ef)}" stroke-width="1.6"/>`);
+  // Survey EF contours: fills under the points (weakest first, so stronger bands sit on top);
+  // their outlines go over the points, below.
+  parts.push(`<g class="rp-layer-contours">`);
+  for (const c of m.contours.survey) for (const p of c.polygons) parts.push(`<polygon class="rp-contour" points="${pts(p)}" fill="${efColor(c.ef)}" fill-opacity="0.22" stroke="none"/>`);
+  parts.push(`</g>`);
   // Track.
   if (m.track.length > 1) parts.push(`<polyline class="rp-track" points="${pts(m.track)}"/>`);
   // Debris landings (toggle).
   if (m.landings.length) parts.push(`<path class="rp-layer-landings rp-landing" d="${m.landings.map((q) => `M${X(q.x)} ${Y(q.z)}h0.01`).join("")}"${o.landings ? "" : ' style="display:none"'}/>`);
-  // Undamaged houses in the swath.
-  for (const q of m.noDamage) parts.push(`<circle cx="${X(q.x)}" cy="${Y(q.z)}" r="${(r * 0.8).toFixed(1)}" class="rp-nodamage"/>`);
-  // Survey points by DOD color (strongest on top).
+  // Survey points by DOD color (strongest on top), and undamaged houses in the swath.
+  parts.push(`<g class="rp-layer-points">`);
+  for (const q of m.noDamage) parts.push(`<circle cx="${X(q.x)}" cy="${Y(q.z)}" r="${(r * 0.85).toFixed(1)}" class="rp-nodamage"/>`);
   for (const q of [...m.points].sort((a, b) => a.dod - b.dod))
     parts.push(`<circle cx="${X(q.x)}" cy="${Y(q.z)}" r="${r.toFixed(1)}" fill="${dodColor(q.dod)}" class="rp-pt"${o.interactive ? ` data-point="${q.point}"` : ""}><title>${q.point}: DOD ${q.dod}</title></circle>`);
+  parts.push(`</g>`);
+  // Contour outlines over the points: a white casing under each colored line so every band's
+  // edge stays visible over points, fills and the other bands.
+  parts.push(`<g class="rp-layer-contours" pointer-events="none">`);
+  for (const c of m.contours.survey)
+    for (const p of c.polygons) {
+      const P = pts(p);
+      parts.push(`<polygon points="${P}" fill="none" stroke="#fff" stroke-width="4.2" stroke-linejoin="round" stroke-opacity="0.9"/><polygon points="${P}" fill="none" stroke="${efColor(c.ef)}" stroke-width="2.2" stroke-linejoin="round"/>`);
+    }
+  parts.push(`</g>`);
   // Town center.
   parts.push(`<g class="rp-center"><circle cx="${X(m.townCenter.x)}" cy="${Y(m.townCenter.z)}" r="5"/><line x1="${+X(m.townCenter.x) - 8}" y1="${Y(m.townCenter.z)}" x2="${+X(m.townCenter.x) + 8}" y2="${Y(m.townCenter.z)}"/><line x1="${X(m.townCenter.x)}" y1="${+Y(m.townCenter.z) - 8}" x2="${X(m.townCenter.x)}" y2="${+Y(m.townCenter.z) + 8}"/></g>`);
   if (o.labels) parts.push(`<text x="${+X(m.townCenter.x) + 9}" y="${+Y(m.townCenter.z) - 7}" class="rp-map-label">town center</text>`);
@@ -90,7 +104,7 @@ export function mapSvg(m: MapData, o: MapOptions): string {
   parts.push(
     `<g class="rp-scale"><line x1="${sx}" y1="${sy}" x2="${(sx + nice * k).toFixed(1)}" y2="${sy}"/><line x1="${sx}" y1="${sy - 4}" x2="${sx}" y2="${sy + 4}"/><line x1="${(sx + nice * k).toFixed(1)}" y1="${sy - 4}" x2="${(sx + nice * k).toFixed(1)}" y2="${sy + 4}"/><text x="${sx}" y="${sy - 7}">${nice >= 1000 ? `${nice / 1000} km` : `${nice} m`} (${(nice / M_PER_MI).toFixed(2)} mi)</text></g>`,
   );
-  return `<svg class="rp-map" viewBox="0 0 ${o.width} ${o.height}" width="100%" role="img" aria-label="Track map with EF contours and survey points">${parts.join("")}</svg>`;
+  return `<svg class="rp-map" viewBox="0 0 ${o.width} ${o.height}" width="100%" role="img" aria-label="Track map with EF contours and survey points" overflow="hidden">${parts.join("")}</svg>`;
 }
 
 function mapLegend(): string {
@@ -357,7 +371,7 @@ export function renderReport(r: Report): string {
     lineChart("Core radius R_max", "m", [{ t: tl.t, v: tl.rMax, color: "#2e86c1", label: "R_max" }]) +
     lineChart("Forward speed", "mph", [{ t: tl.t, v: tl.speed.map((s) => s / MS_PER_MPH), color: "#7d3c98", label: "speed" }]) +
     lineChart("Damaged houses (DOD 1+)", "houses", [{ t: tl.t, v: tl.damaged, color: "#c0392b", label: "damaged" }]);
-  const toggles = `<div class="rp-toggles rp-noprint"><label><input type="checkbox" data-layer="swath"> True-wind swath and contours (dashed)</label><label><input type="checkbox" data-layer="landings"> Debris landing points</label><span class="rp-hint">Click a survey point for its row in the table.</span></div>`;
+  const toggles = `<div class="rp-toggles rp-noprint"><label><input type="checkbox" data-layer="contours" checked> EF contours (survey)</label><label><input type="checkbox" data-layer="points" checked> Survey points</label><label><input type="checkbox" data-layer="swath"> True-wind swath and contours (dashed)</label><label><input type="checkbox" data-layer="landings"> Debris landing points</label><span class="rp-hint">Click a survey point for its row in the table.</span></div>`;
   const tableIntro = `<p>One row per survey point, along the track (P1 first). The survey speed comes from the DOD and construction class alone; the true peaks are what the simulation recorded at the house. Bias is survey minus true 10 m wind; <span class="rp-out">highlighted</span> rows had a true wind outside their DOD's range. Click a column to sort.</p>`;
   return `<article class="rp-doc">
 ${summaryPage(r)}
