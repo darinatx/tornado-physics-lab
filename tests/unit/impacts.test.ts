@@ -588,3 +588,102 @@ describe("Spec 10 v0.17 — roof and siding hits show", () => {
   }, 60000);
 
 });
+
+describe("Spec 10 v0.18 — impacts on arrival, presses in a sustained contact (BL-031)", () => {
+  // exactHouse's west wall (face 2, plane −x) is at x = −7; a shingle 1.5 m up, driven at it.
+  const pinned = (b: Building, p: Piece, steps: number, t0 = 0, f = fieldWith(b, p)) => {
+    for (let i = 0; i < steps; i++) {
+      // The wind holds it to the wall: each step it is driven back at 5 m/s, as a 60 Hz step
+      // re-accelerates a pinned piece (a·Δt).
+      p.vel = { x: 5, y: 0, z: 1 };
+      p.pos.y = 1.5;
+      p.resting = p.grounded = false;
+      p.q = [0, 0, 0, 1];
+      f.step(1 / 60, still, "open", false, t0 + i / 60, Infinity, targets(b));
+    }
+    return f;
+  };
+
+  test("IMP-25: a piece pinned on a wall makes one impact, not one per step", () => {
+    const b = exactHouse();
+    const p = piece("shingle", { x: -7.55, y: 1.5, z: 0 }, { x: 5, y: 0, z: 1 });
+    const f = pinned(b, p, 60);
+    expect(f.stats.impacts).toBe(1);
+    expect(b.impacts).toHaveLength(1);
+    // Every later contact was a press: it stays outside the wall with no rebound.
+    expect(p.pos.x).toBeLessThan(-b.width / 2);
+    expect(p.vel.x).toBeCloseTo(0, 9);
+  });
+
+  test("IMP-25: a press zeroes the normal speed, doesn't speed it up along the wall, and loads nothing", () => {
+    const b = exactHouse();
+    const p = piece("shingle", { x: -7.55, y: 1.5, z: 0 }, { x: 5, y: 0, z: 1 });
+    const f = pinned(b, p, 1);
+    expect(p.vel.x).toBeLessThan(0); // the arrival bounced (IMP-08)
+    b.impacts.length = 0;
+    p.vel = { x: 5, y: 0, z: 3 };
+    f.step(1 / 60, still, "open", false, 1 / 60, Infinity, targets(b));
+    expect(p.vel.x).toBeCloseTo(0, 9);
+    expect(Math.abs(p.vel.z)).toBeLessThanOrEqual(3);
+    expect(p.pos.x).toBeLessThan(-b.width / 2);
+    expect(b.impacts).toHaveLength(0);
+    expect(f.stats.impacts).toBe(1);
+  });
+
+  test("IMP-25: re-armed more than 0.1 s after the last contact, or on another plane", () => {
+    const b = exactHouse();
+    const p = piece("shingle", { x: -7.55, y: 1.5, z: 0 }, { x: 5, y: 0, z: 1 });
+    const f = pinned(b, p, 10);
+    expect(f.stats.impacts).toBe(1);
+    // Away from the wall for 0.15 s (no contact), then back: a new arrival.
+    const tAway = 10 / 60;
+    p.pos = { x: -9, y: 1.5, z: 0 };
+    p.vel = { x: 0, y: 0, z: 0 };
+    for (let i = 0; i < 9; i++) {
+      p.pos.y = 1.5;
+      p.vel = { x: 0, y: 0, z: 0 };
+      p.resting = p.grounded = false;
+      f.step(1 / 60, still, "open", false, tAway + i / 60, Infinity, targets(b));
+    }
+    p.pos = { x: -7.52, y: 1.5, z: 0 };
+    pinned(b, p, 1, tAway + 9 / 60, f);
+    expect(f.stats.impacts).toBe(2);
+    // Straight on to the front wall (face 0, z = +5.5) at once: another plane, another arrival.
+    p.pos = { x: 0, y: 1.5, z: 5.7 };
+    p.vel = { x: 0, y: 0, z: -5 };
+    p.q = [0, 0, 0, 1];
+    f.step(1 / 60, still, "open", false, tAway + 10 / 60, Infinity, targets(b));
+    expect(f.stats.impacts).toBe(3);
+  });
+
+  test("IMP-25: a contact just under 0.1 s after the last is still the same episode", () => {
+    const b = exactHouse();
+    const p = piece("shingle", { x: -7.55, y: 1.5, z: 0 }, { x: 5, y: 0, z: 1 });
+    const f = pinned(b, p, 1);
+    p.pos = { x: -7.52, y: 1.5, z: 0 };
+    pinned(b, p, 1, 5 / 60, f); // 5 steps (0.083 s) after the last contact
+    expect(f.stats.impacts).toBe(1);
+  });
+});
+
+describe("Spec 10 v0.18 — a corner cut stops on the piece's own path", () => {
+  test("IMP-01: a long piece in through an opening and against a standing wall from inside in one step stays on its path", () => {
+    const b = exactHouse();
+    for (const [k, q] of b.panels.entries()) if (q.face === 0) q.failed = rec("wallPanel", k);
+    const from = { x: b.width / 2 + 0.3, y: 1.5, z: -b.depth / 2 + 0.2 };
+    const to = { x: b.width / 2 - 0.5, y: 1.5, z: -b.depth / 2 - 0.3 };
+    // A siding strip turned with its 3.8 m length across the front wall: set off from that wall
+    // by its box, its center would jump 1.9 m off its path.
+    const p = piece("siding", from, { x: (to.x - from.x) * 60, y: 0, z: (to.z - from.z) * 60 }, { q: [0, Math.SQRT1_2, 0, Math.SQRT1_2] });
+    const f = fieldWith(b, p);
+    f.step(1 / 60, still, "open", false, 0, Infinity, targets(b));
+    const l = toLocal(b, p.pos);
+    expect(l.z).toBeGreaterThan(-b.depth / 2); // still inside the front wall
+    expect(l.x).toBeLessThan(b.width / 2); // in through the fallen end wall
+    // On the segment it flew (to within 2 cm): never placed across a wall it didn't cross.
+    const d = { x: to.x - from.x, z: to.z - from.z };
+    const t = ((p.pos.x - from.x) * d.x + (p.pos.z - from.z) * d.z) / (d.x * d.x + d.z * d.z);
+    const off = Math.hypot(p.pos.x - (from.x + t * d.x), p.pos.z - (from.z + t * d.z));
+    expect(off).toBeLessThan(0.02);
+  });
+});

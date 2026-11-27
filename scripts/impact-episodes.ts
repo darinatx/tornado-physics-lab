@@ -7,7 +7,9 @@
  *   - contact episodes: runs of consecutive debris steps with a contact on the same house;
  *   - the normal approach speed (vn) of each event, and whether the piece was on the ground
  *     (grounded: sliding or pinned) when it hit;
- *   - what the event did (window broken, wall perforated, siding or covering torn).
+ *   - what the event did (window broken, wall perforated, siding or covering torn);
+ *   - presses (Spec 10 v0.18, BL-031): contacts in a sustained episode, not resolved as impacts.
+ *     They count as contact steps, so a pinned piece is still found as one after the fix.
  * Compares the totals with the recorder's tally and the sim's own counter (debris.stats.impacts).
  *   npx tsx scripts/impact-episodes.ts [--seed N] [--s 50]
  */
@@ -44,6 +46,7 @@ interface Per {
   kind: string;
   /** Effective events after its first 100 contact steps (a piece long in contact). */
   lateEffective: number;
+  presses: number;
 }
 const per = new Map<number, Per>();
 const vnBins = [0.25, 0.5, 1, 2, 5, 10, 20, 40, Infinity];
@@ -52,6 +55,31 @@ const vnHistGround = new Array<number>(vnBins.length).fill(0);
 let events = 0, nullPiece = 0, effective = 0, groundedEvents = 0, slow = 0;
 const bySurface: Record<string, number> = {};
 let stepNo = 0;
+let presses = 0;
+type P = { id: number; represents: number; def: { label: string } };
+const entry = (piece: P): Per => {
+  let e = per.get(piece.id);
+  if (!e) per.set(piece.id, (e = { events: 0, steps: 0, episodes: 0, lastStep: -10, lastHouse: -2, grounded: 0, effective: 0, represents: piece.represents, houses: new Set(), switches: 0, sumY: 0, sumSpeed: 0, kind: piece.def.label, lateEffective: 0, presses: 0 }));
+  return e;
+};
+// Presses (Spec 10 v0.18): absent before the fix (the field has no such hook there).
+const field = sim.debris as unknown as { onPress?: ((b: { id: number; standInFor?: number }, p: P) => void) | null };
+// Built on first use: the town exists once the sim has run its first step.
+let indexOf: Map<number, number> | null = null;
+if ("onPress" in field)
+  field.onPress = (b, piece) => {
+    presses++;
+    indexOf ??= new Map(sim.world.buildings.map((x, i) => [x.id, i]));
+    const house = indexOf.get(b.standInFor ?? b.id) ?? -1;
+    const e = entry(piece);
+    e.presses++;
+    if (e.lastStep !== stepNo) {
+      e.steps++;
+      if (!(e.lastHouse === house && stepNo - e.lastStep <= 3)) e.episodes++;
+    }
+    e.lastStep = stepNo;
+    e.lastHouse = house;
+  };
 sim.observe({
   step: () => stepNo++,
   impact: (house, q, _path, piece) => {
@@ -71,8 +99,7 @@ sim.observe({
       groundedEvents++;
       vnHistGround[bin]!++;
     }
-    let e = per.get(piece.id);
-    if (!e) per.set(piece.id, (e = { events: 0, steps: 0, episodes: 0, lastStep: -10, lastHouse: -2, grounded: 0, effective: 0, represents: piece.represents, houses: new Set(), switches: 0, sumY: 0, sumSpeed: 0, kind: piece.def.label, lateEffective: 0 }));
+    const e = entry(piece);
     e.events++;
     if (did) e.effective++;
     if (did && e.steps >= 100) e.lateEffective++;
@@ -114,6 +141,7 @@ console.log(JSON.stringify({
   piecesThatHit: list.length,
   perHitter: { median: q(0.5), p90: q(0.9), p99: q(0.99), max: sorted[sorted.length - 1] ?? 0 },
   stepsWithContact: steps,
+  presses,
   eventsPerContactStep: +(sum((p) => p.events) / Math.max(1, steps)).toFixed(1),
   meanRepresents: +(sum((p) => p.represents) / Math.max(1, list.length)).toFixed(1),
   episodes,
@@ -125,8 +153,8 @@ console.log(JSON.stringify({
   vnHist: Object.fromEntries(vnBins.map((b, i) => [`<${b}`, vnHist[i]])),
   vnHistGrounded: Object.fromEntries(vnBins.map((b, i) => [`<${b}`, vnHistGround[i]])),
   bySurface,
-  repeatHitters: { steps100: heavyHitters.length, events: heavyHitters.reduce((s, p) => s + p.events, 0), effective: heavyHitters.reduce((s, p) => s + p.effective, 0), effectiveAfterStep100: heavyHitters.reduce((s, p) => s + p.lateEffective, 0), switching20: multi.length, switchingEvents: multi.reduce((s, p) => s + p.events, 0) },
-  top: top.map((p) => ({ kind: p.kind, houses: p.houses.size, switches: p.switches, meanY: +(p.sumY / p.events).toFixed(2), meanSpeed: +(p.sumSpeed / p.events).toFixed(2), events: p.events, steps: p.steps, episodes: p.episodes, grounded: p.grounded, effective: p.effective, represents: p.represents })),
+  repeatHitters: { steps100: heavyHitters.length, events: heavyHitters.reduce((s, p) => s + p.events, 0), effective: heavyHitters.reduce((s, p) => s + p.effective, 0), effectiveAfterStep100: heavyHitters.reduce((s, p) => s + p.lateEffective, 0), share: +(heavyHitters.reduce((s, p) => s + p.events, 0) / Math.max(1, events)).toFixed(3), switching20: multi.length, switchingEvents: multi.reduce((s, p) => s + p.events, 0) },
+  top: top.map((p) => ({ kind: p.kind, houses: p.houses.size, switches: p.switches, meanY: +(p.sumY / p.events).toFixed(2), meanSpeed: +(p.sumSpeed / p.events).toFixed(2), events: p.events, steps: p.steps, episodes: p.episodes, grounded: p.grounded, effective: p.effective, presses: p.presses, represents: p.represents })),
 }));
 sim.dispose();
 process.exit(0);

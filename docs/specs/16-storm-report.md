@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.6) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.7) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -110,8 +110,10 @@ In order (the summary page first):
    the first to fail, and which cascades led to the highest DODs (Spec 03).
 7. **Debris:** counts by kind, lofted mass, heaviest piece lofted, farthest travel and its
    piece, a travel-distance histogram, impacts by surface and result (tallied in the record,
-   not kept one by one: a strong pass resolves millions of contacts), buildings damaged by
-   debris alone.
+   not kept one by one: a strong pass resolves millions of impacts), buildings damaged by
+   debris alone. An impact is a piece arriving at a surface, counting its representative
+   copies (Spec 10 v0.18): a piece held against a wall by the wind counts once, not once per
+   step.
 8. **Statistics:** buildings by DOD, by EF, share destroyed (DOD ≥ 8), damaged area.
 9. **Methods and limitations:** how the survey was rated, the true-wind definition, the
    model's simplifications (from each spec's Simplifications section), and the run metadata,
@@ -291,6 +293,9 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - None.
 
 ## Changelog
+
+- v1.7 (BL-031): the impact table counts arrivals (Spec 10 v0.18), so pieces pinned against
+  walls no longer dominate it. The table itself is unchanged.
 
 - v1.6 (2026-11-26, the user's demo review): the maps frame the survey points (not the whole
   swath, which squeezed the damage into a corner); contour outlines over the points with a

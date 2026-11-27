@@ -1,6 +1,6 @@
 # Spec 10 — Debris Impacts
 
-Status: Approved (v0.17) — Phase 6 slice A (impact physics and component houses) and the first
+Status: Approved (v0.18) — Phase 6 slice A (impact physics and component houses) and the first
 part of slice B (detail-zone pieces hit the houses around them). The rest of slice B is outlined
 at the end.
 
@@ -47,8 +47,8 @@ For each component house near the segment's end, the segment is clipped against 
 
 - **Entering** (starts outside, crosses a surface): if the crossing point is on an opening,
   the piece passes in, and the rest of the step is clipped from inside (it may still leave
-  through a standing surface in the same step: a corner cut); otherwise it is an impact on that
-  surface.
+  through a standing surface in the same step: a corner cut; it then stops on its own path,
+  1 cm short of that surface, v0.18); otherwise it is an impact on that surface.
 - **Leaving** (starts inside, crosses a standing surface from inside): the piece bounces back
   inside, with no damage (debris that got into a house stays in it until an opening lets it
   out).
@@ -198,6 +198,56 @@ once its holes add up to 1 m², about one window's worth.
 
 Sliding pieces stop against walls this way, so debris piles up against houses.
 
+### Arrivals and sustained contact (v0.18)
+
+An impact is a piece **arriving** at a surface. A piece held against a house by the wind
+(siding pinned to a wall, a sheet pressed on a roof) is in one **contact episode**, not hitting
+it again every step:
+
+- Each piece remembers its last contact with a house: which house and plane, and when.
+- A contact (a step whose segment meets a standing surface from outside) starts a new episode,
+  and is resolved as an impact (with its copies, impulse load and damage, as above), when the
+  piece's last contact was with another house or another plane of this one, or ended more than
+  **0.1 s** before (the gap).
+- Any other contact continues the episode: it is a **press**, not a hit. The piece stays
+  outside the surface (placed just outside it as in a bounce), its normal speed goes to zero
+  (it doesn't rebound), and friction acts against the normal impulse it gave up. Nothing is
+  resolved: no damage, no copies, no impulse load, no impact counted. The episode's time moves
+  to this contact, so a piece pressed every step stays in one episode for as long as it is
+  held.
+- The same rule holds for the detail zone's light pieces (they follow Spec 04 too): a stand-in
+  hit or a glass hit on a detailed house counts only on arrival, and a press stops the piece
+  without rebound.
+- Rigid bodies (detail-zone chunks and the heavy-debris world, Spec 04 v2.0) report a contact
+  force every step they touch a stand-in or a house; the equivalent speed F·Δt / m of a body
+  held there by the wind is the same a·Δt artifact. Only the first step of each episode
+  (per body, house and plane, the same 0.1 s gap) is reported as a hit; the solver's own
+  contact response is unchanged.
+
+Decisions:
+- Why: at a 60 Hz step the wind re-accelerates a light piece pinned on a wall by a·Δt each
+  step (a 3–7 m/s "approach" for siding), so the step itself made a new 3–7 m/s impact each
+  time, forever (BL-031: in an EF4 town pass, 84% of all impact events, and about half of the
+  damaging ones, came from pieces pinned against one wall). Real chatter at e = 0.2 returns
+  at 0.2× each time (the wind gives back on the way in what it took on the way out) and dies
+  out within milliseconds: the piece then rests pressed against the surface.
+- A press carries no extra load: the wind force on a pinned piece goes into the wall, but the
+  piece covers the patch of wall the wind would have pushed on, so the wall's wind load already
+  includes it (to within the piece's drag coefficient; the cheaper, equally realistic choice).
+  A heavy piece leaning on a wall under its own weight does add load, but little: a 100 kg panel
+  leaning at 30° pushes about 280 N, against the several kN of wind on a wall panel. Rapier
+  resolves a rigid impact's impulse in its first contact step, so that step's force measures it.
+- The gap is the impact contact time τ = 0.1 s: two contacts closer than one impact's own
+  duration are one contact. It also spans a far piece stepped every other step (Spec 04 v2.2).
+  A piece that leaves and comes back within it returns at most at its own rebound speed (e·v,
+  ≤ 4% of the arrival's energy), so a separation distance test (a per-step check) would only
+  re-arm hits too weak to matter; time alone re-arms.
+- Per plane, not per house: a piece that leaves a wall round a corner and meets the next wall
+  is a new arrival there.
+- This also covers a piece pressed onto a roof plane by the wind (BL-011's airborne part).
+  Pieces that come to rest on a roof under gravity are BL-011 itself (parked): resting is
+  decided by Spec 04's rest rule, unchanged here.
+
 ### Representative pieces
 
 A simulated piece stands for `represents` real objects (Spec 04) that left the house together
@@ -326,6 +376,15 @@ Values live in `src/config/impacts.ts`.
   the house.
 - **IMP-08**: Bounce: after a non-damaging hit the normal speed is reversed and scaled by e, and
   the tangential speed doesn't increase.
+- **IMP-25**: Arrivals: a piece's first contact with a plane of a house is resolved as an
+  impact; further contacts with that plane within 0.1 s of the last are presses (no impact
+  counted, no damage, no impulse load; normal speed to zero, tangential not increased, the
+  piece ends outside the surface); a contact more than 0.1 s after the last, or on another
+  plane or house, is a new arrival. A piece pinned on a wall by a steady wind makes one impact,
+  not one per step.
+- **IMP-26**: The same in the detail zone and for rigid bodies: a light piece held against a
+  town house's stand-in reports one hit on arrival, not one per step; a rigid body's contact
+  force on a stand-in or house plane is reported only in the first step of its episode.
 - **IMP-09**: Representative copies: a piece standing for N objects produces up to min(N, 64)
   impact evaluations scattered around its hit point by the specified σ; only its own impulse
   loads the component.
@@ -431,6 +490,19 @@ n + lead, which they are certain to have reached):
   frame or two (Rapier contact softness; doubling the solver iterations didn't remove it).
 
 ## Changelog
+
+- v0.18: impacts only on arrival (BL-031). A piece held against a surface by the wind is in one
+  contact episode: the first contact is the impact; later contacts on the same plane within
+  0.1 s of the last are presses (no impact, no rebound). Before, each 60 Hz step made a new
+  3–7 m/s impact (times its copies) for every pinned piece: in the EF4 town pass, seed 1, 50 s,
+  84% of 3.37 M impact events and 14,295 of 27,549 damaging ones came from 1,651 pinned pieces
+  (`scripts/impact-episodes.ts`). Same rule for the detail zone's light pieces and for rigid bodies' contact-force hits
+  (detail chunks, heavy debris). IMP-25, IMP-26.
+  Also: a corner cut (in through an opening and against a standing surface from inside in one
+  step) now stops on the piece's own path, 1 cm short of that surface. Set off from it by its box,
+  as a bounce from inside is, a long strip's center jumped up to ~1.6 m off its path, across the
+  standing wall below a gable it had come in through (found by the 20 s pass-through check on
+  this branch, seed 1).
 
 - v0.17 (same day): drawn damage marks removed at the user's request (they floated where walls had
   fallen); hits keep their point for detailed houses' tear-off.
