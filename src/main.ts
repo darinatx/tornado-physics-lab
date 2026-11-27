@@ -172,8 +172,12 @@ function frame(now: number): void {
   }
   // The end of the lifecycle stops the run and offers the report (Spec 16), unless repeat is on.
   reports?.tick();
-  view.draw(f.prev, f.curr, f.alpha);
-  probe.update(f.curr, panel.state.probeHeight);
+  // While a report covers the screen, the scene under it isn't redrawn (the physics runs on, and
+  // the scene catches up when the report closes): ~6 ms a frame back for the sim (Phase 8 slice D).
+  if (!reportView?.open) {
+    view.draw(f.prev, f.curr, f.alpha);
+    probe.update(f.curr, panel.state.probeHeight);
+  }
 
   readoutTimer -= realDt;
   if (readoutTimer <= 0) {

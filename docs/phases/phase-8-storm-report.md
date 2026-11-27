@@ -1,6 +1,6 @@
 # Phase 8 — Storm Report
 
-Status: In progress, slices A–C built; slice D (profiling) next (started 2026-11-26 on `phase-8-storm-report`, from `main` after Phase 7's
+Status: In progress, slices A–C built and the demo reviewed by the user; slice D (profiling) (started 2026-11-26 on `phase-8-storm-report`, from `main` after Phase 7's
 preliminary sign-off). Spec 16 approved (v1.0).
 
 ## Goal
@@ -38,13 +38,17 @@ Each of A–C ends with `npm run bench` against the saved baseline, noted below.
 
 ## Demo checklist
 
-- [ ] EF4 preset through town; Stop & Report mid-path; the scene stays frozen and inspectable
-- [ ] Summary page: rating, peak wind, path, four numbers, map, narrative
-- [ ] Track map: contours, survey points, true-wind swath toggle; click a point → its row
-- [ ] Survey table: a house rated above or below its true wind, and why (its DOD's bounds)
-- [ ] Failure sequence for the worst house reads in order and matches the inspector
-- [ ] A run left to the end of the lifecycle offers the report
-- [ ] Print the summary alone and the full report; open the JSON and CSV
+- [x] EF4 preset through town; Stop & Report mid-path; the scene stays frozen and inspectable
+- [x] Summary page: rating, peak wind, path, four numbers, map, narrative
+- [x] Track map: contours, survey points, true-wind swath toggle; click a point → its row
+- [x] Survey table: a house rated above or below its true wind, and why (its DOD's bounds)
+- [x] Failure sequence for the worst house reads in order and matches the inspector
+- [x] A run left to the end of the lifecycle offers the report
+- [x] Print the summary alone and the full report; open the JSON and CSV
+
+Reviewed by the user 2026-11-26 (all items pass). Changes from the review: the duplicate event
+summary page dropped, print opens collapsed sections and fits the survey table, and the map
+framed on the damage with contours drawn over the points.
 
 ## Slice notes
 
@@ -119,17 +123,53 @@ Each of A–C ends with `npm run bench` against the saved baseline, noted below.
     unchanged (Phase 7's, against the Phase 6 baseline). `verify:fast`: 251 tests, trace
     complete (REP-01 to REP-15).
 
+- **Slice D — profiling** (2026-11-26). `scripts/profile-report.ts`: the EF4 town pass with the
+  recorder on (as the app runs it) over the benchmark window, then the report build, page HTML
+  and exports timed; CPU profile with `node --cpu-prof --import tsx scripts/profile-report.ts`.
+  Phase 8's own costs (EF4 pass, 1,296 survey points, 15,853 debris records):
+
+  | Part | Cost | Share |
+  |---|---|---|
+  | Recorder, all (after slice C's fixes) | ~0.11 ms per step | 0.9% of the run's CPU (+1.6% step time, REP-15) |
+  | — wind sampling (swath and buildings) | ~0.07 ms per step | 0.56% |
+  | — DOD history, debris scan, impact tally, track | ~0.04 ms per step together | 0.3% |
+  | `record()` + `buildSurvey` + `buildReport` | 8.6 + 5.0 + 3.9 ms, once | — |
+  | Page HTML (`renderReport`), 1.58 MB | 6.9 ms, once | — |
+  | JSON (10.0 MB) / CSV | 9.2 / 1.7 ms, once | — |
+  | Opening the report in the browser (105 points) | 32–48 ms to paint | about 0.2 s expected at 1,300 points |
+  | Scene drawn under an open report | 5.5–7 ms per frame | the whole draw, for a scene nobody sees |
+
+  The rest of the profile is the existing physics (Rapier, impacts, damage, debris), unchanged
+  by this phase; the benchmark fingerprints are the same as before slice A.
+
+  | Change | Estimate | Measured | Kept |
+  |---|---|---|---|
+  | Don't redraw the scene while a report covers it (Preview while the storm runs) | 5–7 ms per frame back for the physics while a report is open; nothing otherwise | 0 draws in 2 s with a report open (3 before and after), physics ran on (480 steps); a draw is 5.5–7 ms | yes |
+  | Wind sampling interval from the missed-peak bound; debris scan by arrays (done in slice C for REP-15) | −0.5 ms per step | 0.65 → 0.11 ms per step; +12.8% → +1.6% | yes |
+
+  Considered and left: the DOD-history scan could follow changed houses only (≤ 0.01 ms per
+  step); the JSON could round the debris records to millimetres (about half the 10 MB file).
+  Neither is worth the code. Nothing for the backlog from this phase's own code.
+  - The browser pane was hidden during the in-app checks, so its frames ran at the background
+    rate (~1 per second); frame rates there aren't meaningful and aren't reported. Per-call
+    timings are: physics 4.75 ms per step with the recorder, 3.97–4.85 without (no measurable
+    difference); draw 5.5–7 ms whether or not a report is open.
+  - The profile's "set hasAsyncGraph" (7.8% self) is the tsx loader's async hooks, present in
+    any `--import tsx` run; not the sim.
+  - Benchmark: `ef4-town` 8.16, `detail-core` 57.89 ms per step, same fingerprints, within the
+    phase's spread (8.05–8.83, 57.9–62.9). `verify:fast`: 251 tests, trace complete.
+
 ## Exit criteria
 
 Preliminary (lets Phase 9 start):
 
 - [x] Spec 16 approved (v1.0, now v1.5); Specs 07 (v1.18) and 08 (v1.9) updated
 - [x] Slice A: REP-02 to REP-09 pass
-- [ ] Slice B: REP-01, REP-10 to REP-13 pass; demo reviewed by the user
+- [x] Slice B: REP-01, REP-10 to REP-13 pass; demo reviewed by the user (2026-11-26)
 - [x] Slice C: REP-14, REP-15 pass
 - [x] Benchmark run at the end of slices A, B and C; regressions over 10% explained (Phase 7's)
-- [ ] Slice D, profiling: hotspots with estimated and confirmed gains; before/after recorded
-- [ ] `npm run verify:fast` passes
+- [x] Slice D, profiling: hotspots with estimated and confirmed gains; before/after recorded
+- [x] `npm run verify:fast` passes (251 tests, slice D)
 - [ ] Specs updated, simplifications note and retro written
 - [ ] User's preliminary sign-off; tag `phase-8-prelim`; pull request into `main`, merged when
       the user says so; branch deleted
