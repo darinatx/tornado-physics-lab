@@ -1,5 +1,8 @@
 # Tornado Physics Lab
 
+**[Try it in your browser →](https://darinatx.github.io/tornado-physics-lab/)** (desktop browser
+recommended; it runs on your own computer, so a faster one gives a smoother storm)
+
 A physics-based tornado simulator that runs in the browser. A tornado moves through a
 procedural town, and everything that happens to it comes from wind-engineering physics:
 wind loads on each wall and roof, parts failing when the load passes their capacity, the
@@ -88,7 +91,9 @@ Debris never passes through a standing house, and the tests check this.
 
 ## Run it
 
-You need Node.js 22 or later.
+The latest `main` is always live at
+[darinatx.github.io/tornado-physics-lab](https://darinatx.github.io/tornado-physics-lab/).
+To run it yourself, you need Node.js 22 or later.
 
 ```bash
 git clone https://github.com/darinatx/tornado-physics-lab.git
