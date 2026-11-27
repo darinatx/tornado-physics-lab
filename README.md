@@ -1,4 +1,4 @@
-# Tornado Sim
+# Tornado Physics Lab
 
 A physics-based tornado simulator in the browser. A tornado moves through a procedural town
 and destroys it according to wind-engineering physics: a Rankine-type vortex, dynamic

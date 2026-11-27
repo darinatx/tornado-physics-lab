@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Tornado Sim follows the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+Tornado Physics Lab follows the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 In short:
 
 - Be respectful and welcoming, whatever someone's background or experience.
