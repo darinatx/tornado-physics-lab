@@ -23,7 +23,7 @@ import { createRng } from "../core/math/rng";
 import { DEBRIS, sheet } from "../config/debris";
 const DEBRIS_REST_SAMPLE = DEBRIS.restSampleHeight;
 import { bumpKick, flatten as flattenPiece, isSliding, stepPiece, supportHeight as supportHeightOf, wakeIfForced } from "../core/debris/piece";
-import { floorUnder, unbury } from "../core/impact/contact";
+import { arrives, floorUnder, unbury } from "../core/impact/contact";
 import { glassThreshold } from "../core/impact/impact";
 import { FIXED_GROUPS, SLAB_DEPTH } from "./townColliders";
 import { IMPACT } from "../config/impacts";
@@ -165,6 +165,19 @@ export class StructureWorld {
   roofFactor = 1;
   /** Hits on stand-ins this step, for the sim to turn into impacts (Spec 10 slice B). */
   readonly townHits: TownHit[] = [];
+
+  /** Rigid bodies' contact episodes with stand-ins, by body handle (Spec 10 v0.18). */
+  private readonly bodyContacts = new Map<number, { contact?: Piece["contact"] }>();
+  private bodyContact(handle: number): { contact?: Piece["contact"] } {
+    let c = this.bodyContacts.get(handle);
+    if (!c) {
+      // Forget episodes long over (bodies come and go; a handle can be reused).
+      if (this.bodyContacts.size >= 1024)
+        for (const [k, v] of this.bodyContacts) if (!v.contact || this.time - v.contact.t > IMPACT.episodeGap) this.bodyContacts.delete(k);
+      this.bodyContacts.set(handle, (c = {}));
+    }
+    return c;
+  }
 
   /** Record a hit on a stand-in by a piece (mass kg, normal speed m/s, box dims L/W/T m). */
   recordTownHit(col: RAPIER.Collider, point: Vec3, mass: number, vn: number, dims: readonly [number, number, number], family: "sheet" | "rod" | "compact", label: string): void {
@@ -505,6 +518,9 @@ export class StructureWorld {
         const oc = this.world.getCollider(other);
         const ob = oc?.parent();
         if (!oc || !ob || !ob.isDynamic()) continue;
+        // Held against it (Spec 10 v0.18): only the arrival is a hit.
+        const town = this.townHouseOf.get(h);
+        if (town && !arrives(this.bodyContact(ob.handle), town.index, this.townPlaneOf.get(h)!, this.time)) continue;
         const m = ob.mass();
         const he = (oc.shape as RAPIER.Cuboid).halfExtents;
         const d = he ? [he.x * 2, he.y * 2, he.z * 2].sort((a, b) => b - a) : [1, 0.1, 0.05];
@@ -1965,24 +1981,26 @@ export class DetailHouse {
     }
     const hit = this.sw.castLight(p, from);
     if (hit && hit.time_of_impact < 1) {
-      // A house around the zone: the hit counts there (Spec 10 slice B).
-      {
-        const n = hit.normal1;
-        const vn = -(p.vel.x * n.x + p.vel.y * n.y + p.vel.z * n.z);
-        this.sw.recordTownHit(hit.collider, hit.witness1, p.def.mass, vn, p.def.dims, p.def.family, p.def.label);
-      }
-      // Into glass: its momentum may break the pane (it stops there this step either way).
+      const n = hit.normal1;
+      const vn = -(p.vel.x * n.x + p.vel.y * n.y + p.vel.z * n.z);
       const o = this.sw.owner.get(hit.collider.handle);
-      if (o) {
-        const n = hit.normal1;
-        const vn = -(p.vel.x * n.x + p.vel.y * n.y + p.vel.z * n.z);
-        if (vn > 0) o.house.hitGlass(o.id, p.def.mass * vn, p.def.family === "sheet" ? "sheet" : "compact");
+      // Held against a house (a town house's stand-in plane, or a detailed house's members):
+      // only an arrival hits it; a contact in a sustained episode is a press (Spec 10 v0.18).
+      const town = this.sw.townHouseOf.get(hit.collider.handle);
+      const plane = this.sw.townPlaneOf.get(hit.collider.handle);
+      const key = town && plane !== undefined ? { house: town.index, plane } : o ? { house: o.house.building.id, plane: -1 } : null;
+      const arrival = !key || vn <= 0 || arrives(p, key.house, key.plane, this.sw.time);
+      if (arrival) {
+        // A house around the zone: the hit counts there (Spec 10 slice B).
+        this.sw.recordTownHit(hit.collider, hit.witness1, p.def.mass, vn, p.def.dims, p.def.family, p.def.label);
+        // Into glass: its momentum may break the pane (it stops there this step either way).
+        if (o && vn > 0) o.house.hitGlass(o.id, p.def.mass * vn, p.def.family === "sheet" ? "sheet" : "compact");
       }
       p.blocked = true;
       p.resting = false;
       const t = Math.max(hit.time_of_impact - 0.02, 0);
       p.pos = { x: from.x + (p.pos.x - from.x) * t, y: from.y + (p.pos.y - from.y) * t, z: from.z + (p.pos.z - from.z) * t };
-      this.bounceLight(p, hit.normal1);
+      this.bounceLight(p, n, arrival ? IMPACT.restitution : 0);
     }
     // Wherever it ended up, never inside anything fixed (a sweep misses a piece that turns
     // into a surface, or one that slips across the middle of a thin sheet it already touched).
@@ -1990,10 +2008,9 @@ export class DetailHouse {
   }
 
   /** Bounce a light piece's velocity off a surface with normal n (toward the piece). */
-  private bounceLight(p: Piece, n: Vec3): void {
+  private bounceLight(p: Piece, n: Vec3, e: number = IMPACT.restitution): void {
     const vn = -(p.vel.x * n.x + p.vel.y * n.y + p.vel.z * n.z);
     if (vn <= 0) return;
-    const e = IMPACT.restitution;
     p.vel.x += (1 + e) * vn * n.x;
     p.vel.y += (1 + e) * vn * n.y;
     p.vel.z += (1 + e) * vn * n.z;

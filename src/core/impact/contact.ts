@@ -70,9 +70,28 @@ export function unbury(p: Piece, targets: ImpactTargets): void {
     return;
   }
 }
-/** Bounce off a surface (normal n toward the piece): v_n reversed × e, friction on the rest. IMP-08. */
-export function bounce(p: Piece, point: Vec3, n: Vec3, vn: number): void {
-  const e = IMPACT.restitution;
+/**
+ * Is this contact an arrival (Spec 10 v0.18, IMP-25)? True when the piece's last contact was
+ * with another house or plane, or more than IMPACT.episodeGap before `t`: a new episode, to be
+ * resolved as an impact. Otherwise it is a press in the current episode. Either way the
+ * episode moves to this contact.
+ */
+export function arrives(p: { contact?: Piece["contact"] }, house: number, plane: number, t: number): boolean {
+  const c = p.contact;
+  if (!c) {
+    p.contact = { house, plane, t };
+    return true;
+  }
+  const fresh = c.house !== house || c.plane !== plane || t - c.t > IMPACT.episodeGap + 1e-9;
+  c.house = house;
+  c.plane = plane;
+  c.t = t;
+  return fresh;
+}
+
+/** Bounce off a surface (normal n toward the piece): v_n reversed × e, friction on the rest.
+ *  IMP-08. A press in a sustained contact (Spec 10 v0.18) is e = 0: no rebound. */
+export function bounce(p: Piece, point: Vec3, n: Vec3, vn: number, e: number = IMPACT.restitution): void {
   const v = p.vel;
   // Normal part −vn → +e·vn.
   v.x += (1 + e) * vn * n.x;

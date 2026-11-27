@@ -63,6 +63,10 @@ export interface Piece {
   clearOfHouse?: boolean;
   /** Detail zone: its last step ended against something fixed (it was stopped there). */
   blocked?: boolean;
+  /** Its contact episode with a house surface (Spec 10 v0.18): the house, its plane, and the
+   *  time of the latest contact. A contact on the same plane within IMPACT.episodeGap of it is
+   *  a press, not an impact. */
+  contact?: { house: number; plane: number; t: number };
 }
 
 export function terminalSpeed(kindOrPiece: DebrisKind | Piece): number {

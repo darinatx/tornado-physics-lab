@@ -431,6 +431,34 @@ describe("Spec 09 slice B — detail zone", () => {
     expect(h.memberPose(frame.id).pos.y).toBeLessThan(0.5);
     e.dispose();
   }, 60000);
+  test("IMP-26: a light piece held against a town house's stand-in by the wind reports one hit, on arrival", async () => {
+    const { buildTownColliders } = await import("../../src/sim/townColliders");
+    const sw = new StructureWorld();
+    const a = exactHouse();
+    const h = sw.addHouse(a);
+    // Town house B 200 m east (its west wall at x = 193), out of reach of A's own debris in 1 s.
+    const b = exactHouse();
+    b.x = 200;
+    b.id = 1;
+    for (const c of buildTownColliders(sw.world, b, sw.townPlaneOf)) sw.townHouseOf.set(c.handle, { x: b.x, z: b.z, index: 1 });
+    sw.townNear = () => [b];
+    const shard = h.framing.members.find((m) => m.kind === "pane")!;
+    sw.step(steady(0));
+    // Thrown at B's wall 1.5 m up, then held there by a 90 mph wind from the west.
+    h.launch([shard.id], { x: 192.2, y: 1.5, z: 0 }, { x: 8, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+    let hits = 0;
+    let contacts = 0;
+    for (let k = 0; k < 60; k++) {
+      sw.step(steady(90));
+      hits += sw.townHits.length;
+      sw.townHits.length = 0;
+      const p = [...h.light.values()].find((l) => l.members.includes(shard.id))?.piece;
+      if (p?.blocked) contacts++;
+    }
+    expect(contacts).toBeGreaterThan(5); // it was held there, touching the wall many steps
+    expect(hits).toBe(1);
+    sw.dispose();
+  }, 60000);
   test("STR-35: a light piece held still by rubble or a wall comes to rest where it lies; it wakes when the wind turns away or its support goes", async () => {
     const RAPIER = (await import("@dimforge/rapier3d-simd-compat")).default;
     const { buildTownColliders } = await import("../../src/sim/townColliders");

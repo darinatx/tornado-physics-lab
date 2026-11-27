@@ -17,6 +17,7 @@ import type { Vec3 } from "../core/math/vec";
 import { rigidAero } from "../core/structure/aero";
 import { lyingOnSlab, overSlab } from "../core/impact/envelope";
 import { IMPACT } from "../config/impacts";
+import { arrives } from "../core/impact/contact";
 import type { BodyPlate } from "../core/structure/aero";
 import type { TornadoState } from "../core/wind/types";
 import { windAt } from "../core/wind/windField";
@@ -594,6 +595,8 @@ export class HeavyDebris implements HeavySink {
         if (house === h.source && this.time - h.bornAt < HEAVY.separationS && (!h.ignore || h.ignore.has(other))) continue;
         const col = this.world.getCollider(other);
         if (!col) continue;
+        // Held against it (Spec 10 v0.18): only the arrival is an impact.
+        if (!arrives(h.p, house, plane, this.time)) continue;
         const t = h.body.translation();
         const d = [...h.dims].sort((a, b) => b - a) as [number, number, number];
         this.hits.push({
