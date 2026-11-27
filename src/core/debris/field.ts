@@ -653,15 +653,19 @@ export class DebrisField {
         removed = true;
         continue;
       }
-      if (isSliding(p)) {
+      // Sliding on the floor it started the step on: one that ran off a slab's edge this step
+      // (or onto a slab's top) is over a different floor now. It falls from the edge (or the
+      // slab's side stopped it) and neither snags nor hits a bump this step: set down on the
+      // floor beyond the edge at once, its path would cut through the slab's corner (Spec 10
+      // v0.19, BL-001).
+      if (isSliding(p) && (!targets || floorUnder(p, targets) === floor)) {
         const d = Math.hypot(p.vel.x, p.vel.z) * pdt;
         // Chance to catch on an obstacle grows with distance slid (mean free path by terrain).
         if (this.rng() < 1 - Math.exp(-d / tableAt(DEBRIS.snagDistance, terrain, p.pos.x, p.pos.z))) {
-          // Laid flat on whatever it was sliding on: the slab top or the ground.
-          const base = targets ? floorUnder(p, targets) : 0;
-          p.pos.y -= base;
+          // Laid flat on what it was sliding on: the slab top or the ground.
+          p.pos.y -= floor;
           snag(p);
-          p.pos.y += base;
+          p.pos.y += floor;
         } else {
           // Rough ground: a bump may hop it into the wind (Spec 04 v1.7).
           bumpKick(p, d, tableAt(DEBRIS.bumpSpacing, terrain, p.pos.x, p.pos.z), this.rng);
@@ -782,7 +786,13 @@ export class DebrisField {
     // The surface's normal toward the piece's side.
     const n = best.entering ? best.normal : { x: -best.normal.x, y: -best.normal.y, z: -best.normal.z };
     const vn = -(p.vel.x * n.x + p.vel.y * n.y + p.vel.z * n.z);
-    if (vn <= 0) return false;
+    if (vn <= 0) {
+      // Its step went into the surface but its velocity no longer does: a landing in the same
+      // step took that speed (v0.19). It stops at the surface, with nothing to impart: no
+      // impact, no bounce.
+      if ((p.pos.x - from.x) * n.x + (p.pos.y - from.y) * n.y + (p.pos.z - from.z) * n.z < 0) bounce(p, best.point, n, 0, 0);
+      return false;
+    }
     if (!best.entering) {
       // From inside: the standing envelope keeps it in, no damage.
       bounce(p, best.point, n, vn);

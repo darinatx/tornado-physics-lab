@@ -33,7 +33,9 @@ export function floorUnder(p: Piece, targets: ImpactTargets): number {
 export function unbury(p: Piece, targets: ImpactTargets): void {
   const bottom = p.pos.y - supportHeight(p);
   const top = IMPACT.slabTop;
-  if (bottom >= top - 0.01) return;
+  // Within 1 cm of the top is resting on it, but never with its center below the top (a sheet
+  // thinner than 2 cm could otherwise sit with its center in the slab: Spec 10 v0.19).
+  if (bottom >= top - 0.01 && p.pos.y >= top) return;
   for (const b of targets.near(p.pos.x, p.pos.z)) {
     const h = slabHalf(b);
     const c = Math.cos(b.yaw);

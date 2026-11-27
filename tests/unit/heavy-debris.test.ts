@@ -10,6 +10,8 @@ import type { Vec3 } from "../../src/core/math/vec";
 import type { TornadoState } from "../../src/core/wind/types";
 import { HeavyDebris } from "../../src/sim/heavyDebris";
 import { exactHouse } from "../houseHelpers";
+import { LAYOUT } from "../../src/config/buildings";
+import { PassThroughMonitor } from "../../src/sim/passThrough";
 
 const DT = 1 / 60;
 
@@ -59,6 +61,9 @@ function panel(x: number, y: number, z: number, vel = { x: 0, y: 0, z: 0 }, sour
 }
 
 const NOBODY = { id: -1, x: 0, z: 0 } as Building;
+
+/** Box X (length) along world Z, Y (thickness) along world X, Z (width) up: standing in an end wall. */
+const UPRIGHT_X: [number, number, number, number] = [-0.5, -0.5, -0.5, 0.5];
 
 function run(h: HeavyDebris, s: TornadoState, seconds: number, t0 = 0): number {
   let t = t0;
@@ -132,9 +137,11 @@ describe("Spec 04 v2.0 — heavy pieces as rigid bodies", () => {
     expect(hits[0]!.vn).toBeGreaterThan(3);
     h.dispose();
 
-    // Its own house: out through the end wall it tore from, without a hit.
+    // Its own house: a panel of the +X end wall, made standing in that wall, tears out of it
+    // (outward) without a hit.
     const own = new HeavyDebris([house], () => [house], DT);
-    const q = panel(hx - 1.5, 1.6, 0, { x: 12, y: 0, z: 0 });
+    const q = panel(hx, IMPACT.slabTop + 1.25, 0, { x: 12, y: 0, z: 0 });
+    q.q = UPRIGHT_X;
     own.take(q, house, 0);
     run(own, air(0), 1);
     expect(q.pos.x).toBeGreaterThan(hx + 1);
@@ -145,6 +152,65 @@ describe("Spec 04 v2.0 — heavy pieces as rigid bodies", () => {
     run(own, air(0), 3, 1);
     expect(r.pos.y).toBeCloseTo(IMPACT.slabTop + 0.075, 1);
     own.dispose();
+  });
+
+  test("DEB-32: its own house lets a heavy piece go only while it tears away: driven into its own wall, thrown at it from just clear, or slid into the next bay's roof, it stops", () => {
+    // Every step judged by the pass-through checker (Spec 10 IMP-01) too.
+    const watch = (b: Building, h: HeavyDebris, p: Piece, seconds: number, each: (p: Piece) => void) => {
+      const mon = new PassThroughMonitor([b]);
+      let t = 0;
+      for (let i = 0; i < Math.round(seconds / DT); i++) {
+        h.step(air(0), "open", (t += DT));
+        mon.observe(t, [{ key: "p", source: "debris", label: p.def.label, pos: p.pos }]);
+        each(p);
+      }
+      return mon.violations;
+    };
+
+    // Lying flat across the +X end wall it overlaps when made, driven deeper into it: the wall
+    // stops it (its center never reaches the wall).
+    let house = exactHouse();
+    const hx = house.width / 2;
+    let h = new HeavyDebris([house], () => [house], DT);
+    const a = panel(hx - 1.5, 1.6, 0, { x: 12, y: 0, z: 0 });
+    h.take(a, house, 0);
+    let most = -Infinity;
+    expect(watch(house, h, a, 1, (p) => (most = Math.max(most, p.pos.x)))).toEqual([]);
+    expect(most).toBeLessThan(hx);
+    h.dispose();
+
+    // Made 5 cm clear of that wall, outside, and thrown at it at 15 m/s (25 cm a step): not an
+    // overlap when made, so the wall stops it from the start.
+    house = exactHouse();
+    h = new HeavyDebris([house], () => [house], DT);
+    const b = panel(hx + 0.075 + 2.05, 1.6, 0, { x: -15, y: 0, z: 0 });
+    h.take(b, house, 0);
+    let least = Infinity;
+    expect(watch(house, h, b, 1, (p) => (least = Math.min(least, p.pos.x)))).toEqual([]);
+    expect(least).toBeGreaterThan(hx);
+    h.dispose();
+
+    // A failed end bay's roof sections, sliding along the roof (+x) into the next bay's
+    // standing sections: those stop them (the BL-001 crossing, over the ridge).
+    house = exactHouse();
+    const field = new DebrisField(1);
+    const taken: Piece[] = [];
+    field.heavy = { take: (p) => taken.push(p) };
+    const rec = { part: "roofBay" as const, index: 0, time: 0, load: 3000, capacity: 1000, mph: 150, sign: 1, wind: { x: 0, y: 0, z: 0 } };
+    field.spawnFrom(house, rec);
+    house.bays[0]!.failed = rec;
+    house.rev++;
+    expect(taken.length).toBe(2);
+    const edge = -house.width / 2 - LAYOUT.overhang + (house.width + 2 * LAYOUT.overhang) / house.nx;
+    for (const p of taken) {
+      h = new HeavyDebris([house], () => [house], DT);
+      p.vel = { x: 8, y: 3, z: 0 };
+      h.take(p, house, 0);
+      most = -Infinity;
+      expect(watch(house, h, p, 0.4, (q) => (most = Math.max(most, q.pos.x)))).toEqual([]);
+      expect(most).toBeLessThan(edge);
+      h.dispose();
+    }
   });
 
   test("DEB-25: a resting piece wakes only for wind that can move it, retires once the tornado has gone, and runs the same every time", () => {
