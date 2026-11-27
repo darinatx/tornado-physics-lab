@@ -1,6 +1,6 @@
 # Spec 03 — Damage Model
 
-Status: Approved (v2.5) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
+Status: Approved (v2.6) — component houses (EF Damage Indicator 2), with debris impacts (Spec 10)
 
 ## Purpose
 
@@ -137,6 +137,11 @@ Two stages:
    debris impacts and the roughness field updating as houses fall. Each calibrated part is
    rescaled by (expected / median)^1.6 for its DOD (pressure ∝ speed², damped), for 2–3 rounds.
    Checked on held-out seeds (3 and 7): every DOD's median within ±5% (DMG-04).
+   The same runs set the **class factors** (v2.6): for each calibrated part, the weak factor is
+   rescaled by (lower bound / weak median)^1.6 and the strong factor by (upper bound / strong
+   median)^1.6 at the part's DOD, so weak houses reach each DOD at DI 2's lower bound and strong
+   houses at its upper bound, the speeds the survey gives them (DMG-08, DMG-15). Garage door and
+   deck keep their fixed class factors.
 
 Stage 2 is needed because a town does two things isolated passes can't: flying debris breaks
 glass, siding and shingles below the wind that would, and as houses fall the rubble is smoother
@@ -150,11 +155,11 @@ the changelog.)
 
 ### Construction classes
 
-| Class | Share | Factors |
+| Class | Share | Factors (v2.6, calibrated in the town to DI 2's lower / upper bounds) |
 |---|---|---|
-| Weak (older, toe-nailed roof, few anchors) | 25% | roof bays ×0.7, anchorage and slab sweep ×0.6, walls, partitions and core room ×0.85 |
+| Weak (older, toe-nailed roof, few anchors, aged siding and three-tab shingles) | 25% | siding ×0.67, covering ×0.60, windows ×0.78, anchorage ×0.57, roof bays ×0.53, walls ×0.66, partitions and core room ×0.64, slab sweep ×0.62 |
 | Standard | 55% | ×1 |
-| Strong (hurricane straps, anchor bolts, impact windows) | 20% | roof bays ×1.6, anchorage ×1.6, slab sweep ×1.21, walls, partitions and core room ×1.3, windows ×1.4, garage ×1.5, deck ×1.3 |
+| Strong (hurricane straps, anchor bolts, impact windows, high-wind siding and shingles) | 20% | siding ×1.54, covering ×1.65, windows ×2.17, anchorage ×1.75, roof bays ×1.82, walls ×1.47, partitions ×1.43, core room ×1.42, slab sweep ×1.22; garage ×1.5 and deck ×1.3 (fixed) |
 
 ### Survey rating
 
@@ -193,8 +198,10 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
   expected value.
 - **DMG-05**: In isolated passes at town sites (calibration stage 1), weak houses reach DOD 6 at
   a lower median 10 m open-terrain peak than standard ones, and strong houses at a higher one.
-- **DMG-15** *(validation)*: In the same runs as DMG-04, strong houses reach DOD 10 at a
-  Kaplan–Meier median 10 m open-terrain peak within ±5% of the DI 2 upper bound (220 mph).
+- **DMG-15** *(validation)*: In the same runs as DMG-04, weak houses reach each DOD at a
+  Kaplan–Meier median 10 m open-terrain peak within ±5% of the DI 2 lower bound, and strong
+  houses within ±5% of the upper bound; DOD 4 within ±8% (it has no calibrated part of its
+  own: garage door and deck are fixed engineering values, so its class medians follow).
 - **DMG-16**: In isolated passes at town sites (calibration stage 1), standard houses reach each
   DOD at a Kaplan–Meier median 10 m open-terrain peak inside the DI 2 lower–upper bounds for
   DOD 1–6, and between the expected speed and 1.15 × the upper bound for DOD 7–10 (Decision 4).
@@ -253,8 +260,30 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
    +5.6% (DOD 7) to +13.4% (DOD 10), and DOD 1–4 don't move: the whole gap is the flattening,
    real physics (Spec 17), and DI 2 was judged from towns that flattened too. DMG-09 and
    DMG-16 allow it (up to 1.15 × the upper bound at DOD 7–10).
+5. **Class factors calibrated to DI 2's bounds, per part (v2.6, BL-028):** DI 2's lower and upper
+   bounds describe below- and above-average construction, and the survey assigns them by
+   class, so each class must actually fail there or the class rule biases the rating. Every
+   calibrated part gets a weak and a strong factor (siding, covering and glass vary with
+   construction quality as much as framing does: aged vinyl and three-tab shingles against
+   high-wind-rated siding, architectural shingles and impact glass).
 
 ## Changelog
+
+- v2.6: class factors calibrated in the town (BL-028's main cause). The survey gives weak houses
+  DI 2's lower bound and strong houses its upper bound (DMG-08), but only strong DOD 10 was
+  ever checked (v2.3): after v2.5 strong houses read 6–18 mph high in the survey and weak ones
+  7–16 mph low, and every rating one EF above the true peak's was set by strong houses at their
+  DOD's upper bound. Now stage 2 fits each calibrated part's weak and strong factor so each
+  class reaches every DOD at its own bound; DMG-15 covers both classes at every DOD.
+  Four rounds on seeds 1–2 (starting from v2.5's capacities and the old factors); the
+  standard capacities moved ≤ 3% (windows 2810 → 3156 Pa as the classes shifted debris). Siding,
+  covering and glass had no class factor before, so at DOD 1–4 all classes failed alike (weak
+  +17–25% above the lower bound, strong −14–19% below the upper). Held-out seeds 3 and 7: every
+  class and DOD within ±3.6% except strong DOD 4 (+5.6%; see DMG-15). Survey bias (seed 3 / 7):
+  EF2 0.0 / +0.2, EF3 −3.6 / −3.0, EF4 −5.5 / −5.9 mph. Ratings did **not** change: EF2–EF4
+  still rate one EF high on both seeds. The rating is the highest of hundreds of points, so the
+  low tail of the strong class (≈ 20% under its median, given the upper bound) sets it however
+  well the medians sit; that is BL-028's corroboration rule (Spec 16), not a capacity question.
 
 - v2.5: calibration on the EF scale's basis (BL-029). DI 2's speeds are 10 m open-terrain
   gusts, but v1.1–v2.4 matched each DOD to the *roof-height* peak in passes over open terrain;

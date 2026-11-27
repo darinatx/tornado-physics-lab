@@ -2,7 +2,8 @@
  * In-town calibration of BASE_CAPACITY (Spec 03 v2.5, BL-029). Full preset storms through the
  * default town on its own roughness ("auto"), debris and rubble included: for each DOD, the
  * Kaplan–Meier median 10 m open-terrain peak at a standard house when it first reached that DOD
- * (the storm recorder's `peak10` at that moment) should equal DI 2's expected speed. Each round
+ * (the storm recorder's `peak10` at that moment) should equal DI 2's expected speed, and weak
+ * and strong houses' should equal its lower and upper bounds (the class factors, v2.6). Each round
  * runs every preset × seed in parallel, then rescales each calibrated part by
  * (target / median)², damped and clamped. The parts' relative strengths start from the
  * isolated-pass calibration (`scripts/calibrate-houses.ts`).
@@ -14,8 +15,28 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BASE_CAPACITY, DI2_DODS, PARTS, PART_CALIBRATION_DOD } from "../src/config/buildings";
+import { BASE_CAPACITY, CLASS_FACTORS, DI2_DODS, PARTS, PART_CALIBRATION_DOD } from "../src/config/buildings";
 import type { Part } from "../src/config/buildings";
+
+/** What a round calibrates: the standard house's capacities (Pa) and the weak and strong class
+ *  factors (–). A caps file holding only capacities (v2.5's format) leaves the factors as they are. */
+interface Calib {
+  base: Record<Part, number>;
+  weak: Partial<Record<Part, number>>;
+  strong: Partial<Record<Part, number>>;
+}
+const readCalib = (file: string): Calib => {
+  const j = JSON.parse(readFileSync(file, "utf8")) as Calib | Record<Part, number>;
+  return "base" in j ? (j as Calib) : { base: j as Record<Part, number>, weak: { ...CLASS_FACTORS.weak }, strong: { ...CLASS_FACTORS.strong } };
+};
+const applyCalib = (c: Calib) => {
+  Object.assign(BASE_CAPACITY, c.base);
+  for (const cls of ["weak", "strong"] as const) {
+    const f = CLASS_FACTORS[cls] as Partial<Record<Part, number>>;
+    for (const k of Object.keys(f) as Part[]) delete f[k];
+    Object.assign(f, c[cls]);
+  }
+};
 import { PRESETS } from "../src/config/presets";
 import { MS_PER_MPH } from "../src/config/units";
 import { kmMedian } from "../src/core/damage/steadyRamp";
@@ -37,7 +58,7 @@ interface HouseOut {
 
 async function runOne(preset: string, seed: number, capsFile: string, outFile: string): Promise<void> {
   // Capacities for this run: createHouse reads BASE_CAPACITY when the town is built.
-  Object.assign(BASE_CAPACITY, JSON.parse(readFileSync(capsFile, "utf8")) as Record<Part, number>);
+  applyCalib(readCalib(capsFile));
   // Diagnostic: hold the roughness field at the intact town's (no updates as houses fall).
   if (process.env.FREEZE_ROUGHNESS) {
     const { TERRAIN } = await import("../src/config/terrain");
@@ -115,16 +136,17 @@ function medians(runs: HouseOut[][], cls: string): number[] {
   return m;
 }
 
-function report(runs: HouseOut[][], label: string): number[] {
-  const std = medians(runs, "standard");
-  const strong = medians(runs, "strong");
-  console.log(`${label}: standard houses, KM median 10 m open peak at first reach (mph):`);
-  for (const r of DI2_DODS) {
-    const got = std[r.dod]!;
-    console.log(`  DOD ${String(r.dod).padStart(2)}: ${got.toFixed(1).padStart(6)} vs ${r.expected} (${((got / r.expected - 1) * 100).toFixed(1)}%)`);
-  }
-  console.log(`  strong DOD 10: ${strong[10]!.toFixed(1)} vs ${DI2_DODS[9]!.upper} (${((strong[10]! / DI2_DODS[9]!.upper - 1) * 100).toFixed(1)}%)`);
-  return std;
+function report(runs: HouseOut[][], label: string): { standard: number[]; weak: number[]; strong: number[] } {
+  const m = { standard: medians(runs, "standard"), weak: medians(runs, "weak"), strong: medians(runs, "strong") };
+  const pct = (got: number, t: number) => `${((got / t - 1) * 100).toFixed(1)}%`.padStart(6);
+  console.log(`${label}: KM median 10 m open peak at first reach (mph) — weak vs lower, standard vs expected, strong vs upper:`);
+  for (const r of DI2_DODS)
+    console.log(
+      `  DOD ${String(r.dod).padStart(2)}: weak ${m.weak[r.dod]!.toFixed(1).padStart(6)} (${pct(m.weak[r.dod]!, r.lower)})  ` +
+        `standard ${m.standard[r.dod]!.toFixed(1).padStart(6)} (${pct(m.standard[r.dod]!, r.expected)})  ` +
+        `strong ${m.strong[r.dod]!.toFixed(1).padStart(6)} (${pct(m.strong[r.dod]!, r.upper)})`,
+    );
+  return m;
 }
 
 const mode = args[0];
@@ -134,28 +156,30 @@ if (mode === "run") {
   const seeds = (opt("--seeds") ?? (mode === "check" ? "3,7" : "1,2")).split(",").map(Number);
   const dir = opt("--out") ?? "calibrate-town-out";
   mkdirSync(dir, { recursive: true });
-  let caps: Record<Part, number> = opt("--caps") ? (JSON.parse(readFileSync(opt("--caps")!, "utf8")) as Record<Part, number>) : { ...BASE_CAPACITY };
+  let calib: Calib = opt("--caps") ? readCalib(opt("--caps")!) : { base: { ...BASE_CAPACITY }, weak: { ...CLASS_FACTORS.weak }, strong: { ...CLASS_FACTORS.strong } };
   const rounds = mode === "check" ? 1 : Number(opt("--rounds") ?? 3);
   for (let round = 0; round < rounds; round++) {
     const capsFile = join(dir, `caps-${mode}-${round}.json`);
-    writeFileSync(capsFile, JSON.stringify(caps));
+    writeFileSync(capsFile, JSON.stringify(calib));
     const t0 = performance.now();
     const runs = await runAll(seeds, capsFile, dir, `${mode}${round}`);
-    const std = report(runs, `${mode} round ${round} (seeds ${seeds.join(",")}, ${((performance.now() - t0) / 1000).toFixed(0)} s)`);
+    const m = report(runs, `${mode} round ${round} (seeds ${seeds.join(",")}, ${((performance.now() - t0) / 1000).toFixed(0)} s)`);
     for (const p of PRESET_IDS) for (const s of seeds) console.log("  " + readFileSync(join(dir, `${mode}${round}-${p}-${s}.summary.json`), "utf8"));
     if (mode === "check") break;
-    const next = { ...caps };
+    // Pressure ∝ speed²; damped (0.8) and clamped per round, since debris also reaches some DODs.
+    const step = (target: number, got: number) => (Number.isFinite(got) ? Math.min(1.35, Math.max(0.75, Math.pow(target / got, 2 * 0.8))) : 0.8);
+    const next: Calib = { base: { ...calib.base }, weak: { ...calib.weak }, strong: { ...calib.strong } };
     for (const p of PARTS) {
       const d = PART_CALIBRATION_DOD[p];
       if (!d) continue;
-      const got = std[d]!;
-      const target = DI2_DODS[d - 1]!.expected;
-      // Pressure ∝ speed²; damped (0.8) and clamped per round, since debris also reaches some DODs.
-      const f = Number.isFinite(got) ? Math.min(1.35, Math.max(0.75, Math.pow(target / got, 2 * 0.8))) : 0.8;
-      next[p] = Math.round(caps[p] * f);
+      const r = DI2_DODS[d - 1]!;
+      next.base[p] = Math.round(calib.base[p] * step(r.expected, m.standard[d]!));
+      // Class factors: weak houses to the lower bound, strong to the upper (Spec 03 v2.6).
+      next.weak[p] = +((calib.weak[p] ?? 1) * step(r.lower, m.weak[d]!)).toFixed(3);
+      next.strong[p] = +((calib.strong[p] ?? 1) * step(r.upper, m.strong[d]!)).toFixed(3);
     }
-    caps = next;
-    console.log(`caps after round ${round}:`, JSON.stringify(caps));
+    calib = next;
+    console.log(`after round ${round}:`, JSON.stringify(calib));
   }
-  writeFileSync(join(dir, `caps-${mode}-final.json`), JSON.stringify(caps));
+  writeFileSync(join(dir, `caps-${mode}-final.json`), JSON.stringify(calib));
 }
