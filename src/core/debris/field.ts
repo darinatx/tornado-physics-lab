@@ -17,7 +17,7 @@ import { DRYWALL_COLOR, PARTITION_AREAL } from "../../config/structure";
 import { clipEnvelope, clipSlab, hasEnvelope, insideLocal, lyingOnSlab, overSlab, planesOf, slabHalf, surfaceAt } from "../impact/envelope";
 import type { EnvelopeHit, Extent, ImpactTargets, Surface } from "../impact/envelope";
 import { resolveImpact } from "../impact/impact";
-import { bounce, floorUnder, halfExtentAlong, unbury } from "../impact/contact";
+import { arrives, bounce, floorUnder, halfExtentAlong, unbury } from "../impact/contact";
 import type { Missile } from "../impact/impact";
 import type { Piece } from "./piece";
 import { tableAt } from "../terrain/roughness";
@@ -37,6 +37,9 @@ export interface DebrisStats {
   maxHeight: number;
   /** Impacts on houses so far, counting representative copies (Spec 10). */
   impacts: number;
+  /** Presses so far: contacts in a sustained contact episode, not resolved as impacts (Spec 10
+   *  v0.18; one per piece and step, copies not counted). */
+  pressed: number;
   /** Pieces stuck through a house surface now, and lodgings over the whole run. */
   lodged: number;
   lodgedTotal: number;
@@ -121,7 +124,7 @@ export class DebrisField {
   heavy: HeavySink | null = null;
   /** Ground marks (Spec 19): told of landings on and slides along open ground. Read-only use. */
   marks: { landing(p: Piece, speed: number): void; slide(p: Piece, x0: number, z0: number): void } | null = null;
-  readonly stats: DebrisStats = { airborne: 0, resting: 0, skipped: 0, lofted: 0, settled: 0, maxSpeed: 0, maxHeight: 0, impacts: 0, lodged: 0, lodgedTotal: 0 };
+  readonly stats: DebrisStats = { airborne: 0, resting: 0, skipped: 0, lofted: 0, settled: 0, maxSpeed: 0, maxHeight: 0, impacts: 0, pressed: 0, lodged: 0, lodgedTotal: 0 };
   /** Permanent debris field: resting pieces the tornado has left behind (append-only). */
   readonly settled: Piece[] = [];
   /** Pieces dropped from the front of `settled` when it overflows. */
@@ -188,6 +191,8 @@ export class DebrisField {
   /** Read-only observer of every impact on a house, counting representative copies (Spec 04
    *  v1.9; the wind tunnel's record). `b` is the house hit (a detailed house's stand-in). */
   onImpact: ((b: Building, q: QueuedImpact, p: Piece) => void) | null = null;
+  /** Read-only observer of every press (a contact in a sustained episode, Spec 10 v0.18). */
+  onPress: ((b: Building, p: Piece) => void) | null = null;
 
   /** Read-only observer of a piece leaving the pool for good: carried above the cloud base
    *  ("lofted") or off the map (Spec 16's storm record). */
@@ -732,7 +737,7 @@ export class DebrisField {
         this.stats.lodged--;
         this.add({
           ...p, id: this.nextId++, pos: { ...p.pos }, vel: { x: 0, y: 0, z: 0 }, q: [...p.q] as Q, gust: { x: 0, y: 0, z: 0 },
-          resting: false, grounded: false, hidden: false, lodgedIn: undefined, restedAt: Infinity,
+          resting: false, grounded: false, hidden: false, lodgedIn: undefined, contact: undefined, restedAt: Infinity,
         });
       }
     }
@@ -781,6 +786,18 @@ export class DebrisField {
     if (!best.entering) {
       // From inside: the standing envelope keeps it in, no damage.
       bounce(p, best.point, n, vn);
+      // In through an opening and out against a standing surface in one step: it stays on its
+      // own path, just short of that surface (v0.18). Set off by its box instead, a long piece's
+      // center could jump across the standing wall beside the opening; still touching, it is
+      // pushed clear from inside next step.
+      if (best.cut) p.pos = { x: best.point.x + n.x * 0.01, y: Math.max(best.point.y + n.y * 0.01, 0), z: best.point.z + n.z * 0.01 };
+      return false;
+    }
+    // Held against this surface (Spec 10 v0.18): a press, not a new impact.
+    if (!arrives(p, b.id, best.plane, this.lastTime)) {
+      bounce(p, best.point, n, vn, 0);
+      this.stats.pressed++;
+      this.onPress?.(b, p);
       return false;
     }
     const m: Missile = { label: p.def.label, family: p.def.family, mass: p.def.mass, dims: p.def.dims };

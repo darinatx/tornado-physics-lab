@@ -62,6 +62,13 @@ export const IMPACT = {
   friction: 0.5,
   /** Contact duration (s), as Spec 09's wood-on-wood impacts. */
   contactTime: 0.1,
+  /**
+   * Contact episode gap (s, Spec 10 v0.18): a contact with the same plane of a house within this
+   * long of the last is a press in the same episode, not a new impact. One impact's own contact
+   * duration (contactTime): two contacts closer than that are one contact. It also spans a far
+   * piece stepped every other step (Spec 04 v2.2).
+   */
+  episodeGap: 0.1,
   /** Crushing strength perpendicular to the grain (Pa; lumber ~4–7 MPa). */
   crushStrength: 5e6,
   /** A perforating piece lodges with this much of it inside (m). */

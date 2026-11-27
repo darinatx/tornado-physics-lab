@@ -31,6 +31,9 @@ export interface EnvelopeHit {
   /** Crossing point in the house's local frame. */
   local: Vec3;
   surface: Surface;
+  /** Leaving after coming in through an opening in the same step (a corner cut, v0.13): the
+   *  crossing point is the center's own, on its path. */
+  cut?: boolean;
 }
 
 interface Plane {
@@ -266,6 +269,7 @@ function throughAndOut(b: Building, a: Vec3, dir: Vec3, planes: readonly Plane[]
     normal: dirToWorld(b, planes[c.plane]!.n),
     local: c.contact,
     surface,
+    cut: true,
   };
 }
 

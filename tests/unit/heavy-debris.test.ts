@@ -93,6 +93,30 @@ describe("Spec 04 v2.0 — heavy pieces as rigid bodies", () => {
     expect(field.pieces.filter((p) => !p.rigid).every((p) => p.def.mass < HEAVY.minKg || p.represents > 1)).toBe(true);
   });
 
+  test("IMP-26: a heavy piece held against a wall by the wind is one hit (its arrival), not one per step", () => {
+    const house = exactHouse();
+    const hx = house.width / 2;
+    const h = new HeavyDebris([house], () => [house], DT);
+    // Thrown at the +X end wall, then pinned there by a 120 mph wind blowing toward −x.
+    const p = panel(hx + 3, 1.6, 0, { x: -10, y: 0, z: 0 });
+    h.take(p, NOBODY, 0);
+    let touching = 0;
+    let t = 0;
+    for (let i = 0; i < 120; i++) {
+      t = run(h, air(120, 180), DT, t);
+      if (p.pos.x < hx + 2.3) touching++; // lying flat: its center is 2 m (half its length) off the wall
+    }
+    expect(touching).toBeGreaterThan(60);
+    const hits = h.hits.filter((x) => x.house === 0 && x.plane === 0);
+    // The arrival, at about its approach speed; the contact steps after it (Rapier spreads a
+    // hit's impulse over a step or two, then the wind holds the panel there) are not hits.
+    // A later hit is a real re-arrival after a rebound, at about e times the speed.
+    expect(hits[0]!.vn).toBeGreaterThan(8);
+    expect(hits.length).toBeLessThanOrEqual(2);
+    for (const x of hits.slice(1)) expect(x.vn).toBeLessThan(0.3 * hits[0]!.vn);
+    h.dispose();
+  });
+
   test("DEB-23: a heavy piece stops at a standing wall and hits it; its own house's walls let it go at first, its own slab doesn't", () => {
     const house = exactHouse();
     const hx = house.width / 2;
