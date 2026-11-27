@@ -302,6 +302,12 @@ All values go in `src/config/terrain.ts`.
 - No roads, water, woods or terrain height (hills, valleys); roads and zoning come with city
   generation (Phase 13).
 
+## Validation note
+
+Phase 7 validation (2026-11-26, BL-024, accepted by the user): with wind blowing into town, β
+reaches 50% of its interior value 160–260 m in, 90% at 530–660 m and ~95% by 800 m, in line
+with internal-boundary-layer growth and ASCE 7-22 §26.7.3's 800 m fetch for an exposure.
+
 ## Decisions
 
 Made by Claude, prioritizing realism; see CLAUDE.md.
