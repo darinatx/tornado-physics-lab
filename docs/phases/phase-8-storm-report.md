@@ -160,6 +160,28 @@ framed on the damage with contours drawn over the points.
     any `--import tsx` run; not the sim.
   - Benchmark: `ef4-town` 8.16, `detail-core` 57.89 ms per step, same fingerprints, within the
     phase's spread (8.05–8.83, 57.9–62.9). `verify:fast`: 251 tests, trace complete.
+- **Slice E — validation** (2026-11-26, its own session on `validate-phase-8` from the
+  `phase-8-prelim` tag; records, no model code). New scripts: `scripts/survey-bias.ts` (a
+  preset's full lifecycle over the town, survey bias by DOD and class, rating against the true
+  peak, 10 m ÷ roof ratio; `--save` writes the report JSON), `scripts/impact-episodes.ts` (what
+  the impact counts are made of) and `scripts/report-check.ts` (a saved report's figures
+  recomputed by hand, and the reload). Full record: `docs/backlog.md`, "Phase 8 validation run".
+  - `npm run verify`: 281 of 288 pass; the 7 failures are known items (BL-002, -003, -007,
+    -012, -020, -022, -025). REP-15 passes in the full run. Trace: 0 missing.
+  - Survey bias over EF2–EF5 × seeds 1–3: mean −5, −12, −14, −28 mph; 33–61% of points outside
+    their DOD's range, nearly all above it. Most of the EF2–EF4 bias is the calibration basis
+    (houses reach each DOD at their roof-height wind; the 10 m open-terrain wind is 1.13–1.19×
+    that in the town): on the roof basis EF4's bias is +2.0 mph (BL-029). EF5 shows the DOD 10
+    ceiling, as damage-based ratings do in published radar comparisons.
+  - The rating is one EF above the true peak in 3 of 12 runs, each set by one strong house at
+    its DOD's upper bound (BL-028). Seed 1's 200 mph over a 181.5 mph peak is the same effect
+    within EF4: DOD 10's expected speed given to the low tail of standard houses.
+  - Debris-only houses far outside the swath set the survey's width and sometimes its length
+    (BL-030).
+  - Impact counts match the sim's counters; 84% come from pieces pinned against walls, which
+    chatter and also cause half the damaging impact events (BL-031, extending BL-011).
+  - Report figures checked by hand on the EF4 seed-1 run: all match; the 27.7 MB JSON reloads
+    into an identical report and an edited one is refused.
 
 ## Exit criteria
 
