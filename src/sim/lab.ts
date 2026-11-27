@@ -252,7 +252,7 @@ function presetParams(id: string): TornadoParams {
 /**
  * The pass's params and start point (Spec 13, Spec 09 STR-21's rule carried over). Mature: the
  * preset's V_max and R_max throughout, from the nearest distance (≥ 2·R_max, ≤ R_enter) where
- * every house's roof wind is under 50 mph, to as far past the block; then calm. Full: the
+ * every house's roof wind is under LAB_PASS_CALM_MPH, to as far past the block; then calm. Full: the
  * preset's lifecycle, timed so the closest approach falls at the middle of its mature stage.
  */
 export function passTrack(w: Extract<LabWind, { kind: "pass" }>, houses: readonly HouseSpec[], terrainIn: TerrainClass | "auto" | Terrain, everyHouse: readonly HouseSpec[] = houses): { params: TornadoParams; start: { x: number; z: number }; startDistance: number } {

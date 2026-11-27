@@ -7,19 +7,10 @@ import { efRating, mphToMs } from "../../src/core/wind/efScale";
 import { windAt } from "../../src/core/wind/windField";
 import { randomHouseSpec } from "../../src/sim/city";
 import { createRng } from "../../src/sim/rng";
+import { calibrationTown, townPassSamples } from "../../src/sim/calibrationTown";
+import type { ReachSample } from "../../src/sim/calibrationTown";
 import { exactHouse, randomHouses, rec } from "../houseHelpers";
 import { DebrisField } from "../../src/core/debris/field";
-
-type Sample = { t: number; observed: boolean };
-function passSamples(houses: { b: Building; rng: () => number }[], vMax?: number): Sample[][] {
-  const out: Sample[][] = Array.from({ length: 11 }, () => []);
-  for (const { b, rng } of houses) {
-    const c = samplePassCase(rng);
-    const f = tornadoPass(b, vMax ? { ...c.state, vMax } : c.state, "open", c.offset);
-    for (let d = 1; d <= 10; d++) out[d]!.push(Number.isFinite(f[d]!) ? { t: f[d]!, observed: true } : { t: b.peakMph, observed: false });
-  }
-  return out;
-}
 
 describe("Spec 03 — damage (component houses)", () => {
   test("DMG-01: failures are permanent and DOD never decreases", () => {
@@ -90,18 +81,16 @@ describe("Spec 03 — damage (component houses)", () => {
     expect(firstBay(breached)).toBeLessThan(firstBay(intact) - 10);
   });
 
-  test("DMG-04: tornado passes reproduce the DI 2 expected speeds (±5%)", () => {
-    const rng = createRng(4242);
-    const houses = Array.from({ length: 800 }, (_, i) => ({ b: createHouse(randomHouseSpec(i, rng, 0, 0, rng() * Math.PI * 2, "standard"), rng), rng }));
-    const s = passSamples(houses);
+  test("DMG-04: tornado passes over town sites reproduce the DI 2 expected speeds on the 10 m open basis (±5%)", () => {
+    const s = townPassSamples(800, 4242).samples;
     for (const r of DI2_DODS) {
       const m = kmMedian(s[r.dod]!);
       expect(Math.abs(m / r.expected - 1), `DOD ${r.dod}: ${m} vs ${r.expected}`).toBeLessThan(0.05);
     }
   }, 120000);
 
-  test("DMG-05: weak < standard < strong for roof-structure loss", () => {
-    const dod6 = (cls: "weak" | "standard" | "strong") => kmMedian(passSamples(randomHouses(200, 77, cls))[6]!);
+  test("DMG-05: weak < standard < strong for roof-structure loss (town sites, 10 m open basis)", () => {
+    const dod6 = (cls: "weak" | "standard" | "strong") => kmMedian(townPassSamples(200, 77, cls).samples[6]!);
     const weak = dod6("weak");
     const standard = dod6("standard");
     const strong = dod6("strong");
@@ -109,18 +98,20 @@ describe("Spec 03 — damage (component houses)", () => {
     expect(strong).toBeGreaterThan(standard);
   }, 120000);
 
-  test("DMG-15: strong houses are swept clean (DOD 10) at a median peak within ±5% of DI 2's upper bound", () => {
+  test("DMG-15: strong houses are swept clean (DOD 10) at a median 10 m open peak within ±5% of DI 2's upper bound", () => {
     const dod10 = DI2_DODS.find((r) => r.dod === 10)!;
-    const m = kmMedian(passSamples(randomHouses(400, 515, "strong"))[10]!);
+    const m = kmMedian(townPassSamples(400, 515, "strong").samples[10]!);
     expect(Math.abs(m / dod10.upper - 1), `strong DOD 10: ${m} vs ${dod10.upper}`).toBeLessThan(0.05);
   }, 120000);
 
-  test("DMG-06: under 1% of standard houses damaged below 50 mph", () => {
+  test("DMG-06: under 1% of standard houses damaged below 50 mph on the 10 m open basis", () => {
+    // 50 mph at 10 m over open terrain is this local (roof-height) wind at a town house.
+    const local = 50 / townPassSamples(300, 32).ratio[1]!;
     let damaged = 0;
     const houses = randomHouses(1000, 5);
     for (const { b, rng } of houses) {
       const a = rng() * Math.PI * 2;
-      const ms = mphToMs(50);
+      const ms = mphToMs(local);
       updateBuilding(b, { x: ms * Math.cos(a), y: 0, z: ms * Math.sin(a) }, 0, 10, 0);
       if (b.dod > 0) damaged++;
     }
@@ -148,11 +139,14 @@ describe("Spec 03 — damage (component houses)", () => {
     expect([efFromDamage(10, "weak").ef, efFromDamage(10).ef, efFromDamage(10, "strong").ef]).toEqual([3, 4, 5]);
   });
 
-  test("DMG-09: steady wind ramps land inside the DI 2 bounds", () => {
-    const s: Sample[][] = Array.from({ length: 11 }, () => []);
+  test("DMG-09: steady wind ramps, on the 10 m open basis, land inside the DI 2 bounds", () => {
+    // The ramp's wind is the house's local roof-height wind; the calibration setting's own
+    // 10 m open ÷ roof ratio at first reach puts it on the EF scale's basis.
+    const ratio = townPassSamples(300, 32).ratio;
+    const s: ReachSample[][] = Array.from({ length: 11 }, () => []);
     for (const { b, rng } of randomHouses(400, 31)) {
       const f = steadyRamp(b, rng() * Math.PI * 2);
-      for (let d = 1; d <= 10; d++) s[d]!.push(Number.isFinite(f[d]!) ? { t: f[d]!, observed: true } : { t: 280, observed: false });
+      for (let d = 1; d <= 10; d++) s[d]!.push(Number.isFinite(f[d]!) ? { t: f[d]! * ratio[d]!, observed: true } : { t: 280 * ratio[d]!, observed: false });
     }
     for (const r of DI2_DODS) {
       const m = kmMedian(s[r.dod]!);
@@ -161,13 +155,18 @@ describe("Spec 03 — damage (component houses)", () => {
     }
   }, 120000);
 
-  test("DMG-10: EF5-strength cores can produce EF5 surveys; EF4-strength ones cannot", () => {
-    const survey = (vMax: number, cls: "standard" | "strong", seed: number) =>
-      randomHouses(150, seed, cls).map(({ b, rng }) => {
+  test("DMG-10: EF5-strength cores can produce EF5 surveys; EF4-strength ones cannot (town sites, 10 m open peak)", () => {
+    const town = calibrationTown();
+    const survey = (vMax: number, cls: "standard" | "strong", seed: number) => {
+      const rng = createRng(seed);
+      return Array.from({ length: 150 }, (_, i) => {
+        const site = town.sites[Math.floor(rng() * town.sites.length)]!;
+        const b = createHouse(randomHouseSpec(i, rng, site.x, site.z, site.yaw, cls), rng);
         const c = samplePassCase(rng);
-        tornadoPass(b, { ...c.state, vMax }, "open", c.offset * 0.5);
-        return { ef: efFromDamage(b.dod, b.cls).ef, peak: b.peakMph };
+        const r = tornadoPass(b, { ...c.state, vMax }, town.terrain, c.offset * 0.5, site);
+        return { ef: efFromDamage(b.dod, b.cls).ef, peak: r.peak10Mph };
       });
+    };
     expect(survey(85, "strong", 21).some((r) => r.ef === 5)).toBe(true);
     for (const cls of ["standard", "strong"] as const)
       for (const r of survey(50, cls, 22)) {

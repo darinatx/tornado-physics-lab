@@ -537,7 +537,7 @@ describe("Spec 16 — storm report: record and survey", () => {
       const prelim = reportFromJson(reportJson(recA, surveyA, true), SPECS);
       expect(prelim.preliminary).toBe(true);
       const tampered = JSON.parse(text);
-      tampered.survey.rating = 5;
+      tampered.survey.rating = tampered.survey.rating === 5 ? 4 : 5;
       expect(() => reportFromJson(JSON.stringify(tampered))).toThrow(/doesn't match/);
       expect(() => reportFromJson("{}")).toThrow(/Not a storm report/);
 

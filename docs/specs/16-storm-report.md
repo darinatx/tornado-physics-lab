@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.6) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.7) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -255,11 +255,13 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
   3-second gust at 10 m, and Spec 01's speeds are already 3-second-gust equivalent, so a second
   running mean would average twice and bias the true wind low. The roof-height peak is shown
   too, since that's what loaded the house.
-- **Bias is measured against the 10 m wind, and the report says what part comes from height:**
-  Spec 03's capacities were calibrated so each DOD's expected speed matches the *roof-height*
-  peak, while the EF scale (and the survey) means 10 m. The Methods section states this and
-  gives the mean 10 m ÷ roof-height ratio over the survey points, so the user can tell the
-  height effect from the method's own bias.
+- **Bias is measured against the 10 m wind, on the same basis as the calibration (v1.7):**
+  since Spec 03 v2.5 the capacities are calibrated so each DOD's expected speed matches the
+  median 10 m open-terrain peak at town houses, the basis the survey assigns, so the bias
+  measures the EF method itself, not the height or the town's roughness. The Methods section
+  says so and still gives the mean 10 m ÷ roof-height ratio over the survey points, as the
+  difference between the wind that rates a house and the local wind that loaded it. (v1.0–v1.6:
+  the calibration was at roof height and the ratio explained part of the bias, BL-029.)
 - **True 10 m wind on the open-terrain basis (v1.1, after BL-021):** the DOD speeds the survey
   assigns are open-terrain 10 m gusts, and the EF readout reports that basis (Spec 17 v1.1), so
   the true wind beside each rating is on it too; otherwise town roughness would show up as a
@@ -291,6 +293,9 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - None.
 
 ## Changelog
+
+- v1.7 (BL-029): Methods and the bias decision follow Spec 03 v2.5's calibration on the 10 m
+  open basis; the 10 m ÷ roof ratio is now context, not a correction to the bias.
 
 - v1.6 (2026-11-26, the user's demo review): the maps frame the survey points (not the whole
   swath, which squeezed the damage into a corner); contour outlines over the points with a

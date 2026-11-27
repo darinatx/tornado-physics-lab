@@ -108,22 +108,23 @@ export const PART_UNIT: Record<Part, string> = {
 
 /**
  * Base capacities (Pa) for a standard house's components. Calibrated by
- * scripts/calibrate-houses.ts against simulated tornado passes (DMG-04).
+ * scripts/calibrate-houses.ts against simulated tornado passes over town house sites, on the
+ * EF scale's basis: the 10 m open-terrain peak at first reaching each DOD (Spec 03 v2.5, DMG-04).
  */
 export const BASE_CAPACITY: Record<Part, number> = {
-  siding: 633,
-  roofCover: 2288,
-  window: 2094,
+  siding: 428,
+  roofCover: 1540,
+  window: 1342,
   /** Fixed, not calibrated: standard non-reinforced garage door, ~27 psf. */
   garage: 1300,
   /** Fixed, not calibrated: 8d nails at typical spacing, ~56 psf. */
   roofDeck: 2700,
-  anchorage: 2718,
-  roofBay: 1593,
-  wallPanel: 1020,
-  partition: 2637,
-  coreRoom: 3967,
-  sweep: 6152,
+  anchorage: 1746,
+  roofBay: 1035,
+  wallPanel: 653,
+  partition: 1913,
+  coreRoom: 2820,
+  sweep: 4318,
 };
 
 /**
@@ -144,6 +145,12 @@ export const PART_CALIBRATION_DOD: Record<Part, number> = {
   coreRoom: 9,
   sweep: 10,
 };
+
+/** Calibration setting (Spec 03 v2.5): the town whose house sites and intact roughness field
+ *  the calibration passes use. Seed 1 is the default town (Spec 05). */
+export const CALIBRATION = {
+  townSeed: 1,
+} as const;
 
 /** Fragility: lognormal dispersion (β = σ of ln). */
 export const FRAGILITY = {
