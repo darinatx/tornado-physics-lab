@@ -127,6 +127,22 @@ edge, lawn and cap fixes):
     variable named `flat` (reserved in GLSL ES 3.0) blanked the ground once; the unit tests run
     in Node and can't catch shader compile errors, so the app has to be checked.
 
+- **Benchmark, slices A–C** (2026-11-26, at `664d75a`, which also includes BL-017's outer-wind
+  change merged from `main`; against the Phase 6 baseline; machine load 5.2, higher than the
+  baseline's):
+
+  | Scene | total | damage | debris | heavy | detail | other (ms per physics step) |
+  |---|---|---|---|---|---|---|
+  | `ef4-town` | 8.93 → 10.79 (+21%) | 1.93 → 2.22 | 2.49 → 3.84 (+54%) | 4.51 → 4.31 | 0 | 0 → 0.42 |
+  | `detail-core` | 50.69 → 69.47 (+37%) | 1.69 → 1.77 | 3.03 → 4.10 (+35%) | 2.21 → 2.25 | 43.61 → 61.06 (+40%) | 0.08 → 0.29 |
+
+  Flagged, with likely causes for the profiling slice to confirm: "other" is the roughness and
+  track updates; debris reads the roughness field per piece (three tables and its `windAt`);
+  the detail zone's `windAt` calls go over the field (~1.5× a class). Part of every figure is
+  the load (damage, nearly unchanged code, rose 15%) and a different storm (the town's own
+  roughness and BL-017: 1,296 houses damaged against 1,986). Not re-run old against new at the
+  user's request; the profiling slice measures the causes directly.
+
 ## Exit criteria
 
 Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
@@ -135,7 +151,7 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 - [x] Slice A: TERR-01 to TERR-09, TERR-13 pass
 - [x] Slice B: TERR-10 to TERR-12, TERR-14 pass; demo reviewed by the user (2026-11-26)
 - [x] Slice C: Spec 19 approved; TERR-15 to TERR-24 pass; demo reviewed by the user (2026-11-26)
-- [ ] Benchmark run for slices A, B and C against the baseline once `npm run bench` exists;
+- [x] Benchmark run for slices A, B and C against the baseline once `npm run bench` exists;
       any scene more than 10% slower explained, and fixed or logged
 - [ ] Slice D, profiling: hotspots listed with estimated and confirmed gains; cheap wins
       done, the rest in the backlog (`perf`); before/after numbers recorded
