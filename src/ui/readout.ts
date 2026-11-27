@@ -48,7 +48,8 @@ export interface Readout {
 
 /** Pure: the readout for a snapshot. */
 export function computeReadout(snap: SimSnapshot): Readout {
-  const ms = peakGroundSpeed(snap.tornado, snap.terrain, EF_REFERENCE_HEIGHT);
+  // On the EF scale's basis: open-terrain 10 m gusts, whatever the ground (Spec 17 TERR-25).
+  const ms = peakGroundSpeed(snap.tornado, "open", EF_REFERENCE_HEIGHT);
   const b = twoCellBlend(snap.tornado);
   return {
     ef: efRating(ms),

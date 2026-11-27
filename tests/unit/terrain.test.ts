@@ -335,3 +335,24 @@ describe("Spec 17 — terrain in the sim, the lab and the ground", () => {
     expect(run(true)).toEqual(run(false));
   });
 });
+
+describe("Spec 17 — EF readout basis (BL-021)", () => {
+  test("TERR-25: the EF readout uses the open-terrain basis over any ground; the local wind still follows the roughness", async () => {
+    const { computeReadout } = await import("../../src/ui/readout");
+    const { peakGroundSpeed } = await import("../../src/core/wind/peak");
+    const sim = createSim({}, 5, { tUp: 0, tMature: 900, tRope: 0 });
+    for (let i = 0; i < 10; i++) sim.advance(0.1);
+    const snap = sim.snapshot;
+    expect(isField(snap.terrain)).toBe(true);
+    // Over the town (the core moved there) and over farmland: same readout as the open class.
+    for (const center of [{ x: 0, z: 0 }, { x: EDGE - 1500, z: 0 }]) {
+      const s = { ...snap.tornado, center };
+      const r = computeReadout({ ...snap, tornado: s });
+      expect(r.ms).toBeCloseTo(peakGroundSpeed(s, "open", 10), 9);
+    }
+    // The wind at a point over the town is still slower than open terrain gives.
+    const s = { ...snap.tornado, center: { x: -200, z: 0 } };
+    expect(hspeed(windAt({ x: 0, y: 5, z: 0 }, s, snap.terrain))).toBeLessThan(hspeed(windAt({ x: 0, y: 5, z: 0 }, s, "open")));
+    sim.dispose();
+  });
+});

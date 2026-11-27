@@ -1,6 +1,6 @@
 # Spec 17 — Terrain Roughness and Ground Cover
 
-Status: Approved (v1.0) — Phase 7. Scope from the user, 2026-11-26. Technical choices are made
+Status: Approved (v1.1) — Phase 7. Scope from the user, 2026-11-26. Technical choices are made
 and recorded below (CLAUDE.md rule 1).
 
 ## Purpose
@@ -110,8 +110,9 @@ detail zone) receive a field once and then only its version.
 
 - **Wind (Spec 01):** `windAt` takes the terrain as either a uniform class or this field. The
   vortex friction layer and the carried wind below 10 m both use the local β.
-- **EF readout (Spec 07):** the tornado's peak ground-relative wind is searched over points
-  around the core, each with its own local β.
+- **EF readout (Spec 07):** on the EF scale's own basis, the open-terrain 10 m 3-s gust: the
+  peak is searched around the core with the open class (z₀ 0.03 m), whatever the ground there.
+  Damage still uses the local wind; only the reported rating is standardized (v1.1, BL-021).
 - **Debris (Spec 04):** turbulence intensity, snag distance and bump spacing use the local z₀
   where the piece is.
 - **Wind tunnel and lab steady wind (Spec 12):** the tunnel's power law uses the β at each point
@@ -285,6 +286,10 @@ All values go in `src/config/terrain.ts`.
   ~11 ms); `windAt` over the field costs ≤ 1.6× `windAt` over a class near the ground (1 M calls;
   measured ~1.5×: the direction, two sector reads and the shared factors); a roughness-layer
   refresh takes ≤ 15 ms (measured 6–10 ms).
+- **TERR-25**: The EF readout is on the EF scale's basis: its peak speed equals the open-terrain
+  value (the same tornado state with the open class) whether the core is over farmland, the
+  town or scoured ground, while the wind at a point (and so damage) still follows the local
+  roughness.
 
 ## Simplifications / out of scope
 
@@ -351,6 +356,9 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
 
 ## Changelog
 
+- v1.1 (2026-11-26, BL-021, the user's "fix"): the EF readout reports the open-terrain 10 m
+  wind, as the EF scale defines its speeds; with the local β it read low over town and high over
+  the storm's own scoured track (TERR-25).
 - v1.0 (2026-11-26, Phase 7 build): approved and built. Changes from the draft, from the build:
   the density window is 200 m (a 100 m window read street crossings as near-open, z₀ 0.05 m
   among 0.19 m); the fetch is a recursive exponential filter (no hard 1 km cut-off; 98% of the
