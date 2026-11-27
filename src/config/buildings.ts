@@ -108,22 +108,23 @@ export const PART_UNIT: Record<Part, string> = {
 
 /**
  * Base capacities (Pa) for a standard house's components. Calibrated by
- * scripts/calibrate-houses.ts against simulated tornado passes (DMG-04).
+ * scripts/calibrate-houses.ts against simulated tornado passes over town house sites, on the
+ * EF scale's basis: the 10 m open-terrain peak at first reaching each DOD (Spec 03 v2.5, DMG-04).
  */
 export const BASE_CAPACITY: Record<Part, number> = {
-  siding: 633,
-  roofCover: 2288,
-  window: 2094,
+  siding: 425,
+  roofCover: 1671,
+  window: 2810,
   /** Fixed, not calibrated: standard non-reinforced garage door, ~27 psf. */
   garage: 1300,
   /** Fixed, not calibrated: 8d nails at typical spacing, ~56 psf. */
   roofDeck: 2700,
-  anchorage: 2718,
-  roofBay: 1593,
-  wallPanel: 1020,
-  partition: 2637,
-  coreRoom: 3967,
-  sweep: 6152,
+  anchorage: 2059,
+  roofBay: 984,
+  wallPanel: 945,
+  partition: 2379,
+  coreRoom: 3498,
+  sweep: 5550,
 };
 
 /**
@@ -144,6 +145,17 @@ export const PART_CALIBRATION_DOD: Record<Part, number> = {
   coreRoom: 9,
   sweep: 10,
 };
+
+/** Calibration setting (Spec 03 v2.5): the town whose house sites and intact roughness field
+ *  the calibration passes use (seed 1 is the default town, Spec 05), and the passes: the
+ *  EF1–EF5 presets at mature strength, houses within ±offsetRmax·R_max of the track (–), out
+ *  to about where EF5's outer flow falls under DOD 1's lower bound (r ∝ V^(−1/α): 175 → 53 mph
+ *  at α 0.6 is ≈ 7·R_max at the ground; past 4·R_max few houses reach DOD 1 and are censored). */
+export const CALIBRATION = {
+  townSeed: 1,
+  presets: ["ef1-small", "ef2-cone", "ef3-strong", "ef4-wedge", "ef5-extreme"],
+  offsetRmax: 4,
+} as const;
 
 /** Fragility: lognormal dispersion (β = σ of ln). */
 export const FRAGILITY = {

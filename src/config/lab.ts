@@ -44,8 +44,10 @@ export const LAB_RECORDING = {
   boxHeight: 30,
 } as const;
 
-/** Spec 09's pass start rule: roof-height wind under this (mph) where the pass begins. */
-export const LAB_PASS_CALM_MPH = 50;
+/** Spec 13's mature-pass start rule: roof-height wind under this (mph) where the pass begins.
+ *  Below it ~0.15% of component houses lose any part in steady wind (Spec 03 v2.5's siding,
+ *  428 Pa); was 50 with v2.4's 633 Pa, the same margin (50 × √(428/633) ≈ 41). */
+export const LAB_PASS_CALM_MPH = 40;
 
 export interface ReferenceMissile {
   id: string;

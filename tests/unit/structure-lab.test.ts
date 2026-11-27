@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, test } from "vitest";
-import { REFERENCE_MISSILES } from "../../src/config/lab";
+import { LAB_PASS_CALM_MPH, REFERENCE_MISSILES } from "../../src/config/lab";
 import { PRESETS } from "../../src/config/presets";
 import { LAB, DETAIL } from "../../src/config/structure";
 import { mphToMs } from "../../src/core/wind/efScale";
@@ -160,8 +160,8 @@ describe("Spec 13 lab: wind", () => {
       const w = windAt({ x: b.x, y: b.roofHeight, z: b.z }, { ...s0, center: c }, "open");
       return Math.hypot(w.x, w.y, w.z);
     };
-    expect(roof(s0.center)).toBeLessThan(mphToMs(50));
-    if (d > 2 * p.rMax + 1e-6) expect(roof({ x: s0.center.x, z: s0.center.z - 10 })).toBeGreaterThanOrEqual(mphToMs(50));
+    expect(roof(s0.center)).toBeLessThan(mphToMs(LAB_PASS_CALM_MPH));
+    if (d > 2 * p.rMax + 1e-6) expect(roof({ x: s0.center.x, z: s0.center.z - 10 })).toBeGreaterThanOrEqual(mphToMs(LAB_PASS_CALM_MPH));
     lab.advance(2);
     const s1 = lab.sim.snapshot.tornado;
     expect(s1.center.x).toBeCloseTo(s0.center.x, 9);
@@ -189,7 +189,7 @@ describe("Spec 13 lab: wind", () => {
     const h0 = hood.sim.snapshot.tornado;
     for (const hb of hood.sim.world.buildings) {
       const w = windAt({ x: hb.x, y: hb.roofHeight, z: hb.z }, h0, "suburban");
-      expect(Math.hypot(w.x, w.y, w.z)).toBeLessThan(mphToMs(50));
+      expect(Math.hypot(w.x, w.y, w.z)).toBeLessThan(mphToMs(LAB_PASS_CALM_MPH));
     }
     hood.advance(1);
     expect(hood.sim.world.buildings.every((hb) => hb.dod === 0)).toBe(true);
@@ -268,7 +268,9 @@ describe("Spec 13 lab: launcher and inspector", () => {
       lab.advance(0.5);
       lab.fireMissile("astm-e", 0, { pane });
       lab.advance(1.5);
-      const hit = lab.record().impacts[0];
+      // The missile's own hit (60 mph also strips siding, whose pieces hit the walls).
+      const m = REFERENCE_MISSILES.find((x) => x.id === "astm-e")!;
+      const hit = lab.record().impacts.find((i) => Math.abs(i.mass - m.mass) < 1e-9);
       expect(hit?.surface).toBe("pane");
       expect(hit?.index).toBe(pane);
       lab.dispose();

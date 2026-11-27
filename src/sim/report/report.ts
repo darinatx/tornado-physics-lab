@@ -133,7 +133,7 @@ export interface Methods {
   metadata: [string, string][];
   /** Simplifications grouped by spec. */
   simplifications: { spec: string; items: string[] }[];
-  /** Mean 10 m ÷ roof-height peak over the survey points (the calibration-height effect). */
+  /** Mean 10 m ÷ roof-height peak over the survey points (rating basis against the local wind). */
   heightRatio: number | null;
 }
 
@@ -414,7 +414,7 @@ function methods(record: StormRecord, survey: Survey, specs: readonly SpecDoc[])
   const paragraphs = [
     "Rating. Every house with visible damage (degree of damage, DOD, 1 or more) is a survey point, rated with the Enhanced Fujita scale's Damage Indicator 2 (one- and two-family residences). The wind assigned to a point is the DOD's expected value for standard construction, its lower bound for weak construction and its upper bound for strong construction, as survey teams adjust for build quality. The tornado's rating is the highest EF among its survey points; it is rated by what it hit, so a peak over open ground leaves no mark on the rating.",
     "True wind. Beside each rating is the wind the simulation itself recorded: the peak ground-relative horizontal wind at 10 m at the house, on the EF scale's basis (an open-terrain 3-second gust), sampled 30 times a second. The roof-height peak is the local wind that actually loaded the house. The true-wind swath holds the same 10 m peak in 10 m cells wherever it reached EF0 (65 mph).",
-    `Bias. Survey speed minus true 10 m wind, over ${survey.points.length} points: mean ${survey.bias.mean.toFixed(1)} mph, spread (standard deviation) ${survey.bias.sd.toFixed(1)} mph; ${survey.bias.outside.length} points had a true wind outside their DOD's published range. Part of the bias is height: the house model's strengths were calibrated so each DOD's expected speed matches the roof-height peak, while the EF scale means 10 m.${heightRatio !== null ? ` Here the 10 m peak averaged ${heightRatio.toFixed(2)}× the roof-height peak.` : ""}`,
+    `Bias. Survey speed minus true 10 m wind, over ${survey.points.length} points: mean ${survey.bias.mean.toFixed(1)} mph, spread (standard deviation) ${survey.bias.sd.toFixed(1)} mph; ${survey.bias.outside.length} points had a true wind outside their DOD's published range. The house model's strengths are calibrated on the same basis (each DOD's expected speed matches the median 10 m open-terrain peak at houses in the town), so the bias is the survey method's own.${heightRatio !== null ? ` The local wind that loaded the houses was lower: here the 10 m peak averaged ${heightRatio.toFixed(2)}× the roof-height peak (height and the town's roughness).` : ""}`,
     `Path and contours. Path length is measured along the track between the first and last damaged houses; width is the widest cross-track spread of damaged houses in any ${REPORT.section} m section along the track. EF contours outline, section by section, the houses rated at or above each level (padded ${REPORT.contourMargin} m), so no contour is drawn where nothing at that level was damaged. True-wind figures use the swath cells at EF0 or more the same way.`,
     "Narrative. The narrative is written by fixed sentence rules from the numbers in this report, with no randomness; every sentence traces to a figure in the tables.",
   ];

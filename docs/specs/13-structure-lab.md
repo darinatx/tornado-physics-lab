@@ -1,6 +1,6 @@
 # Spec 13 — Structure Lab (v2)
 
-Status: Approved (v1.0) — scope approved by the user 2026-11-25. Supersedes Spec 09's
+Status: Approved (v1.1) — scope approved by the user 2026-11-25. Supersedes Spec 09's
 "Structure lab (slice A)" section.
 
 ## Purpose
@@ -91,7 +91,8 @@ field for steady wind):
     mature stage.
   - **Mature throughout:** the preset's mature V_max and R_max for the whole pass, starting
     at the nearest distance (at least 2·R_max) where the roof wind at **every house in the
-    layout**, the neighbors included, is under 50 mph.
+    layout**, the neighbors included, is under the pass's calm threshold (40 mph, see
+    Parameters).
   Choosing a mode shows its settings; nothing starts until its button is pressed.
 - **Default:** the lab opens in tornado-pass mode with the houses built in calm air; the tornado
   starts only on "Send tornado" (which rebuilds the houses). Any other rebuild in pass mode
@@ -302,6 +303,7 @@ worker backends, as `src/main.ts` uses them.
 | stream height | 2–40 | m | the height band where windborne debris is dense in surveys |
 | capture box margin | 10 | m beyond the footprint | short replayed path to the house, still before it arrives |
 | capture box height | 30 | m | nearly all windborne debris in surveys travels below it |
+| pass calm threshold | 40 | mph roof-height wind | below it ~0.15% of component houses lose any part in steady wind (Spec 03 v2.5's siding, 428 Pa); was 50 with Spec 03 v2.4's 633 Pa, the same margin (50 × √(428/633) ≈ 41) |
 
 ## Acceptance criteria
 
@@ -315,7 +317,7 @@ worker backends, as `src/main.ts` uses them.
 - **LAB-04**: Steady wind: the lab's wind equals the Spec 12 tunnel flow for its keyframes, and
   a mid-run slider change is a keyframe at that sim time (replaying the keys gives the same run).
 - **LAB-05**: Tornado pass, mature: starts at the nearest distance (≥ 2·R_max) where every
-  house's roof wind is under 50 mph (no house fails in the first second), constant V_max and
+  house's roof wind is under the calm threshold (no house fails in the first second), constant V_max and
   R_max, straight track; the pass ends as far past the block as it started.
 - **LAB-06**: Tornado pass, full lifecycle: the closest approach to the block falls at the
   middle of the preset's mature stage.
@@ -375,6 +377,11 @@ worker backends, as `src/main.ts` uses them.
   replay).
 
 ## Changelog
+
+- v1.1 (2026-11-26, BL-029): the mature pass's calm threshold 50 → 40 mph roof wind. Spec 03
+  v2.5 calibrates houses on the EF scale's 10 m open basis, so component siding is weaker in
+  local wind (428 Pa, was 633) and 8% of houses lost siding at 50 mph; 40 mph keeps the old
+  margin. The pass starts farther out (the far field decays slowly). LAB-05 unchanged in intent.
 
 - v1.0 (2026-11-26, Phase 7): terrain from the surroundings' roughness field (Spec 17), with a
   Terrain setting (Auto, Open, Suburban, Urban); LAB-03 retired, replaced by TERR-11; a
