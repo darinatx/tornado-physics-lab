@@ -112,19 +112,19 @@ export const PART_UNIT: Record<Part, string> = {
  * EF scale's basis: the 10 m open-terrain peak at first reaching each DOD (Spec 03 v2.5, DMG-04).
  */
 export const BASE_CAPACITY: Record<Part, number> = {
-  siding: 426,
-  roofCover: 1743,
-  window: 2240,
+  siding: 425,
+  roofCover: 1671,
+  window: 2810,
   /** Fixed, not calibrated: standard non-reinforced garage door, ~27 psf. */
   garage: 1300,
   /** Fixed, not calibrated: 8d nails at typical spacing, ~56 psf. */
   roofDeck: 2700,
-  anchorage: 2050,
-  roofBay: 989,
-  wallPanel: 979,
-  partition: 2497,
-  coreRoom: 3527,
-  sweep: 5535,
+  anchorage: 2059,
+  roofBay: 984,
+  wallPanel: 945,
+  partition: 2379,
+  coreRoom: 3498,
+  sweep: 5550,
 };
 
 /**

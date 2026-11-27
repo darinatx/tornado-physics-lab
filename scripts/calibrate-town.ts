@@ -38,6 +38,11 @@ interface HouseOut {
 async function runOne(preset: string, seed: number, capsFile: string, outFile: string): Promise<void> {
   // Capacities for this run: createHouse reads BASE_CAPACITY when the town is built.
   Object.assign(BASE_CAPACITY, JSON.parse(readFileSync(capsFile, "utf8")) as Record<Part, number>);
+  // Diagnostic: hold the roughness field at the intact town's (no updates as houses fall).
+  if (process.env.FREEZE_ROUGHNESS) {
+    const { TERRAIN } = await import("../src/config/terrain");
+    (TERRAIN as { updateInterval: number }).updateInterval = 1e9;
+  }
   const { createSim } = await import("../src/sim/loop");
   const { StormRecorder } = await import("../src/sim/stormRecord");
   const { initRapier } = await import("../src/sim/structureWorld");
