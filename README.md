@@ -18,7 +18,8 @@ window, lifted roof and flying 2×4 can be traced back to a physical quantity yo
   the swirl ratio.
 - **Motion:** forward motion that makes one side of the path stronger than the other.
 - **Pressure:** a pressure drop at the center from cyclostrophic balance.
-- **Lifecycle and gusts:** the tornado forms, matures and dissipates, with gusts throughout.
+- **Lifecycle:** the tornado forms, matures and dissipates. Wind speeds are 3-second gusts,
+  the averaging time the EF scale is calibrated to.
 
 Presets give realistic rope, cone and wedge tornadoes from EF0 to EF5, or you can set
 strength, size, forward speed, heading and cloud base yourself.
