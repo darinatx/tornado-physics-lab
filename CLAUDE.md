@@ -78,7 +78,9 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
    structural work goes to the performance phase. Record before/after numbers in the phase
    doc. This runs before the preliminary gate, so the separate validation session checks the
    optimized code.
-5. **Preliminary gate**: update specs to match, write the retro and simplifications note →
+5. **Preliminary gate**: update specs to match, write the retro and simplifications note,
+   and update the README (what the app simulates, its instruments and controls, Status and
+   roadmap) so it describes `main` once the phase lands →
    user watches the demo and gives preliminary sign-off → tag `phase-N-prelim` → pull request
    from the phase branch into `main`, merged when the user says so; the phase branch is then
    deleted. Unit tests and the trace must pass (`npm run verify:fast`); validation tests don't
@@ -112,7 +114,8 @@ This project uses **spec-driven, phase-gated development**. Read this file befor
 7. **Final gate**: the user decides each open backlog item from the phase (fix, defer, or
    accept as a documented limitation in its spec); "fix" items are fixed (usual rules, each on
    its own short branch from `main`, merged by pull request), and any unfinished gate work
-   gets its own branch the same way → final sign-off → tag `phase-N-done` on `main`.
+   gets its own branch the same way → final sign-off → tag `phase-N-done` on `main` → update
+   the README's Status (phase N done) on a short `docs/` branch, merged by pull request.
 
 ### Backlog
 

@@ -144,17 +144,19 @@ if one is missing. Validation tests check results against published references, 
 
 ## Status and roadmap
 
-Development runs in phases, each ending with a demo and a sign-off. Phases 1–6 are done:
+Development runs in phases, each ending with a demo and a sign-off. Phases 1–7 are done:
 - the wind field and instruments;
 - houses with loads and damage;
 - flying debris;
 - component houses;
 - the structural detail zone;
-- debris impacts, with the wind tunnel and structure lab.
+- debris impacts, with the wind tunnel and structure lab;
+- terrain worked out from the town, with ground damage tracks.
 
-Phase 7, terrain worked out from the town, has its preliminary sign-off and is being validated. Up next:
-- **Storm report:** an NWS-style damage survey and an engineering assessment, produced at
-  the end of a run.
+Phase 8, the **storm report**, is being built: stop a run and get a damage survey laid out
+like a National Weather Service one, rated by the EF method from the damage alone, with the
+simulation's true wind beside every rating, followed by an engineering assessment of how the
+houses failed and where the debris went. Up next:
 - **Richer houses and trees:** trusses, porches, chimneys, room contents, and trees that
   snap and uproot.
 - **The parent supercell:** wall cloud, rain and hail curtains, a radar view with the hook
