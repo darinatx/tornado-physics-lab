@@ -1,6 +1,7 @@
 # Phase 8 — Storm Report
 
-Status: Spec review (drafted 2026-11-26 as Phase 7; renumbered to Phase 8 the same day). Starts after Phase 7.
+Status: In progress (started 2026-11-26 on `phase-8-storm-report`, from `main` after Phase 7's
+preliminary sign-off). Spec 16 approved (v1.0).
 
 ## Goal
 
@@ -19,13 +20,21 @@ rating, the true wind the sim recorded there.
   summary page. Demo: an EF4 town pass, stopped and reported. REP-01, REP-10 to REP-13.
 - **C — Export and cost:** print stylesheet and Save as PDF, JSON and CSV export, recorder and
   build cost. REP-14, REP-15.
+- **D — Profiling:** profile the two benchmark scenes with the recorder on and the report
+  build; hotspots with estimated and confirmed gains; cheap wins done, larger ones to the
+  backlog (`perf`).
+- **E — Validation (own session, after the preliminary gate):** `validate-phase-8` from the
+  `phase-8-prelim` tag; survey bias over many seeded passes against published survey-bias
+  studies, records to `docs/backlog.md`.
+
+Each of A–C ends with `npm run bench` against the saved baseline, noted below.
 
 ## Specs touched
 
-- [16 — Storm report](../specs/16-storm-report.md): new (REP-01 to REP-15)
-- [07 — Instruments & UI](../specs/07-instruments.md): Stop & Report in the Run panel
-- [08 — Sim loop](../specs/08-sim-loop.md): a stopped state; the lifecycle end stops the run
-- [03 — Damage](../specs/03-damage.md): DOD history per building
+- [16 — Storm report](../specs/16-storm-report.md): new, approved v1.0 (REP-01 to REP-15)
+- [07 — Instruments & UI](../specs/07-instruments.md): Stop & Report, Preview and Open report in the Run panel (v1.17)
+- [08 — Sim loop](../specs/08-sim-loop.md): a stopped state; the lifecycle end stops the run (v1.9)
+- [03 — Damage](../specs/03-damage.md): unchanged (the recorder reads DOD history itself)
 
 ## Demo checklist
 
@@ -37,12 +46,26 @@ rating, the true wind the sim recorded there.
 - [ ] A run left to the end of the lifecycle offers the report
 - [ ] Print the summary alone and the full report; open the JSON and CSV
 
-## Exit criteria (whole phase)
+## Slice notes
 
-- [ ] Spec 16 approved
+(benchmark results per slice go here)
+
+## Exit criteria
+
+Preliminary (lets Phase 9 start):
+
+- [x] Spec 16 approved (v1.0); Specs 07 (v1.17) and 08 (v1.9) updated
 - [ ] Slice A: REP-02 to REP-09 pass
 - [ ] Slice B: REP-01, REP-10 to REP-13 pass; demo reviewed by the user
 - [ ] Slice C: REP-14, REP-15 pass
-- [ ] All tests pass; `npm run verify` passes
+- [ ] Benchmark run at the end of slices A, B and C; regressions over 10% explained
+- [ ] Slice D, profiling: hotspots with estimated and confirmed gains; before/after recorded
+- [ ] `npm run verify:fast` passes
 - [ ] Specs updated, simplifications note and retro written
-- [ ] User sign-off; commit tagged `phase-8-done`
+- [ ] User's preliminary sign-off; tag `phase-8-prelim`; pull request into `main`, merged when
+      the user says so; branch deleted
+
+Final:
+
+- [ ] Validation (slice E) merged; every Phase 8 backlog item decided; "fix" items merged
+- [ ] Final sign-off; tag `phase-8-done` on `main`
