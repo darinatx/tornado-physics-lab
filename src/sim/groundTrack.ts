@@ -9,7 +9,7 @@ import { coverAt } from "../core/terrain/roughness";
 import type { GroundCover, Terrain } from "../core/terrain/roughness";
 import type { Piece } from "../core/debris/piece";
 import type { TornadoState } from "../core/wind/types";
-import { carriedFactors, overshootFactor, tangentialProfile, windAt } from "../core/wind/windField";
+import { carriedFactors, outerReach, overshootFactor, tangentialProfile, windAt } from "../core/wind/windField";
 
 /** Cell states, in order of damage (they never go back). */
 export const TRACK_STATE = { standing: 0, pushedOver: 1, lodged: 2, snapped: 3, thinned: 4, stripped: 5, bare: 6 } as const;
@@ -192,7 +192,7 @@ export class GroundTrack {
     const hf = Math.pow(TRACK.sampleHeight / s.zPeak, 0.08) * 1.0001; // β ≥ 0.08 (Spec 17 clamp)
     const vtr = Math.hypot(s.velocity.x, s.velocity.z);
     const bound = (r: number) => {
-      const vt = tangentialProfile(r, s.vMax, R, s.alpha);
+      const vt = tangentialProfile(r, s.vMax, R, s.alpha, outerReach(s));
       return Math.hypot(vt * overshootFactor(r, s) * hf, s.inflowRatio * vt) + carriedFactors(r, s) * vtr;
     };
     if (bound(R) < umin) return 0;

@@ -133,8 +133,8 @@ function windDirAtPeak(s: TornadoState, r: number, dx: number, dz: number): numb
   let hz = 0;
   if (r > 1e-9) {
     const R = Math.max(s.rMax, 1e-6);
-    const vt = tangentialProfile(r, s.vMax, R, s.alpha) * overshootFactor(r, s);
-    const vr = -s.inflowRatio * tangentialProfile(r, s.vMax, R, s.alpha) * Math.exp(-s.zPeak / s.inflowDepth);
+    const vt = tangentialProfile(r, s.vMax, R, s.alpha, outerReach(s)) * overshootFactor(r, s);
+    const vr = -s.inflowRatio * tangentialProfile(r, s.vMax, R, s.alpha, outerReach(s)) * Math.exp(-s.zPeak / s.inflowDepth);
     const ux = dx / r;
     const uz = dz / r;
     hx = vt * s.rotation * uz + vr * ux;
@@ -198,7 +198,7 @@ function windOverField(p: Vec3, s: TornadoState, f: RoughnessField): Vec3 {
   const r = Math.hypot(dx, dz);
   const zz = Math.max(p.y, 0);
   const R = Math.max(s.rMax, 1e-6);
-  const vt = tangentialProfile(r, s.vMax, R, s.alpha);
+  const vt = tangentialProfile(r, s.vMax, R, s.alpha, outerReach(s));
   const S = overshootFactor(r, s);
   const k = carriedFactors(r, s);
   const ux = r > 1e-9 ? dx / r : 0;

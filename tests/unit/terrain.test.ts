@@ -151,7 +151,8 @@ describe("Spec 17 — terrain roughness", () => {
   });
 
   test("TERR-07: a uniform field gives the class's wind", () => {
-    const s = baseState({ velocity: { x: 12, z: 3 } });
+    // With the default outer reach and a changed one (Spec 01 v1.11): the field path must use it too.
+    for (const s of [baseState({ velocity: { x: 12, z: 3 } }), baseState({ velocity: { x: 12, z: 3 }, outerReach: 3 } as never)])
     for (const cls of ["open", "suburban", "urban"] as const) {
       const f = uniformField(TERRAIN.classZ0[cls]);
       for (const [x, y, z] of [[0, 0.5, 0], [150, 2, 10], [-300, 5, 80], [600, 9, -400], [40, 15, 30], [90, 40, 0]] as const) {
@@ -206,10 +207,13 @@ describe("Spec 17 — terrain roughness", () => {
       for (let r = 0; r < 1000; r++) for (const p of pts) acc += windAt(p, s, t).x;
       return { ms: performance.now() - t1, acc };
     };
-    bench("suburban");
-    bench(tr.field);
-    const cls = Math.min(bench("suburban").ms, bench("suburban").ms);
-    const fld = Math.min(bench(tr.field).ms, bench(tr.field).ms);
+    // Interleaved, minimum of each: load lands on both sides alike.
+    let cls = Infinity;
+    let fld = Infinity;
+    for (let r = 0; r < 5; r++) {
+      cls = Math.min(cls, bench("suburban").ms);
+      fld = Math.min(fld, bench(tr.field).ms);
+    }
     expect(fld / cls).toBeLessThan(1.6);
   });
 });

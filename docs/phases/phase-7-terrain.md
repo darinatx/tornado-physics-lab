@@ -171,8 +171,8 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
       any scene more than 10% slower explained, and fixed or logged
 - [x] Slice D, profiling: hotspots listed with estimated and confirmed gains; cheap wins
       done, the rest in the backlog (`perf`); before/after numbers recorded
-- [ ] `npm run verify:fast` passes
-- [ ] Specs updated, simplifications note and retro written
+- [x] `npm run verify:fast` passes
+- [x] Specs updated, simplifications note and retro written
 - [ ] User's preliminary sign-off; tag `phase-7-prelim`
 - [ ] Pull request from `phase-7-terrain` into `main`, merged when the user says so; branch deleted
 - [ ] After the merge: remove the temporary `tornado-sim-phase-7` entry from `.claude/launch.json`
@@ -184,3 +184,59 @@ Final sign-off (tag `phase-7-done`):
       tag), merged into `main` by pull request; findings in `docs/backlog.md`
 - [ ] Every Phase 7 backlog item decided by the user (fix, defer, accept); "fix" items fixed
 - [ ] User's final sign-off; tag `phase-7-done` on `main`
+
+## Simplifications note
+
+Roughness (Spec 17):
+- The upwind fetch follows a straight line along the wind at each point; near the core the air
+  came round a spiral, so the fetch there is approximate. One fetch length for every height.
+- No displacement height (the profile starts at the ground); frontal density averaged over
+  wind directions; no sheltering or speed-up between individual buildings.
+- The suburb reads z₀ ≈ 0.2 m without trees (real suburbs with trees: 0.3–0.5 m; Phase 9).
+- No roads, water, woods or terrain height.
+
+Ground damage tracks (Spec 19):
+- The scour thresholds and debris weight are calibrated to case reports and the EF targets,
+  not measured: published scouring is anecdotal (Jarrell 1997, Neshoba 2014, Arkansas 2021).
+- Lodging thresholds use the top of the published canopy range on the gust basis; the lawn's
+  threshold is a decision (no data).
+- One sample height (2 m); no crop stage, height or soil moisture; debris load per 64 m tile.
+- Only light pieces mark the ground (heavy rigid bodies don't report landings yet).
+- Beyond 3·R_max one wind sample per 32 m patch serves its cells (smooth wind there).
+- Cells are drawn as 2 m squares (nearest sampling), softened by the lay lines.
+
+## Retro
+
+The user's look at the app shaped most of slice C. Each screenshot pointed at a specific cause:
+- **A yellow ring and contour-line edges:** every cell had the same thresholds, and the
+  drawing showed discrete states. Per-cell strength and continuous drawing fixed both.
+- **A dark cliff at the town edge:** sliding debris marked the ground every step, without
+  limit. Marks are now faint and need real speed.
+- **A ruler-straight edge on a strong storm's right side:** a fixed 3·R_max cap on the
+  update radius. The model's own wind still lodged crops well beyond it, so the cap was cutting
+  off real track. The active radius now comes from the wind profile.
+- **"Nothing happens to the lawns":** the sim had flattened and scoured them; lightening just
+  doesn't show on bright grass.
+
+Lesson: when a visual looks wrong, check the sim state before changing the model. Twice the
+physics was right and the drawing wasn't, and once the drawing was right and a performance
+shortcut (the cap) was wrong.
+
+Calibration had to move to the gust basis. The published crop-failure speeds are for steady
+wind, and with them as 3-s gusts even EF0 flattened its whole core. The convergent lodging
+rows meet on a line offset from the centreline, not on it. That matches surveyed tree-fall
+patterns, so the criterion was restated rather than the model changed.
+
+Cost came close to the limit twice. The first track update took 12.5% of the EF4 step, and
+the uncapped radius took it back to 8%. Both times the fix came from the physics' own
+structure: the wind changes slowly far from the core, and ground the core has passed can't
+change. Profiling found one closure in a hot path worth 5–15% of a step. The `tsx` overhead
+showed it up, but the allocation costs the app too.
+
+Process: Phase 7 began on the Phase 6 branch, and its commits had to be split out. Since
+then a phase gets its own branch from the start, merged into `main` at preliminary sign-off.
+Two other sessions committed alongside (BL-017's outer wind, the spawn button), so `main`
+came into this branch three times; only spec changelog versions clashed.
+
+The unit tests run in Node and can't compile the ground shader, so a reserved GLSL word blanked
+the ground once. Any render change has to be looked at in the app.

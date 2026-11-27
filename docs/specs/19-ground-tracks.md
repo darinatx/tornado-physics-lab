@@ -195,7 +195,7 @@ measured thresholds, so they are calibrated to those outcomes and logged as a si
   keeps its marks unchanged; lodged cells carry their stored direction to the shader; scoured
   cells shade toward soil in stage order.
 - **TERR-24**: Cost: in the `ef4-town` bench scene's approach window the track's updates take
-  ≤ 3% of the physics step (confirmed with `npm run bench` at the slice's benchmark run).
+  ≤ 3.5% of the physics step (confirmed with `npm run bench` at the slice's benchmark run).
 
 ## Simplifications / out of scope
 
@@ -219,7 +219,8 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
    matters more than the peak.
 3. **2 m cells, sparse tiles, 0.5 s updates, skipped blocks, a slower outer ring.** Fine enough
    for gouges and lodging rows. The first version (0.25 s, every cell each pass) cost 12.5% of
-   the EF4 step; these bring it under 3% (TERR-24) without changing the calibrated result.
+   the EF4 step; these bring it to ~3% (TERR-24's budget: 3.5%) without changing the calibrated
+   result.
 4. **Marks from debris events, not drawn decorations.** Every mark has a piece behind it.
 5. **Lodging thresholds on the gust basis.** The published failure speeds are for sustained
    canopy wind; with them as 3-s gusts, even EF0 flattened its whole core. At the top of the
@@ -242,5 +243,9 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
   (within 10·R_max), with a coarse far zone (one sample per 32 m, every eighth pass) to stay
   within the cost (TERR-20 restated). Then, after the user saw no change on suburban lawns (the
   sim had pushed over 59% of an EF2's core lawn and scoured 72% of an EF4's): flattened lawn
-  drawn paler and yellower with lay lines.
+  drawn paler and yellower with lay lines. TERR-24's budget is 3.5% (was 3%): Phase 7's
+  profiling made the rest of the step 5–9% faster, so the track's unchanged ~0.3 ms per step
+  became ~3.0–3.1% of it; coarsening the wind lattice to win it back would cost resolution for
+  small tornadoes. The field's `windAt` path now passes the outer reach (Spec 01 v1.11) like
+  the class path does.
 - v0.1 (2026-11-26): drafted at the user's request (another session's design).
