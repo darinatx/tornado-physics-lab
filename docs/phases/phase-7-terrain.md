@@ -1,6 +1,6 @@
 # Phase 7 — Terrain from the Town
 
-Status: Preliminary sign-off (2026-11-26); validation (slice E) and the final gate to come
+Status: Done (build 2026-11-26; preliminary and final sign-off 2026-11-26)
 
 ## Goal
 
@@ -174,16 +174,16 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 - [x] `npm run verify:fast` passes
 - [x] Specs updated, simplifications note and retro written
 - [x] User's preliminary sign-off (2026-11-26); tag `phase-7-prelim`
-- [ ] Pull request from `phase-7-terrain` into `main`, merged when the user says so; branch deleted
-- [ ] After the merge: remove the temporary `tornado-sim-phase-7` entry from `.claude/launch.json`
+- [x] Pull request from `phase-7-terrain` into `main`, merged when the user says so; branch deleted
+- [x] After the merge: remove the temporary `tornado-sim-phase-7` entry from `.claude/launch.json`
       in the main folder (uncommitted there; it serves this worktree on port 5173)
 
 Final sign-off (tag `phase-7-done`):
 
-- [ ] Slice E, validation, in its own session on `validate-phase-7` (from the `phase-7-prelim`
-      tag), merged into `main` by pull request; findings in `docs/backlog.md`
-- [ ] Every Phase 7 backlog item decided by the user (fix, defer, accept); "fix" items fixed
-- [ ] User's final sign-off; tag `phase-7-done` on `main`
+- [x] Slice E, validation, in its own session on `validate-phase-7` (from the `phase-7-prelim`
+      tag), merged into `main` by pull request; findings in `docs/backlog.md` (PR #13: BL-020 to BL-027)
+- [x] Every Phase 7 backlog item decided by the user (fix, defer, accept); "fix" items fixed (2026-11-26: BL-021 fixed in PR #14, BL-024 accepted, the rest deferred)
+- [x] User's final sign-off (2026-11-26); tag `phase-7-done` on `main`
 
 ## Simplifications note
 
