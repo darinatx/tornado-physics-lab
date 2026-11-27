@@ -32,6 +32,11 @@ export const REPORT = {
   ring: 2,
   /** Survey section length along the track (m): about two lots. */
   section: 50,
+  /** Corroboration radius (m, Spec 16 v1.9): the rating speed must be reached by two survey
+   *  points this close. A block, about four lots: the neighbours a surveyor compares one
+   *  structure with (Edwards et al. 2013), inside the peak-wind core of an EF2 or stronger
+   *  tornado (R_max ≥ 110 m in the presets). */
+  corroborationRadius: 100,
   /** Houses in the failure sequences (keeps the section readable). */
   failureHouses: 10,
   /** Contour margin (m) around the outermost points of a section, so every point lies strictly

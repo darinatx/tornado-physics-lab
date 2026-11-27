@@ -17,10 +17,25 @@ import type { PathEnd, Survey } from "./survey";
 import { surveyRows } from "./table";
 import type { SurveyRow } from "./table";
 
+/** A survey point named in the summary: its table ID, building, DOD, class, speed and EF. */
+export interface NamedPoint {
+  point: string;
+  building: number;
+  dod: number;
+  construction: string;
+  mph: number;
+  ef: EFRating | null;
+}
+
 export interface EventSummary {
   rating: EFRating | null;
   /** Estimated peak wind (mph), from the survey. */
   ratingMph: number;
+  /** The two points that set the rating (Spec 16 v1.9) and their distance (m); the second is
+   *  null when no two points were within the corroboration radius. */
+  ratingBy: { point: NamedPoint; corroboratedBy: NamedPoint | null; distanceM: number | null } | null;
+  /** Points above the rating, not corroborated (kept in the table). */
+  uncorroborated: NamedPoint[];
   truePeakMph: number;
   truePeakEf: EFRating | null;
   pathLengthM: number;
@@ -162,7 +177,22 @@ export const REPORT_MARK = "Simulated storm report";
 
 const label = (part: string) => PART_LABEL[part as Part] ?? part;
 
-function eventSummary(record: StormRecord, survey: Survey): EventSummary {
+function eventSummary(record: StormRecord, survey: Survey, rows: SurveyRow[]): EventSummary {
+  const rowOf = new Map(rows.map((r) => [r.building, r.point] as const));
+  const named = (i: number): NamedPoint => {
+    const p = survey.points[i]!;
+    return { point: rowOf.get(p.id)!, building: p.id, dod: p.dod, construction: CLASS_LABEL[p.cls], mph: p.mph, ef: p.ef };
+  };
+  const rp = survey.ratingPoint;
+  const cp = survey.corroboratingPoint;
+  const ratingBy =
+    rp === null
+      ? null
+      : {
+          point: named(rp),
+          corroboratedBy: cp === null ? null : named(cp),
+          distanceM: cp === null ? null : Math.hypot(survey.points[rp]!.x - survey.points[cp]!.x, survey.points[rp]!.z - survey.points[cp]!.z),
+        };
   const on = record.track.filter((t) => t.vMax > 0);
   const last = record.track[record.track.length - 1];
   const dissipated = last?.phase === "dissipated";
@@ -176,6 +206,8 @@ function eventSummary(record: StormRecord, survey: Survey): EventSummary {
   return {
     rating: survey.rating,
     ratingMph: survey.ratingMph,
+    ratingBy,
+    uncorroborated: survey.uncorroborated.map(named),
     truePeakMph: survey.truePeak?.mph ?? 0,
     truePeakEf: survey.truePeak?.ef ?? null,
     pathLengthM: survey.path.survey.length,
@@ -407,12 +439,18 @@ function statistics(record: StormRecord, survey: Survey): Statistics {
   return { total: record.buildings.length, byDod, byEf, damaged, destroyed, destroyedShare: damaged ? destroyed / damaged : 0, damagedArea: area(survey.contours.survey), trueArea };
 }
 
-function methods(record: StormRecord, survey: Survey, specs: readonly SpecDoc[]): Methods {
+/** "P12 (DOD 10, strong construction, 220 mph, EF5)". */
+export function namedText(p: NamedPoint): string {
+  return `${p.point} (DOD ${p.dod}, ${p.construction.split(" ")[0]!.toLowerCase()} construction, ${p.mph} mph, ${p.ef === null ? "below EF0" : `EF${p.ef}`})`;
+}
+
+function methods(record: StormRecord, survey: Survey, event: EventSummary, specs: readonly SpecDoc[]): Methods {
   const m = record.meta;
   const ratios = survey.points.filter((p) => p.trueRoofMph > 0).map((p) => p.true10Mph / p.trueRoofMph);
   const heightRatio = ratios.length ? ratios.reduce((s, x) => s + x, 0) / ratios.length : null;
   const paragraphs = [
-    "Rating. Every house with visible damage (degree of damage, DOD, 1 or more) is a survey point, rated with the Enhanced Fujita scale's Damage Indicator 2 (one- and two-family residences). The wind assigned to a point is the DOD's expected value for standard construction, its lower bound for weak construction and its upper bound for strong construction, as survey teams adjust for build quality. The tornado's rating is the highest EF among its survey points; it is rated by what it hit, so a peak over open ground leaves no mark on the rating.",
+    "Rating. Every house with visible damage (degree of damage, DOD, 1 or more) is a survey point, rated with the Enhanced Fujita scale's Damage Indicator 2 (one- and two-family residences). The wind assigned to a point is the DOD's expected value for standard construction, its lower bound for weak construction and its upper bound for strong construction, as survey teams adjust for build quality. The tornado is rated by what it hit, so a peak over open ground leaves no mark on the rating.",
+    corroborationText(event),
     "True wind. Beside each rating is the wind the simulation itself recorded: the peak ground-relative horizontal wind at 10 m at the house, on the EF scale's basis (an open-terrain 3-second gust), sampled 30 times a second. The roof-height peak is the local wind that actually loaded the house. The true-wind swath holds the same 10 m peak in 10 m cells wherever it reached EF0 (65 mph).",
     `Bias. Survey speed minus true 10 m wind, over ${survey.points.length} points: mean ${survey.bias.mean.toFixed(1)} mph, spread (standard deviation) ${survey.bias.sd.toFixed(1)} mph; ${survey.bias.outside.length} points had a true wind outside their DOD's published range. The house model's strengths are calibrated on the same basis (each DOD's expected speed matches the median 10 m open-terrain peak at houses in the town), so the bias is the survey method's own.${heightRatio !== null ? ` The local wind that loaded the houses was lower: here the 10 m peak averaged ${heightRatio.toFixed(2)}× the roof-height peak (height and the town's roughness).` : ""}`,
     `Path and contours. Path length is measured along the track between the first and last damaged houses; width is the widest cross-track spread of damaged houses in any ${REPORT.section} m section along the track. EF contours outline, section by section, the houses rated at or above each level (padded ${REPORT.contourMargin} m), so no contour is drawn where nothing at that level was damaged. True-wind figures use the swath cells at EF0 or more the same way.`,
@@ -436,10 +474,26 @@ function methods(record: StormRecord, survey: Survey, specs: readonly SpecDoc[])
   return { paragraphs, metadata, simplifications, heightRatio };
 }
 
+/** The corroboration paragraph of Methods (Spec 16 v1.9, REP-17). */
+function corroborationText(e: EventSummary): string {
+  const R = REPORT.corroborationRadius;
+  const rule = `Corroboration. One house can't set the rating alone: the estimated peak wind is the highest survey speed that two damaged houses within ${R} m of each other both reach (the lower of the two), and the rating is its EF, as surveyors rate the highest EF supported by more than one damage indicator and weigh each structure against its neighbours.`;
+  const by = e.ratingBy;
+  const how = !by
+    ? ""
+    : by.corroboratedBy
+      ? ` Here ${namedText(by.point)} set it, corroborated by ${namedText(by.corroboratedBy)} ${Math.round(by.distanceM!)} m away.`
+      : ` Here no two damaged houses were within ${R} m of each other, so the rating rests on one house, ${namedText(by.point)}: it is uncorroborated.`;
+  const lone = e.uncorroborated.length
+    ? ` Not corroborated (no second house within ${R} m reached their speed), kept in the table and the statistics at their own rating but not used for the tornado's: ${e.uncorroborated.map(namedText).join("; ")}.`
+    : "";
+  return rule + how + lone;
+}
+
 /** The whole report (Spec 16). `specs`: the spec documents, for Methods. */
 export function buildReport(record: StormRecord, survey: Survey, opts: { preliminary: boolean; specs?: readonly SpecDoc[] }): Report {
   const rows = surveyRows(survey, record.townCenter);
-  const event = eventSummary(record, survey);
+  const event = eventSummary(record, survey, rows);
   const stats = statistics(record, survey);
   const text = narrative(record, survey);
   const headline: Headline = { rating: event.rating, peakMph: event.ratingMph, destroyed: stats.destroyed, pathLengthM: event.pathLengthM };
@@ -457,7 +511,7 @@ export function buildReport(record: StormRecord, survey: Survey, opts: { prelimi
     failures: failures(record, survey, rows),
     debris: debrisFigures(record),
     stats,
-    methods: methods(record, survey, opts.specs ?? []),
+    methods: methods(record, survey, event, opts.specs ?? []),
     survey,
     record,
   };

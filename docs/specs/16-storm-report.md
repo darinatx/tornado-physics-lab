@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.8) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.9) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -70,15 +70,27 @@ Built from the record by pure functions in `src/sim/report/`, the way survey tea
   DOD, construction class, and the Spec 03 survey speed (lower, expected or upper bound by
   construction quality) with its EF. Buildings in the true swath with no damage are "no damage"
   points (shown on the map, not rated).
-- **Rating:** the highest EF among the survey points. A tornado that only crosses open ground
-  at its peak is rated by what it hit, as in real surveys. The report states the rating and,
-  separately, the **true peak** (the swath's maximum and its EF).
+- **Rating (corroborated, v1.9):** the highest survey speed that two survey points within
+  100 m of each other both reach, i.e. the largest, over every pair of points within 100 m, of
+  the lower of their two speeds; its EF is the rating and that speed the estimated peak wind.
+  A single house can't set the rating alone: surveyors weigh one structure against its
+  neighbours and rate the highest EF supported by more than one damage indicator (Edwards et
+  al. 2013). The **rating point** is the pair's lower point, the **corroborating point** the
+  other one. If no two points are within 100 m (an isolated house or farmstead), the highest
+  point rates it alone and the report says the rating is uncorroborated. A tornado that only
+  crosses open ground at its peak is rated by what it hit, as in real surveys. The report
+  states the rating and, separately, the **true peak** (the swath's maximum and its EF).
+- **Uncorroborated points:** points whose own EF is above the rating stay in the table, on
+  the map and in the bias statistics with their own DOD and speed; the table marks them
+  "not corroborated", and the summary block and Methods list them (point, DOD, class, speed,
+  EF) under the rating, as a survey notes a lone structure it didn't rate on.
 - **Path length:** along-track distance from the first to the last survey point with DOD ≥ 1,
   projected on the track. **Maximum width:** the widest cross-track span of DOD ≥ 1 points in
   any 50 m along-track section. Both also given for the true swath (EF0 wind or more).
 - **EF contours:** for each EF level, in 50 m along-track sections, the cross-track span of
   survey points rated at or above it, joined into a polygon (the way NWS survey maps outline
-  each rating). True-wind contours from the swath are drawn the same way, toggled on the map.
+  each rating). A point counts for the contours at its EF or the rating, whichever is lower,
+  so no contour is drawn above the rating (v1.9). True-wind contours from the swath are drawn the same way, toggled on the map.
 - **Start and end:** time and position of the first and last survey points, given as distance
   and compass direction from the town center (e.g. "1.2 km WSW of the town center").
 - **Survey bias:** for each point, the survey speed minus the true 10 m peak; the report gives
@@ -190,6 +202,7 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 | Full debris scan | 0.25 | s | heights and landings; new pieces are caught every debris step |
 | Swath threshold | 29 | m/s | EF0 lower bound (65 mph) |
 | Survey section length | 50 | m | about two lots along the track |
+| Corroboration radius | 100 | m | a block (about four lots): neighbours a surveyor compares one structure with, and inside the peak-wind core of an EF2 or stronger tornado (R_max ≥ 110 m in the presets) |
 | Houses in failure sequences | 10 | — | keeps the section readable |
 
 ## Acceptance criteria
@@ -207,12 +220,13 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
   held EF0 wind.
 - **REP-05**: Survey points: every building with DOD ≥ 1 is a point, with the Spec 03 survey
   speed and EF for its DOD and construction class; no other building is rated.
-- **REP-06**: The rating is the highest survey-point EF; a scripted track whose peak is over
-  open ground is rated below its true peak, and the report shows both.
+- **REP-06**: The rating is the EF of the corroborated speed (REP-16); a scripted track whose
+  peak is over open ground is rated below its true peak, and the report shows both.
 - **REP-07**: Path length and maximum width match hand-computed values for a scripted set of
   survey points, for both the survey and the true swath.
-- **REP-08**: EF contours: every survey point rated EFn lies inside the EFn contour; no
-  contour section spans a gap with no point at or above its level.
+- **REP-08**: EF contours: every survey point rated EFn (capped at the rating) lies inside
+  the EFn contour; no contour section spans a gap with no point at or above its level; no
+  contour is above the rating.
 - **REP-09**: The survey table matches the buildings: DOD, description, survey speed, range,
   true peaks and bias, one row per point.
 - **REP-10**: Failure sequences list each chosen house's failures in time order, matching
@@ -227,6 +241,15 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - **REP-14**: Exports: the JSON reloads into an identical report; the CSV has one row per
   survey point with the table's columns; print puts the summary on page 1 and every page says
   "simulated storm report".
+- **REP-16**: Corroborated rating: on scripted points, the rating speed is the largest
+  lower-of-two speed over pairs within 100 m, matching a hand computation; a lone point above
+  it doesn't raise the rating (a pair 101 m apart doesn't corroborate, one 100 m apart does);
+  with no pair within 100 m the highest point rates alone and the survey marks the rating
+  uncorroborated; the rating and corroborating points are the pair.
+- **REP-17**: Uncorroborated points: every point whose EF is above the rating is listed
+  (and only those), keeps its own DOD, speed and bias in the table and the statistics, is
+  marked "not corroborated" in the table and CSV, and is named in the summary block and
+  Methods.
 - **REP-15**: Cost: the recorder adds under 5% to physics step time on an EF4 town pass, and
   the report builds in under 2 s.
 
@@ -237,8 +260,9 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - No radar section until Phase 10 (storm structure) adds radar.
 - One damage indicator (DI 2) until Phases 9 and 11 add trees and building types; each adds
   its indicators to the survey.
-- The survey has no human judgment beyond the Spec 03 construction-class rule (no surveyor
-  disagreement, no missed buildings).
+- The survey has no human judgment beyond the Spec 03 construction-class rule and the
+  corroboration rule (no surveyor disagreement, no missed buildings, no inspection of why a
+  lone house failed: an uncorroborated point is set aside, never re-rated).
 - No saved-run library or replay from the report (Phase 15).
 - The track is sampled once a second; the timeline charts show those samples.
 - The true wind is sampled, not integrated: a peak can be missed by up to 0.5% between samples
@@ -275,6 +299,20 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
   and changes no result.
 - **Spec versions in the metadata read from `docs/specs` at build time:** they can't drift
   from the documents.
+- **Corroborated rating: two points within 100 m, the lower speed (v1.9, BL-028):** the
+  rating was the highest of 500–3,700 points, so the low tail of the construction scatter set
+  it: even with every class median on DI 2's bounds (Spec 03 v2.6), EF2–EF4 rated one EF
+  above the true 10 m peak, each time from a strong house at its DOD's upper bound that failed
+  well below its median. Surveyors rate the highest EF supported by more than one damage
+  indicator and weigh one structure against its neighbours (Edwards et al. 2013), so the
+  rating needs a second point at that speed nearby. Chosen over a count anywhere in the path
+  (3 points), which treats points kilometres apart, in different winds, as corroboration, and
+  over giving strong houses only the expected speed for the rating, which throws away the
+  class judgment the table makes (Spec 03) instead of checking it. The lower speed of the pair
+  is the one both support. The isolated-house exception keeps a tornado that hit one farmstead
+  rated, as real surveys rate it.
+- **Contours capped at the rating (v1.9):** a contour above the headline EF would contradict
+  it; the lone point keeps its own DOD colour on the map and its row in the table.
 - **Rate only from damage, like real surveys:** it reproduces their known low bias over open
   ground, which is the point of the true-wind comparison.
 - **Contours from 50 m along-track sections:** simple, deterministic, and close to how survey
@@ -295,6 +333,14 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - None.
 
 ## Changelog
+
+- v1.9 (BL-028 part 2): the rating needs corroboration, two survey points within 100 m (the
+  lower speed of the pair); points above it are listed as uncorroborated and kept in the table,
+  map and statistics; contours capped at the rating. REP-06 and REP-08 reworded; REP-16 and
+  REP-17 added. On 12 records (EF2–EF5, seeds 1, 3, 7) ratings one EF above the true peak's
+  went from 7 to 4: EF2 seeds 3 and 7 and EF4 seed 7 now match; EF2 seed 1 (two weak DOD 9
+  houses 62 m apart) and EF3 seeds 1, 3, 7 (clusters of standard DOD 9 houses at 142–146 mph
+  true) stay one high, corroborated by their neighbours (BL-028).
 
 - v1.8 (BL-029): Methods and the bias decision follow Spec 03 v2.5's calibration on the 10 m
   open basis; the 10 m ÷ roof ratio is now context, not a correction to the bias.

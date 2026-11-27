@@ -7,7 +7,9 @@
  *   - the rating against the true peak's EF, and against the highest true 10 m peak any
  *     damaged house saw;
  *   - the 10 m ÷ roof-height peak ratio;
- *   - the rating point: its DOD, class, true winds and failure causes.
+ *   - the rating point: its DOD, class, true winds and failure causes; the point that
+ *     corroborates it, the points set aside as uncorroborated, and the highest point (the
+ *     rating before Spec 16 v1.9).
  * Prints one JSON line per run. With --save <file>, also writes the run's report JSON there
  * (for the hand checks of check 4).
  *   npx tsx scripts/survey-bias.ts <presetId> [--seed N] [--save file.json]
@@ -96,6 +98,11 @@ const debrisOnly = pts.filter((p) => {
 });
 // Points at the rating EF: how their true winds compare.
 const atRating = pts.filter((p) => p.ef !== null && p.ef === survey.rating);
+// Corroboration (Spec 16 v1.9): the pair that set the rating, the points set aside, and what
+// the old rule (the highest point) would have rated.
+const cp = survey.corroboratingPoint === null ? null : pts[survey.corroboratingPoint]!;
+const brief = (p: SurveyPoint) => ({ id: p.id, dod: p.dod, cls: p.cls, mph: p.mph, ef: p.ef, true10: +p.true10Mph.toFixed(1), roof: +p.trueRoofMph.toFixed(1) });
+const highest = pts.reduce<SurveyPoint | null>((m, p) => (p.ef !== null && (!m || p.mph > m.mph) ? p : m), null);
 
 console.log(
   JSON.stringify({
@@ -112,6 +119,10 @@ console.log(
     ratingPoint: rp && rb
       ? { dod: rp.dod, cls: rp.cls, mph: rp.mph, true10: +rp.true10Mph.toFixed(1), roof: +rp.trueRoofMph.toFixed(1), closestEdge: rb.closestEdge, failures: rb.failures.length, firstFail: rb.firstFail, causes }
       : null,
+    corroborated: survey.corroborated,
+    corroboratedBy: cp && rp ? { ...brief(cp), distance: +Math.hypot(cp.x - rp.x, cp.z - rp.z).toFixed(1) } : null,
+    uncorroborated: survey.uncorroborated.map((i) => brief(pts[i]!)),
+    highestPoint: highest ? brief(highest) : null,
     atRating: { ...stats(atRating.map((p) => p.true10Mph)), roof: stats(atRating.map((p) => p.trueRoofMph)).mean },
     bias: { ...stats(pts.map((p) => p.biasMph)), reported: { mean: +survey.bias.mean.toFixed(1), sd: +survey.bias.sd.toFixed(1) } },
     outside: {
