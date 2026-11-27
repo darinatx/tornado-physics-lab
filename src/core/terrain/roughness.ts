@@ -126,10 +126,29 @@ function sample(f: RoughnessField, a: Float32Array, x: number, z: number): numbe
   const j0 = Math.floor(gz);
   const tx = gx - i0;
   const tz = gz - j0;
-  const at = (i: number, j: number) => (i < 0 || j < 0 || i >= f.nx || j >= f.nz ? f.outsideLn : a[i + j * f.nx]!);
-  const a0 = at(i0, j0) + tx * (at(i0 + 1, j0) - at(i0, j0));
-  const a1 = at(i0, j0 + 1) + tx * (at(i0 + 1, j0 + 1) - at(i0, j0 + 1));
+  // The four corners, read directly (no per-call closure: this runs millions of times a second;
+  // Spec 18 profiling). Same arithmetic as before.
+  let v00: number, v10: number, v01: number, v11: number;
+  if (i0 >= 0 && j0 >= 0 && i0 + 1 < f.nx && j0 + 1 < f.nz) {
+    const q = i0 + j0 * f.nx;
+    v00 = a[q]!;
+    v10 = a[q + 1]!;
+    v01 = a[q + f.nx]!;
+    v11 = a[q + f.nx + 1]!;
+  } else {
+    v00 = nodeAt(f, a, i0, j0);
+    v10 = nodeAt(f, a, i0 + 1, j0);
+    v01 = nodeAt(f, a, i0, j0 + 1);
+    v11 = nodeAt(f, a, i0 + 1, j0 + 1);
+  }
+  const a0 = v00 + tx * (v10 - v00);
+  const a1 = v01 + tx * (v11 - v01);
   return a0 + tz * (a1 - a0);
+}
+
+/** A node's value, or the outside value beyond the grid. */
+function nodeAt(f: RoughnessField, a: Float32Array, i: number, j: number): number {
+  return i < 0 || j < 0 || i >= f.nx || j >= f.nz ? f.outsideLn : a[i + j * f.nx]!;
 }
 
 const TWO_PI = 2 * Math.PI;

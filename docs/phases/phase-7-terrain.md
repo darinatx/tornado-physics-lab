@@ -143,6 +143,22 @@ edge, lawn and cap fixes):
   roughness and BL-017: 1,296 houses damaged against 1,986). Not re-run old against new at the
   user's request; the profiling slice measures the causes directly.
 
+- **Slice D, profiling** (2026-11-26, after `main` was merged in: BL-017 and the spawn
+  button). CPU profiles of both bench scenes (`node --cpu-prof --import tsx
+  scripts/profile-bench.ts <scene>`). Phase 7's own hotspots:
+  - the roughness read (`sample`): 7.7% of `ef4-town`, 4.6% of `detail-core`, nearly all of it
+    a helper closure built on every call (millions per second);
+  - `windAt` over the field: 9.5% of `ef4-town` (`betaAt` 6.4%);
+  - roughness and track updates: "other", 0.42 ms per step in `ef4-town`.
+
+  | Change | Estimate | Measured (old → new, alternating, same fingerprint) | Kept |
+  |---|---|---|---|
+  | Roughness read without the per-call closure (same arithmetic) | −4 to −7% `ef4-town`, −3 to −5% `detail-core` | `ef4-town` 10.74 → 10.16 and 10.77 → 9.79 ms/step (−5 to −9%); `detail-core` 66.09 → 56.46 (−15%, one pair) | yes |
+
+  Left for the user: BL-018 (rebuild only the changed part of the roughness field), BL-019
+  (cache β per piece; tables in ln z₀). Reading the debris tables in ln z₀ was left out of this
+  slice because it would change results in the last bit (rule 9: no physics change).
+
 ## Exit criteria
 
 Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
@@ -153,7 +169,7 @@ Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 - [x] Slice C: Spec 19 approved; TERR-15 to TERR-24 pass; demo reviewed by the user (2026-11-26)
 - [x] Benchmark run for slices A, B and C against the baseline once `npm run bench` exists;
       any scene more than 10% slower explained, and fixed or logged
-- [ ] Slice D, profiling: hotspots listed with estimated and confirmed gains; cheap wins
+- [x] Slice D, profiling: hotspots listed with estimated and confirmed gains; cheap wins
       done, the rest in the backlog (`perf`); before/after numbers recorded
 - [ ] `npm run verify:fast` passes
 - [ ] Specs updated, simplifications note and retro written
