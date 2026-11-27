@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.9) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.10) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -263,6 +263,16 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - The survey has no human judgment beyond the Spec 03 construction-class rule and the
   corroboration rule (no surveyor disagreement, no missed buildings, no inspection of why a
   lone house failed: an uncorroborated point is set aside, never re-rated).
+- A dense survey can rate one EF high where the true peak is just above a DOD's lower bound
+  (accepted by the user, 2026-11-27, BL-028). DI 2's lower bounds fall in lower EF bands than
+  its expected speeds (DOD 9: 142 mph, in EF3, against 170, in EF4). Standard houses reach a
+  DOD with σ ≈ 0.095 in ln speed, so DI 2's range is about their 5–95% band (Spec 03), and about
+  5% of them reach DOD 9 by 146 mph. A town has hundreds of houses near the peak, so in an EF3
+  pass peaking at 148.6 mph, clusters of standard houses reach DOD 9, corroborate each other
+  and rate EF4 (170 mph); the same happens for weak houses in an EF2 pass. A surveyor might lower
+  these from context; the survey doesn't (no surveyor judgment, above). Narrowing the scatter
+  enough to remove them (σ ≲ 0.04) would make the houses more alike than real ones.
+  On 12 records (EF2–EF5, seeds 1, 3, 7) this affects 4: EF2 seed 1 and EF3 seeds 1, 3, 7.
 - No saved-run library or replay from the report (Phase 15).
 - The track is sampled once a second; the timeline charts show those samples.
 - The true wind is sampled, not integrated: a peak can be missed by up to 0.5% between samples
@@ -333,6 +343,10 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - None.
 
 ## Changelog
+
+- v1.10 (BL-028 closed): the remaining one-EF-high ratings were accepted as a documented
+  limitation (Simplifications), after a recheck found the DOD 9 capacity scatter matches DI 2's
+  bounds (`scripts/dod-scatter.ts`). No rule or criterion changed.
 
 - v1.9 (BL-028 part 2): the rating needs corroboration, two survey points within 100 m (the
   lower speed of the pair); points above it are listed as uncorroborated and kept in the table,
