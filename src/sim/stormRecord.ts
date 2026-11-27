@@ -196,8 +196,15 @@ export class StormRecorder {
   private dodHistory: [number, number][][] = [];
   private detailFails: FailureEntry[][] = [];
   private lastVersion = -1;
-  private pieces = new Map<number, DebrisRecordEntry>();
-  private wasResting = new Map<number, boolean>();
+  /** Debris records by piece id (ids count up from 0 in each run), and whether each was resting
+   *  at the last scan. Arrays, not maps: this is read for every piece at every debris step. */
+  private pieces: (DebrisRecordEntry | undefined)[] = [];
+  private wasResting: Uint8Array = new Uint8Array(1024);
+  /** Damage-rate ticks, and how many of them pass between wind samples. */
+  private tick = 0;
+  /** Highest piece id recorded, and the sim time of the next full debris scan. */
+  private lastId = -1;
+  private nextScan = 0;
   private impacts: ImpactRecord = emptyImpacts(0);
   private trackEvery: number;
   /** Bound per ring of REPORT.ring metres, for the current tornado state. */
@@ -216,7 +223,7 @@ export class StormRecorder {
       },
       debrisStep: () => this.scanDebris(),
       debrisGone: (p, why, time) => {
-        const e = this.pieces.get(p.id) ?? this.addPiece(p);
+        const e = this.pieces[p.id] ?? this.addPiece(p);
         e.fate = why;
         e.endX = p.pos.x;
         e.endZ = p.pos.z;
@@ -242,8 +249,11 @@ export class StormRecorder {
     this.dodHistory = Array.from({ length: n }, () => []);
     this.detailFails = [];
     this.lastVersion = -1;
-    this.pieces.clear();
-    this.wasResting.clear();
+    this.pieces = [];
+    this.lastId = -1;
+    this.nextScan = 0;
+    this.wasResting.fill(0);
+    this.tick = 0;
     this.impacts = emptyImpacts(n);
     this.pass = 0;
     this.lastStep = this.sim.snapshot.step;
@@ -285,8 +295,15 @@ export class StormRecorder {
   private sampleWind(snap: SimSnapshot): void {
     const s = snap.tornado;
     if (s.tunnel || !(s.vMax > 0)) return;
-    const n = this.pass++;
     const R = Math.max(s.rMax, 1e-6);
+    // Sample as often as the peak needs (Spec 16 v1.5): a fixed point's wind changes only as the
+    // core moves past it (the field is steady in the storm's frame, apart from the slow
+    // lifecycle), so between samples it misses at most about v·Δt / (2·R_max) of the peak. Keep
+    // that under 0.5%: Δt ≤ 0.01·R_max / v, in whole damage steps, at most 8 (~0.27 s).
+    const v = Math.hypot(s.velocity.x, s.velocity.z);
+    const every0 = Math.max(1, Math.min(REPORT.maxSampleEvery, Math.floor((REPORT.peakMiss * 2 * R) / Math.max(v, 1e-6) / (REPORT.sampleEvery * this.sim.dt))));
+    if (this.tick++ % every0 !== 0) return;
+    const n = this.pass++;
     const reachB = DAMAGE_RANGE_RMAX * R;
     const reachS = activeRadius(s);
     const reach = Math.max(reachB, reachS);
@@ -406,24 +423,43 @@ export class StormRecorder {
       endZ: p.pos.z,
       endT: p.bornAt,
     };
-    this.pieces.set(p.id, e);
+    this.pieces[p.id] = e;
     return e;
   }
 
   /** After each debris step: new pieces, heights, and where pieces came to rest. */
   private scanDebris(): void {
     const time = this.sim.snapshot.time;
-    for (const p of this.sim.debris.pieces) {
-      const e = this.pieces.get(p.id) ?? this.addPiece(p);
+    const P = this.sim.debris.pieces;
+    // Every debris step: the new pieces (appended at the end, ids counting up), so even one that
+    // lodges in a house before the next full scan is counted at launch.
+    for (let i = P.length - 1; i >= 0 && P[i]!.id > this.lastId; i--) this.addPiece(P[i]!);
+    if (P.length) this.lastId = Math.max(this.lastId, P[P.length - 1]!.id);
+    // Every 0.25 s: heights and landings (a resting piece stays where it landed, so reading it
+    // later gives the same point; its time is to within the scan interval).
+    if (time + 1e-9 < this.nextScan) return;
+    this.nextScan = time + REPORT.debrisScan;
+    for (let i = 0; i < P.length; i++) {
+      const p = P[i]!;
+      const id = p.id;
+      if (id >= this.wasResting.length) {
+        const w = new Uint8Array(Math.max(id + 1, this.wasResting.length * 2));
+        w.set(this.wasResting);
+        this.wasResting = w;
+      }
+      const e = this.pieces[id] ?? this.addPiece(p);
       if (p.pos.y > e.maxHeight) e.maxHeight = p.pos.y;
       const rest = p.resting || !!p.grounded;
-      if (rest && !this.wasResting.get(p.id)) {
+      const was = this.wasResting[id] === 1;
+      // Resting then and now: nothing to update.
+      if (rest && was) continue;
+      if (rest) {
         e.fate = p.hidden ? "removed" : "landed";
         e.endX = p.pos.x;
         e.endZ = p.pos.z;
         e.endT = time;
-      } else if (!rest && e.fate === "landed") e.fate = "flying";
-      this.wasResting.set(p.id, rest);
+      } else if (e.fate === "landed") e.fate = "flying";
+      this.wasResting[id] = rest ? 1 : 0;
     }
   }
 
@@ -478,7 +514,7 @@ export class StormRecorder {
         failures,
       };
     });
-    const pieces = [...this.pieces.values()].sort((a, b) => a.id - b.id).map((e) => ({ ...e }));
+    const pieces = this.pieces.filter((e): e is DebrisRecordEntry => !!e).map((e) => ({ ...e }));
     const params = { ...sim.params } as TornadoParams;
     return {
       meta: {

@@ -15,6 +15,13 @@ export const REPORT = {
    *  cell's peak comes at its closest approach, where its distance changes slowly. */
   outerEvery: 4,
   farEvery: 8,
+  /** Largest share of a peak the sampling may miss (Spec 16 v1.5): Δt ≤ 2·peakMiss·R_max / v. */
+  peakMiss: 0.005,
+  /** At most this many damage steps between samples (~0.27 s), for slow or stationary storms
+   *  whose lifecycle still changes the wind. */
+  maxSampleEvery: 8,
+  /** Full debris scan interval (s): heights and landings. New pieces are caught every step. */
+  debrisScan: 0.25,
   /** Swath threshold (m/s): EF0's lower bound, 65 mph. */
   threshold: 65 * MS_PER_MPH,
   /** Height of the true wind (m): the EF scale's 10 m. */

@@ -3,6 +3,7 @@
  * sorting, map layer toggles, point → row, and print (the whole report, or the summary alone).
  */
 import type { Report } from "../../sim/report/report";
+import { reportJson, surveyCsv } from "../../sim/report/export";
 import { renderReport } from "./html";
 import "./report.css";
 
@@ -49,6 +50,13 @@ export function showReport(report: Report, o: { onClose?: () => void; extraButto
   bar.appendChild(nav);
   button("🖨 Print summary", "Print (or save as PDF) the one-page summary alone", () => print("summary"));
   button("🖨 Print report", "Print (or save as PDF) the whole report, summary on page 1", () => print("all"));
+  // Exports (REP-14): the record and survey as JSON (Open saved report reloads it), the table
+  // as CSV.
+  const base = `storm-report-seed${report.record.meta.seed}-t${Math.round(report.simTime)}s${report.preliminary ? "-preliminary" : ""}`;
+  button("⬇ JSON", "Save the storm record and survey as JSON; 📂 Open saved report in the Run panel reloads it into this same report", () =>
+    download(`${base}.json`, reportJson(report.record, report.survey, report.preliminary), "application/json"),
+  );
+  button("⬇ CSV", "Save the damage survey table as CSV (one row per survey point, every column)", () => download(`${base}-survey.csv`, surveyCsv(report.survey, report.record.townCenter), "text/csv"));
   for (const x of o.extraButtons ?? []) button(x.label, x.title, x.run);
   const close = () => {
     el.remove();
@@ -143,4 +151,13 @@ export function showReport(report: Report, o: { onClose?: () => void; extraButto
     },
     close,
   };
+}
+
+/** Save text as a file through the browser. */
+function download(name: string, text: string, type: string): void {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }

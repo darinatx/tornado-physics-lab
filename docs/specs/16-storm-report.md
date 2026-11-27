@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.3) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.5) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -40,11 +40,15 @@ A recorder in `src/sim/` observes the sim and never changes it (like Spec 12's r
   above ground seen at the cell center, on the EF scale's basis: the open-terrain wind
   (`windAt` with the open class, as the EF readout uses since Spec 17 v1.1, TERR-25).
   The field's speeds are already 3-second-gust equivalent (Spec 01), so the peak is taken
-  directly, with no further averaging. Cells are sampled at the damage rate (30 Hz) within the
-  **active radius**: where an upper bound on the 10 m wind (tangential profile at that radius
+  directly, with no further averaging. Cells are sampled within the **active radius**, as often
+  as the peak needs: a fixed point's wind changes only as the core moves past it (the field is
+  steady in the storm's frame, apart from the slow lifecycle), so between samples Δt apart it
+  misses at most about v·Δt / (2·R_max) of the peak. Δt is the largest whole number of damage
+  steps (30 Hz) that keeps that under 0.5%, at most 8 (0.27 s). The **active radius** is where an upper bound on the 10 m wind (tangential profile at that radius
   plus forward speed, with the overshoot and radial factors at their largest) can exceed EF0
-  (29 m/s); a ring of cells whose bound can't beat the lowest peak already recorded in it is
-  skipped.
+  (29 m/s); a cell is skipped when the bound at its distance can't beat the peak it already
+  holds. Beyond 1.5·R_max cells are sampled every 4th time, beyond 3·R_max every 8th (their
+  wind changes more slowly; staggered so each sample covers a share of them).
 - **Per building:** peak wind at 10 m at its center (sampled like the swath, on the same
   open-terrain basis, every damage update while it's within 6·R_max), the existing peak at
   roof height (Spec 03 `peakMph`, the local wind that loaded it),
@@ -134,7 +138,13 @@ Printing the report puts the summary on page 1; **Print summary** prints it alon
 
 - **Print / Save as PDF** through the browser, with a print stylesheet (page breaks between
   sections, maps and charts as vector graphics).
-- **Data:** JSON (the record and the survey) and CSV (the survey table).
+- **Data:** JSON (the record and the survey) and CSV (the survey table: a header row of the
+  column names, then one row per survey point with every column). **📂 Open saved report** in
+  the Run panel reloads a JSON into the same report; the survey is rebuilt from the record and
+  must match the saved one, so a changed file is refused.
+- **Print layout:** each section starts a new page; collapsed sections open for printing; the
+  survey table prints on landscape pages in small type so every column fits; the browser's own
+  print (Cmd/Ctrl+P) prints the whole report.
 
 ## Interface
 
@@ -161,7 +171,8 @@ function showReport(report: Report): void;
 |---|---|---|---|
 | Track sample interval | 1 | s | enough for the timeline; a 10 min run is 600 samples |
 | Swath cell size | 10 | m | about a house width, so each house has its own cell |
-| Swath and building sample rate | 30 | Hz | the damage rate (Spec 03); at 20 m/s forward speed the core moves 0.7 m between samples, under 1% of the peak missed |
+| Swath and building sample interval | 1–8 | damage steps (1/30 s) | Δt ≤ 0.01·R_max / v: under 0.5% of a peak missed (a 300 m wedge at 15 m/s: 0.2 s; a 40 m rope at 8 m/s: 1/30 s) |
+| Full debris scan | 0.25 | s | heights and landings; new pieces are caught every debris step |
 | Swath threshold | 29 | m/s | EF0 lower bound (65 mph) |
 | Survey section length | 50 | m | about two lots along the track |
 | Houses in failure sequences | 10 | — | keeps the section readable |
@@ -230,9 +241,11 @@ function showReport(report: Report): void;
   assigns are open-terrain 10 m gusts, and the EF readout reports that basis (Spec 17 v1.1), so
   the true wind beside each rating is on it too; otherwise town roughness would show up as a
   survey bias. The roof-height peak stays the local wind, since that's what loaded the house.
-- **Swath sampled at the damage rate within an active radius:** the cheapest sampling that
-  keeps REP-04's 1%; skipping rings that can't raise any peak is Spec 19's trick and changes no
-  result.
+- **Swath sampled within an active radius, as often as the peak needs (v1.5):** the interval
+  follows from the missed-peak bound (v·Δt / 2·R_max ≤ 0.5%), which keeps REP-04's 1%;
+  sampling every damage step regardless cost 0.40 ms per step on the EF4 pass (12.8% with the
+  debris scan, over REP-15's 5%). Skipping rings that can't raise any peak is Spec 19's trick
+  and changes no result.
 - **Spec versions in the metadata read from `docs/specs` at build time:** they can't drift
   from the documents.
 - **Rate only from damage, like real surveys:** it reproduces their known low bias over open
@@ -256,6 +269,11 @@ function showReport(report: Report): void;
 
 ## Changelog
 
+- v1.5 (2026-11-26, slice C, REP-15): the wind sampling interval follows the missed-peak bound
+  instead of every damage step; debris heights and landings read every 0.25 s (new pieces every
+  debris step). The recorder went from 12.8% to about 1% of the EF4 pass's physics step.
+- v1.4 (2026-11-26, slice C): Open saved report; the CSV's layout; the print layout (from
+  the user's review: collapsed sections and the clipped survey table).
 - v1.3 (2026-11-26, the user's demo review): the event summary block is on the summary page
   only; its separate page repeated it word for word. Sections renumbered 1–9.
 - v1.2 (2026-11-26, slice B): the run stops 3 s after the lifecycle ends (the repeat wait, so

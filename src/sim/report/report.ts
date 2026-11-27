@@ -154,6 +154,8 @@ export interface Report {
   stats: Statistics;
   methods: Methods;
   survey: Survey;
+  /** The record it was built from (the JSON export carries it, Spec 16 REP-14). */
+  record: StormRecord;
 }
 
 export const REPORT_MARK = "Simulated storm report";
@@ -455,6 +457,7 @@ export function buildReport(record: StormRecord, survey: Survey, opts: { prelimi
     stats,
     methods: methods(record, survey, opts.specs ?? []),
     survey,
+    record,
   };
 }
 

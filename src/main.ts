@@ -18,6 +18,7 @@ import type { ReportControl } from "./ui/report/runControl";
 import { APP_VERSION, SPEC_DOCS } from "./ui/report/specFiles";
 import { showReport } from "./ui/report/view";
 import { specVersions } from "./sim/report/specDocs";
+import { reportFromJson } from "./sim/report/export";
 
 const app = document.getElementById("app")!;
 // Member-level detail zone in a worker (Spec 09 slice B).
@@ -87,6 +88,21 @@ const panel = createPanel(sim, (state) => {
     openReport(reports.preview());
   },
   openReport: () => reports && openReport(),
+  openSavedReport: () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.addEventListener("change", async () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      try {
+        openReport(reportFromJson(await f.text(), SPEC_DOCS));
+      } catch (e) {
+        alert((e as Error).message);
+      }
+    });
+    input.click();
+  },
   onRestart: () => {
     reportView?.close();
     reportView = null;

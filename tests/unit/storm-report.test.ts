@@ -23,6 +23,27 @@ import { distText, placeText, speedText } from "../../src/sim/report/format";
 import { parseSpecDoc } from "../../src/sim/report/specDocs";
 import { createReportControl } from "../../src/ui/report/runControl";
 import { renderReport } from "../../src/ui/report/html";
+import { reportFromJson, reportJson, surveyCsv } from "../../src/sim/report/export";
+import { SURVEY_COLUMNS } from "../../src/sim/report/table";
+
+/** A CSV line's cells (quoted cells may hold commas and doubled quotes). */
+function csvCells(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]!;
+    if (q) {
+      if (c === '"' && line[i + 1] === '"') (cur += '"'), i++;
+      else if (c === '"') q = false;
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") out.push(cur), (cur = "");
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
 
 const SPEC_DIR = join(import.meta.dirname, "..", "..", "docs", "specs");
 const SPECS = readdirSync(SPEC_DIR)
@@ -505,6 +526,49 @@ describe("Spec 16 — storm report: record and survey", () => {
       expect((html.match(/<tr id="rp-row-/g) ?? []).length).toBe(surveyA.points.length);
       // Methods lists the specs' simplifications.
       expect(R.methods.simplifications.length).toBeGreaterThan(5);
+    });
+
+    test("REP-14: the JSON reloads into an identical report; the CSV has one row per point; print puts the summary first and marks every page", () => {
+      // JSON: the same report back, the file says what it is, and a changed file is refused.
+      const text = reportJson(recA, surveyA, false);
+      const back = reportFromJson(text, SPECS);
+      expect(JSON.stringify(back)).toBe(JSON.stringify(R));
+      expect(JSON.parse(text).mark).toBe("Simulated storm report");
+      const prelim = reportFromJson(reportJson(recA, surveyA, true), SPECS);
+      expect(prelim.preliminary).toBe(true);
+      const tampered = JSON.parse(text);
+      tampered.survey.rating = 5;
+      expect(() => reportFromJson(JSON.stringify(tampered))).toThrow(/doesn't match/);
+      expect(() => reportFromJson("{}")).toThrow(/Not a storm report/);
+
+      // CSV: header of the table's columns, then one row per survey point with its values.
+      const lines = surveyCsv(surveyA, recA.townCenter).trimEnd().split("\r\n");
+      expect(csvCells(lines[0]!)).toEqual([...SURVEY_COLUMNS]);
+      expect(lines.length - 1).toBe(surveyA.points.length);
+      lines.slice(1).forEach((line, i) => {
+        const cells = csvCells(line);
+        expect(cells.length).toBe(SURVEY_COLUMNS.length);
+        const row = R.table[i]!;
+        SURVEY_COLUMNS.forEach((c, k) => expect(cells[k], `${row.point} ${c}`).toBe(row[c] === null ? "" : String(row[c])));
+      });
+      // A description with a comma survives the round trip (DOD 2's text has two).
+      expect(csvCells('2,"Loss of roof covering (< 20%), gutters, siding",x')).toEqual(["2", "Loss of roof covering (< 20%), gutters, siding", "x"]);
+
+      // Print: the summary is the first page; every page carries the mark; each page breaks
+      // after it; printing the summary alone hides every other page.
+      const html = renderReport(R);
+      const pages = html.split('<section class="rp-page').slice(1);
+      expect(pages.length).toBe(9);
+      expect(pages[0]).toMatch(/^ rp-summary" id="rp-summary"/);
+      for (const p of pages) expect(p).toMatch(/<div class="rp-mark"><span>SIMULATED STORM REPORT/);
+      const css = readFileSync(join(import.meta.dirname, "..", "..", "src", "ui", "report", "report.css"), "utf8");
+      const print = css.slice(css.indexOf("@media print"));
+      expect(print).toMatch(/\.rp-page \{[^}]*break-after: page/);
+      expect(print).toMatch(/body\.rp-print-summary \.rp-page:not\(\.rp-summary\) \{\s*display: none/);
+      expect(print).toMatch(/body\.rp-printing > \*:not\(\.rp-overlay\) \{\s*display: none/);
+      // No agency name or logo: the page names itself a simulation.
+      expect(html).not.toMatch(/National Weather Service|NWS|NOAA/);
+      expect(html).toContain("not an official statement");
     });
   });
 });

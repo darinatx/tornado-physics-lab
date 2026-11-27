@@ -40,6 +40,7 @@ export function createPanel(
     stopAndReport?: () => void;
     previewReport?: () => void;
     openReport?: () => void;
+    openSavedReport?: () => void;
     /** After a restart or a new preset. */
     onRestart?: () => void;
   } = {},
@@ -216,6 +217,8 @@ export function createPanel(
     openCtl = tip(runFolder.add({ open: actions.openReport }, "open").name("📄 Open report"), "Open the storm report for the run that just ended.");
     openCtl.hide();
   }
+  if (actions.openSavedReport)
+    tip(runFolder.add({ load: actions.openSavedReport }, "load").name("📂 Open saved report"), "Open a storm report saved as JSON (⬇ JSON in a report).");
   const setStopped = (stopped: boolean) => {
     speedCtl.enable(!stopped);
     if (stopped) openCtl?.show();

@@ -1,6 +1,6 @@
 # Phase 8 — Storm Report
 
-Status: In progress, slice B built and awaiting the demo review (started 2026-11-26 on `phase-8-storm-report`, from `main` after Phase 7's
+Status: In progress, slices A–C built; slice D (profiling) next (started 2026-11-26 on `phase-8-storm-report`, from `main` after Phase 7's
 preliminary sign-off). Spec 16 approved (v1.0).
 
 ## Goal
@@ -31,8 +31,8 @@ Each of A–C ends with `npm run bench` against the saved baseline, noted below.
 
 ## Specs touched
 
-- [16 — Storm report](../specs/16-storm-report.md): new, approved v1.0 (REP-01 to REP-15)
-- [07 — Instruments & UI](../specs/07-instruments.md): Stop & Report, Preview and Open report in the Run panel (v1.17)
+- [16 — Storm report](../specs/16-storm-report.md): new, approved v1.0, now v1.5 (REP-01 to REP-15)
+- [07 — Instruments & UI](../specs/07-instruments.md): Stop & Report, Preview, Open report and Open saved report in the Run panel (v1.18)
 - [08 — Sim loop](../specs/08-sim-loop.md): a stopped state; the lifecycle end stops the run (v1.9)
 - [03 — Damage](../specs/03-damage.md): unchanged (the recorder reads DOD history itself)
 
@@ -94,15 +94,40 @@ Each of A–C ends with `npm run bench` against the saved baseline, noted below.
   - `verify:fast` once failed TERR-13 (the timing ratio) with the dev server and browser
     running; it passed alone. That's BL-025, already logged.
 
+- **Slice B follow-ups from the user's demo review** (2026-11-26): the event summary page
+  repeated the summary page's block (dropped; sections 1–9, Spec 16 v1.3); printing left
+  collapsed sections closed (now all open for print, and Cmd/Ctrl+P prints the report); the
+  survey table was clipped after Bias on paper (landscape pages, small type, wrapping cells;
+  measured to fit 10 in and 7.5 in of printable width).
+
+- **Slice C — export and cost** (2026-11-26). `src/sim/report/export.ts`: JSON (record and
+  survey; 📂 Open saved report reloads it, the survey rebuilt from the record and checked against
+  the saved one) and CSV (every table column, one row per point). ⬇ JSON and ⬇ CSV in the
+  report's toolbar. REP-14 (unit) and REP-15 (`tests/validation/storm-report-cost.test.ts`,
+  with the other timing budgets) pass.
+  - REP-15 first failed: the recorder added 12.8% to the EF4 pass's step (9.00 → 10.16 ms).
+    Measured by part: wind sampling 0.40 ms per step, debris scan 0.23 ms. Fixes (Spec 16 v1.5):
+    the sampling interval follows the missed-peak bound (Δt ≤ 0.01·R_max / v, 0.2 s for the EF4
+    wedge instead of 1/30 s): 0.40 → 0.07 ms; the debris scan by arrays, new pieces every step,
+    heights and landings every 0.25 s: 0.23 → 0.01 ms. REP-04's 1% still holds. Now 8.61 →
+    8.75 ms per step (+1.6%); the report builds in 46 ms (1,296 points).
+  - Checked in the app: the toolbar's ⬇ JSON and ⬇ CSV produce the files (42 points, 42 CSV
+    rows; metadata with seed, preset, commit and all 19 spec versions); Open saved report is
+    in the Run panel. Not watched in the app: reloading a saved file (covered by REP-14).
+  - Benchmark: `ef4-town` 8.83, `detail-core` 61.25 ms per step, same fingerprints; within
+    the spread of slices A and B's runs (8.05–8.83 and 57.9–62.9), so run-to-run noise. Flags
+    unchanged (Phase 7's, against the Phase 6 baseline). `verify:fast`: 251 tests, trace
+    complete (REP-01 to REP-15).
+
 ## Exit criteria
 
 Preliminary (lets Phase 9 start):
 
-- [x] Spec 16 approved (v1.0); Specs 07 (v1.17) and 08 (v1.9) updated
+- [x] Spec 16 approved (v1.0, now v1.5); Specs 07 (v1.18) and 08 (v1.9) updated
 - [x] Slice A: REP-02 to REP-09 pass
 - [ ] Slice B: REP-01, REP-10 to REP-13 pass; demo reviewed by the user
-- [ ] Slice C: REP-14, REP-15 pass
-- [ ] Benchmark run at the end of slices A, B and C; regressions over 10% explained
+- [x] Slice C: REP-14, REP-15 pass
+- [x] Benchmark run at the end of slices A, B and C; regressions over 10% explained (Phase 7's)
 - [ ] Slice D, profiling: hotspots with estimated and confirmed gains; before/after recorded
 - [ ] `npm run verify:fast` passes
 - [ ] Specs updated, simplifications note and retro written
