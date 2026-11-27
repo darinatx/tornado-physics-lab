@@ -412,6 +412,10 @@ span.rp-out {
     size: letter;
     margin: 0.5in;
   }
+  @page wide {
+    size: letter landscape;
+    margin: 0.5in;
+  }
   body.rp-printing > *:not(.rp-overlay) {
     display: none !important;
   }
@@ -450,6 +454,22 @@ span.rp-out {
   body.rp-printing .rp-chart,
   body.rp-printing .rp-table tr {
     break-inside: avoid;
+  }
+  /* The survey table is wide: its own landscape pages, small type, cells that wrap. */
+  body.rp-printing #rp-table {
+    page: wide;
+  }
+  body.rp-printing #rp-table .rp-table {
+    font-size: 8px;
+    table-layout: auto;
+  }
+  body.rp-printing #rp-table .rp-table th,
+  body.rp-printing #rp-table .rp-table td {
+    white-space: normal;
+    padding: 2px 3px;
+  }
+  body.rp-printing #rp-table .rp-table td:nth-child(3) {
+    min-width: 0;
   }
   body.rp-print-summary .rp-page:not(.rp-summary) {
     display: none;
