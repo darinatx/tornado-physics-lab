@@ -6,12 +6,13 @@ import { MS_PER_MPH } from "../config/units";
 import { updateBuilding } from "../core/damage/building";
 import type { Building, FailureRecord } from "../core/damage/types";
 import { pressureDeficit } from "../core/wind/pressure";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TornadoState } from "../core/wind/types";
 import { windAt } from "../core/wind/windField";
 import { generateNeighborhood, neighborhoodOf } from "./city";
 import type { HouseSpec } from "../core/damage/types";
 import { createHouse } from "../core/damage/building";
 import { createRng } from "./rng";
+import type { Terrain } from "../core/terrain/roughness";
 
 export interface World {
   readonly buildings: readonly Building[];
@@ -27,7 +28,7 @@ export interface World {
   update(
     dt: number,
     s: TornadoState,
-    terrain: TerrainClass,
+    terrain: Terrain,
     time: number,
     onFail?: (b: Building, rec: FailureRecord) => void,
   ): void;

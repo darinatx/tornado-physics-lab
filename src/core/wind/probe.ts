@@ -7,7 +7,9 @@ import { efRating, msToMph } from "./efScale";
 import type { EFRating } from "./efScale";
 import { pressureDeficit } from "./pressure";
 import type { TerrainClass, TornadoState } from "./types";
-import { carriedFactors, envFactor, windAt } from "./windField";
+import { carriedFactors, envFactor, fetchDirection, windAt, windBeta } from "./windField";
+import { effZ0At, terrainClassOf, z0At } from "../terrain/roughness";
+import type { Terrain } from "../terrain/roughness";
 
 export interface ProbeReading {
   point: Vec3;
@@ -31,9 +33,12 @@ export interface ProbeReading {
   distance: number;
   inCore: boolean;
   side: "left" | "right" | "center";
+  /** Local terrain (Spec 17): what stands here, the upwind-weighted value the wind feels, its
+   *  class and the power-law exponent. */
+  terrain: { z0: number; z0Eff: number; cls: TerrainClass; beta: number };
 }
 
-export function probeAt(p: Vec3, s: TornadoState, terrain: TerrainClass): ProbeReading {
+export function probeAt(p: Vec3, s: TornadoState, terrain: Terrain): ProbeReading {
   const w = windAt(p, s, terrain);
   const speed = Math.hypot(w.x, w.z);
   const dx = p.x - s.center.x;
@@ -41,7 +46,8 @@ export function probeAt(p: Vec3, s: TornadoState, terrain: TerrainClass): ProbeR
   const r = Math.hypot(dx, dz);
 
   // Storm-relative components in the cylindrical frame (the carried wind removed).
-  const carried = envFactor(p.y, terrain) * carriedFactors(r, s);
+  const beta = windBeta(p, s, terrain);
+  const carried = envFactor(p.y, beta) * carriedFactors(r, s);
   const sx = w.x - carried * s.velocity.x;
   const sz = w.z - carried * s.velocity.z;
   let tangential = 0;
@@ -79,5 +85,10 @@ export function probeAt(p: Vec3, s: TornadoState, terrain: TerrainClass): ProbeR
     distance: r,
     inCore: r < s.rMax,
     side,
+    terrain: (() => {
+      const dir = s.tunnel ? (-s.tunnel.dirDeg * Math.PI) / 180 : fetchDirection(p, s);
+      const z0Eff = effZ0At(terrain, p.x, p.z, dir);
+      return { z0: z0At(terrain, p.x, p.z), z0Eff, cls: terrainClassOf(z0Eff), beta };
+    })(),
   };
 }

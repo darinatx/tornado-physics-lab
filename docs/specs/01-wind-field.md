@@ -1,6 +1,6 @@
 # Spec 01 — Wind Field
 
-Status: Approved (v1.11)
+Status: Approved (v2.1)
 
 ## Purpose
 
@@ -49,7 +49,9 @@ h(r, z) = 1 + (S(r) - 1) · exp(-(z - z_p) / δ)                 for z ≥ z_p  
 ```
 
 The two pieces meet at z = z_p with value S(r), so the profile is continuous. `β` depends on
-terrain (rougher terrain gives a bigger β and a slower near-ground wind), and ε keeps the
+terrain (rougher terrain gives a bigger β and a slower near-ground wind): a class value, or over
+a roughness field (Spec 17) the β of the ground upwind of the point for the direction of the
+horizontal wind at z_p there (above the friction layer, where roughness doesn't turn it). ε keeps the
 speed nonzero at z = 0 for numerical stability. Far from the core, S → 1 and the profile is
 an ordinary rise to full speed at z_p.
 
@@ -171,9 +173,10 @@ interface TornadoState {
   rotation: 1 | -1;      // 1 = cyclonic
 }
 type TerrainClass = "open" | "suburban" | "urban";
+type Terrain = TerrainClass | RoughnessField;   // Spec 17
 
 // src/core/wind/windField.ts
-function windAt(p: Vec3, s: TornadoState, terrain: TerrainClass): Vec3;  // m/s, world frame, ground-relative
+function windAt(p: Vec3, s: TornadoState, terrain: Terrain): Vec3;  // m/s, world frame, ground-relative
 
 // src/core/wind/efScale.ts
 function efRating(speedMs: number): 0 | 1 | 2 | 3 | 4 | 5 | null;   // null below EF0
@@ -202,7 +205,7 @@ what's in `TornadoState`.
 | W_max | m/s | 30 | 0–80 | core updraft; radar-observed updrafts reach 30–80 m/s |
 | S_peak | – | 1.3 | 1.0–1.6 | near-ground overshoot; lab and LES studies find ~1.2–1.6 |
 | z_p | m | 20 | 5–60 | height of peak winds; observed ~10–50 m |
-| β (open / suburban / urban) | – | 0.11 / 0.22 / 0.33 | — | standard power-law exponents |
+| β (open / suburban / urban) | – | 0.11 / 0.22 / 0.33 | — | standard power-law exponents; over a roughness field, β(z₀) through these values (Spec 17) |
 | ε | – | 0.005 | — | numerical floor for z / z_p (0.1 m at the default z_p) |
 | S₁ / S₂ | – | 1.1 / 1.7 | — | swirl thresholds for one-cell → two-cell; calibrated so at default W_max EF0–2 are one-celled, EF3 transitional and EF4–5 two-celled, matching radar observations |
 | k_d | – | 0.5 | — | central downdraft strength / W_max; observed downdrafts are weaker than the annular updraft |
@@ -267,7 +270,8 @@ All values live in `src/config/wind.ts`.
 
 - An analytic vortex instead of a solved flow. Mass continuity is not strictly enforced
   between the inflow, updraft and swirl components.
-- The terrain class is uniform per query. No local speed-up between buildings. Phase 7 (Spec 17) makes β vary with place and wind direction.
+- No local speed-up between buildings. Over a roughness field β varies with place and wind
+  direction (Spec 17), but within a query it is one value for the whole friction layer.
 - No short-period turbulence. Speeds represent 3-second gusts. A seeded gust-noise layer may
   be added later with its own criteria.
 - In a two-cell vortex the central downdraft doesn't spread outward along the ground (the
@@ -306,17 +310,21 @@ Made by Claude, prioritizing realism; see CLAUDE.md.
 
 ## Changelog
 
+- v2.1: merged v1.10–v1.11 from main (BL-017, outer decay and outer reach) into the Phase 7
+  line: the roughness field (v2.0) and the free-vortex outer decay are independent.
+- v2.0: `windAt` takes a roughness field (Spec 17, Phase 7): β is read at the point for the
+  direction of the wind at z_p, for the vortex friction layer and the carried wind alike. A
+  class argument is unchanged; a uniform field at a class's z₀ gives the class's wind
+  (TERR-07). The main sim's terrain is now the town's field, not one class.
 - v1.11: outer reach n_o is a user parameter (1–4), default 1.5 (was a fixed 2). The spec no
   longer claims radar bounds the r^(−α) range: n_o is a calibration to surveyed path widths.
   WIND-24 tightened to surveyed maximum widths. EF0 path widths: EF3 0.78 → 0.72 km, EF4
   1.73 → 1.56 km, EF5 2.96 → 2.65 km. Center deficit ~5% below v1.10 (51 → 49 hPa for the default tornado).
-
 - v1.10: outer decay turns to a free vortex (1/r) beyond r_o = 2·R_max (WIND-23, WIND-24;
   WIND-07, WIND-18, WIND-19 and WIND-22 reworded). The carried wind's weight follows the same
   shape, and the pressure deficit and condensation funnel follow from it. Center deficit at
   default α drops ~11% (58 → 51 hPa for the default tornado). EF0 path widths: EF5 preset
   5.4 → 3.0 km, EF4 2.4 → 1.7 km, EF3 0.95 → 0.78 km; peaks unchanged. Found by the user (BL-017).
-
 - v1.9: optional tunnel flow on the wind state (`TornadoState.tunnel`, Spec 12): when set, `windAt` and
   `pressureDeficit` return the wind tunnel's power-law wind and uniform deficit instead of the vortex's.
   The tornado field is unchanged.

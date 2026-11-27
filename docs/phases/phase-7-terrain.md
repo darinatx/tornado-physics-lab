@@ -1,6 +1,6 @@
 # Phase 7 — Terrain from the Town
 
-Status: Spec review (drafted 2026-11-26). Starts now; Phase 6 has its preliminary sign-off.
+Status: Preliminary sign-off (2026-11-26); validation (slice E) and the final gate to come
 
 ## Goal
 
@@ -21,7 +21,25 @@ setting any more; the structure lab can override it.
   pavement) and the blended town edge; terrain dropdown removed; probe and inspector show
   the local terrain; the lab's Terrain setting and its ground; the Ground roughness layer
   and its legend. Demo below. TERR-10 to TERR-12, TERR-14.
-- **C — Validation, in its own session alongside Phase 8** (CLAUDE.md Phase loop step 6):
+- **C — Ground damage tracks** (Spec 19, at the user's request 2026-11-26): a sparse 2 m track
+  grid near the core recording each cell's peak 2 m wind and direction and a scour dose
+  (aeolian erosion law, weighted by debris load); crops lodge, lawn is pushed over, then
+  thinned, stripped, bare soil; gouges and drag streaks from debris landings and slides; the
+  track lowers the roughness (Spec 17) and is drawn by the ground material. Calibrated so the
+  look follows from the wind (EF0–1 patchy, EF2 inward lodging, EF3 patchy stripping, EF4–5
+  scoured core). TERR-15 to TERR-24. Benchmark at the end (expected to cost little; TERR-24
+  caps it at 3%).
+- **D — Profiling** (CLAUDE.md rule 9, Phase loop step 4), before the preliminary gate:
+  profile the benchmark scenes (`npm run bench`) and the browser frame, since the ground shader,
+  cover mask and roughness layer are render work. List the top hotspots, each with an
+  estimated gain as a range; confirm each one with the benchmark once it's done. Do the cheap,
+  large wins here; put bigger ones in `docs/backlog.md` (category `perf`) for the user, and
+  structural work goes to the performance phase. Record before/after numbers below. Known
+  candidates: the roughness update (~11 ms every 2 s of sim time while houses fail),
+  `windAt` over a field (~1.5× a class near the ground), the layer refresh (6–10 ms).
+  **Blocked:** `npm run bench` is Phase 6's slice D and isn't built yet; slices A and B were
+  never benchmarked, so they get one run against the new baseline when it exists.
+- **E — Validation, in its own session alongside Phase 8** (CLAUDE.md Phase loop step 6):
   `npm run verify`; z₀ against published values for comparable neighborhoods; the
   adjustment length at the town edge against internal-boundary-layer data; damage and EF
   readout for an EF2 and an EF4 preset through town before and after (the town was open
@@ -30,6 +48,7 @@ setting any more; the structure lab can override it.
 ## Specs touched
 
 - [17 — Terrain roughness and ground cover](../specs/17-terrain.md): new (TERR-01 to TERR-14)
+- [19 — Ground damage tracks](../specs/19-ground-tracks.md): new (TERR-15 to TERR-24); slice C
 - [01 — Wind field](../specs/01-wind-field.md): `windAt` on a roughness field (v2.0)
 - [04 — Debris](../specs/04-debris.md): per-terrain tables by local z₀
 - [05 — City](../specs/05-city.md): ground cover from the layout
@@ -40,37 +59,184 @@ setting any more; the structure lab can override it.
 
 ## Demo checklist
 
-- [ ] Main sim: no terrain control in the panel
-- [ ] Ground: fields outside town, mowed lawn across the neighborhood, no roads or section lines,
+Reviewed by the user 2026-11-26: "demo looks good".
+
+- [x] Main sim: no terrain control in the panel
+- [x] Ground: fields outside town, mowed lawn across the neighborhood, no roads or section lines,
       no hard seam at the town edge
-- [ ] Probe over a field, at the town edge and deep in town: class, z₀ and β change, and β at the
+- [x] Probe over a field, at the town edge and deep in town: class, z₀ and β change, and β at the
       edge depends on which way the wind blows
-- [ ] EF3 preset from the fields into town: the probe's 5 m wind drops as it crosses the edge
+- [x] EF3 preset from the fields into town: the probe's 5 m wind drops as it crosses the edge
       over a few hundred metres, not at once
-- [ ] After the core passes, probe the flattened area: z₀ lower, near-ground wind higher than
+- [x] After the core passes, probe the flattened area: z₀ lower, near-ground wind higher than
       in the standing town beside it
-- [ ] Lab: Terrain Auto / Open / Suburban / Urban; the ground changes to match (Urban shows
+- [x] Lab: Terrain Auto / Open / Suburban / Urban; the ground changes to match (Urban shows
       concrete); the same pass gives less roof wind over Urban than Open; a recorded-wind
       replay locks the setting
-- [ ] Ground roughness layer: off to start; turned on, fields read smooth, the town rough, the
+- [x] Ground roughness layer: off to start; turned on, fields read smooth, the town rough, the
       edge a gradient a few hundred metres wide that shifts as the tornado and its wind move
       past; the legend shows the classes
-- [ ] With the layer on, the track behind the core fades toward smooth as houses come down
-- [ ] In the lab, an override turns the layer uniform; Auto shows the surroundings
+- [x] With the layer on, the track behind the core fades toward smooth as houses come down
+- [x] In the lab, an override turns the layer uniform; Auto shows the surroundings
+
+## Slice notes
+
+- **A and B built together (2026-11-26).** Spec 17 v1.0; TERR-01 to TERR-14 pass.
+  - Default town (seed 1): z₀ 0.18–0.22 m inside (β ≈ 0.20, suburban), farmland 0.03 m. Wind
+    from the fields: β 0.115 at the edge, 0.16 at 200 m, 0.19 at 500 m, 0.197 at 750 m; from
+    the town side 0.19 at the edge. Flattened 600 m square: z₀ 0.05 m at its centre.
+    (`npx tsx scripts/terrain-field.ts`)
+  - Cost (TERR-13): build ~60 ms; update ~11 ms median (all houses read by revision, local
+    z₀ by summed-area tables, 16 fetch sweeps); `windAt` over the field ~1.5× a class near the
+    ground; layer refresh 6–10 ms. A 100 m density window read street crossings as near-open,
+    so the window is one block (200 m).
+  - The town used to run as open country (the old default), so near-ground winds in town are
+    now lower for the same tornado (swirl at 10 m: 0.5^0.20 against 0.5^0.11, about 6% less over the interior).
+  - INST-10 found a pre-existing stats gap: far-field pieces skipped on alternate steps, and
+    airborne heavy pieces, were left out of the fastest/highest stats. Fixed (Spec 04 v2.6).
+  - Phase 6 validation was running in its own worktree (from `cacaedf`) while this slice
+    changed `src/core`, `src/sim` and `src/config`; the user chose to let it continue
+    (2026-11-26). Its results describe the pre-terrain code: rerun its checks that involve
+    near-ground wind or debris in town on this code.
+  - Benchmark: none run. `npm run bench` (rule 9) doesn't exist yet; it's Phase 6's slice D.
+    Slices A and B get one run when it does (exit criterion above).
+
+Ground damage tracks (slice C), reviewed by the user 2026-11-26 ("looks good", after the
+edge, lawn and cap fixes):
+
+- [x] EF2 preset across the fields: crops lodged across the path, rows pointing inward from
+      both sides; lawn pushed over where it crosses town; nothing scoured
+- [x] EF1: a faint, patchy track, mostly on one side
+- [x] EF4: crops gone in the core and lodged at the edges; a strip of bare soil; dense gouges
+      and drag streaks; the strip narrows through town
+- [x] Same EF4 at half the forward speed: more bare soil
+- [x] The marks stay after the core has passed; the roughness layer shows the track smoother
+      than the fields around it
+
+- **C built (2026-11-26).** Spec 19 v1.0; TERR-15 to TERR-24 pass (TERR-19 in validation).
+  - Calibrated on the gust basis: lodging 28, snapping 48, lawn 35 m/s at 2 m; scour doses
+    0.5 / 1.5 / 8. Over farmland: EF0 faint, EF1 patchy, EF2 lodged across the core with no
+    scouring, EF3 32% of the core thinned or stripped, EF4 81% stripped or bare (EF4 at half
+    speed: more), EF5 bare. `npx tsx scripts/track-calibrate.ts [preset] [--slow]`.
+  - The rows converge on a line offset from the centreline, as in surveyed tree-fall patterns.
+  - Cost: the first version took 12.5% of the EF4 step; 0.5 s updates, skipped blocks, a slower
+    outer ring and stored cell strengths bring it under 3% (TERR-24). Full benchmark run still
+    to do (exit criterion below).
+  - After the user's first look: per-cell strength (±20%) for ragged edges, drawing from
+    continuous amounts (no contour lines or straw ring), much lighter debris marks. A shader
+    variable named `flat` (reserved in GLSL ES 3.0) blanked the ground once; the unit tests run
+    in Node and can't catch shader compile errors, so the app has to be checked.
+
+- **Benchmark, slices A–C** (2026-11-26, at `664d75a`, which also includes BL-017's outer-wind
+  change merged from `main`; against the Phase 6 baseline; machine load 5.2, higher than the
+  baseline's):
+
+  | Scene | total | damage | debris | heavy | detail | other (ms per physics step) |
+  |---|---|---|---|---|---|---|
+  | `ef4-town` | 8.93 → 10.79 (+21%) | 1.93 → 2.22 | 2.49 → 3.84 (+54%) | 4.51 → 4.31 | 0 | 0 → 0.42 |
+  | `detail-core` | 50.69 → 69.47 (+37%) | 1.69 → 1.77 | 3.03 → 4.10 (+35%) | 2.21 → 2.25 | 43.61 → 61.06 (+40%) | 0.08 → 0.29 |
+
+  Flagged, with likely causes for the profiling slice to confirm: "other" is the roughness and
+  track updates; debris reads the roughness field per piece (three tables and its `windAt`);
+  the detail zone's `windAt` calls go over the field (~1.5× a class). Part of every figure is
+  the load (damage, nearly unchanged code, rose 15%) and a different storm (the town's own
+  roughness and BL-017: 1,296 houses damaged against 1,986). Not re-run old against new at the
+  user's request; the profiling slice measures the causes directly.
+
+- **Slice D, profiling** (2026-11-26, after `main` was merged in: BL-017 and the spawn
+  button). CPU profiles of both bench scenes (`node --cpu-prof --import tsx
+  scripts/profile-bench.ts <scene>`). Phase 7's own hotspots:
+  - the roughness read (`sample`): 7.7% of `ef4-town`, 4.6% of `detail-core`, nearly all of it
+    a helper closure built on every call (millions per second);
+  - `windAt` over the field: 9.5% of `ef4-town` (`betaAt` 6.4%);
+  - roughness and track updates: "other", 0.42 ms per step in `ef4-town`.
+
+  | Change | Estimate | Measured (old → new, alternating, same fingerprint) | Kept |
+  |---|---|---|---|
+  | Roughness read without the per-call closure (same arithmetic) | −4 to −7% `ef4-town`, −3 to −5% `detail-core` | `ef4-town` 10.74 → 10.16 and 10.77 → 9.79 ms/step (−5 to −9%); `detail-core` 66.09 → 56.46 (−15%, one pair) | yes |
+
+  Left for the user: BL-018 (rebuild only the changed part of the roughness field), BL-019
+  (cache β per piece; tables in ln z₀). Reading the debris tables in ln z₀ was left out of this
+  slice because it would change results in the last bit (rule 9: no physics change).
 
 ## Exit criteria
 
 Preliminary sign-off (lets Phase 8 start; tag `phase-7-prelim`):
 
-- [ ] Spec 17 approved; Specs 01, 04, 05, 06, 07, 12, 13 updated
-- [ ] Slice A: TERR-01 to TERR-09, TERR-13 pass
-- [ ] Slice B: TERR-10 to TERR-12, TERR-14 pass; demo reviewed by the user
-- [ ] `npm run verify:fast` passes
-- [ ] Specs updated, simplifications note and retro written
-- [ ] User's preliminary sign-off; tag `phase-7-prelim`
+- [x] Spec 17 approved (v1.0); Specs 01, 04, 05, 06, 07, 12, 13 updated
+- [x] Slice A: TERR-01 to TERR-09, TERR-13 pass
+- [x] Slice B: TERR-10 to TERR-12, TERR-14 pass; demo reviewed by the user (2026-11-26)
+- [x] Slice C: Spec 19 approved; TERR-15 to TERR-24 pass; demo reviewed by the user (2026-11-26)
+- [x] Benchmark run for slices A, B and C against the baseline once `npm run bench` exists;
+      any scene more than 10% slower explained, and fixed or logged
+- [x] Slice D, profiling: hotspots listed with estimated and confirmed gains; cheap wins
+      done, the rest in the backlog (`perf`); before/after numbers recorded
+- [x] `npm run verify:fast` passes
+- [x] Specs updated, simplifications note and retro written
+- [x] User's preliminary sign-off (2026-11-26); tag `phase-7-prelim`
+- [ ] Pull request from `phase-7-terrain` into `main`, merged when the user says so; branch deleted
+- [ ] After the merge: remove the temporary `tornado-sim-phase-7` entry from `.claude/launch.json`
+      in the main folder (uncommitted there; it serves this worktree on port 5173)
 
 Final sign-off (tag `phase-7-done`):
 
-- [ ] Slice C, validation, in its own session; findings in `docs/backlog.md`
+- [ ] Slice E, validation, in its own session on `validate-phase-7` (from the `phase-7-prelim`
+      tag), merged into `main` by pull request; findings in `docs/backlog.md`
 - [ ] Every Phase 7 backlog item decided by the user (fix, defer, accept); "fix" items fixed
-- [ ] User's final sign-off; tag `phase-7-done`
+- [ ] User's final sign-off; tag `phase-7-done` on `main`
+
+## Simplifications note
+
+Roughness (Spec 17):
+- The upwind fetch follows a straight line along the wind at each point; near the core the air
+  came round a spiral, so the fetch there is approximate. One fetch length for every height.
+- No displacement height (the profile starts at the ground); frontal density averaged over
+  wind directions; no sheltering or speed-up between individual buildings.
+- The suburb reads z₀ ≈ 0.2 m without trees (real suburbs with trees: 0.3–0.5 m; Phase 9).
+- No roads, water, woods or terrain height.
+
+Ground damage tracks (Spec 19):
+- The scour thresholds and debris weight are calibrated to case reports and the EF targets,
+  not measured: published scouring is anecdotal (Jarrell 1997, Neshoba 2014, Arkansas 2021).
+- Lodging thresholds use the top of the published canopy range on the gust basis; the lawn's
+  threshold is a decision (no data).
+- One sample height (2 m); no crop stage, height or soil moisture; debris load per 64 m tile.
+- Only light pieces mark the ground (heavy rigid bodies don't report landings yet).
+- Beyond 3·R_max one wind sample per 32 m patch serves its cells (smooth wind there).
+- Cells are drawn as 2 m squares (nearest sampling), softened by the lay lines.
+
+## Retro
+
+The user's look at the app shaped most of slice C. Each screenshot pointed at a specific cause:
+- **A yellow ring and contour-line edges:** every cell had the same thresholds, and the
+  drawing showed discrete states. Per-cell strength and continuous drawing fixed both.
+- **A dark cliff at the town edge:** sliding debris marked the ground every step, without
+  limit. Marks are now faint and need real speed.
+- **A ruler-straight edge on a strong storm's right side:** a fixed 3·R_max cap on the
+  update radius. The model's own wind still lodged crops well beyond it, so the cap was cutting
+  off real track. The active radius now comes from the wind profile.
+- **"Nothing happens to the lawns":** the sim had flattened and scoured them; lightening just
+  doesn't show on bright grass.
+
+Lesson: when a visual looks wrong, check the sim state before changing the model. Twice the
+physics was right and the drawing wasn't, and once the drawing was right and a performance
+shortcut (the cap) was wrong.
+
+Calibration had to move to the gust basis. The published crop-failure speeds are for steady
+wind, and with them as 3-s gusts even EF0 flattened its whole core. The convergent lodging
+rows meet on a line offset from the centreline, not on it. That matches surveyed tree-fall
+patterns, so the criterion was restated rather than the model changed.
+
+Cost came close to the limit twice. The first track update took 12.5% of the EF4 step, and
+the uncapped radius took it back to 8%. Both times the fix came from the physics' own
+structure: the wind changes slowly far from the core, and ground the core has passed can't
+change. Profiling found one closure in a hot path worth 5–15% of a step. The `tsx` overhead
+showed it up, but the allocation costs the app too.
+
+Process: Phase 7 began on the Phase 6 branch, and its commits had to be split out. Since
+then a phase gets its own branch from the start, merged into `main` at preliminary sign-off.
+Two other sessions committed alongside (BL-017's outer wind, the spawn button), so `main`
+came into this branch three times; only spec changelog versions clashed.
+
+The unit tests run in Node and can't compile the ground shader, so a reserved GLSL word blanked
+the ground once. Any render change has to be looked at in the app.

@@ -18,10 +18,12 @@ import { rigidAero } from "../core/structure/aero";
 import { lyingOnSlab, overSlab } from "../core/impact/envelope";
 import { IMPACT } from "../config/impacts";
 import type { BodyPlate } from "../core/structure/aero";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TornadoState } from "../core/wind/types";
 import { windAt } from "../core/wind/windField";
 import { buildTownColliders, FIXED_GROUPS } from "./townColliders";
 import type { TownHit } from "./structureWorld";
+import { tableAt } from "../core/terrain/roughness";
+import type { Terrain } from "../core/terrain/roughness";
 
 /** Zero velocity (never mutated). */
 const STILL: Vec3 = Object.freeze({ x: 0, y: 0, z: 0 });
@@ -257,7 +259,7 @@ export class HeavyDebris implements HeavySink {
    * it), the physics step, hits on houses, poses back to the pieces, and retirement into the
    * permanent debris field once the tornado has left a resting body behind.
    */
-  step(s: TornadoState, terrain: TerrainClass, time: number): void {
+  step(s: TornadoState, terrain: Terrain, time: number): void {
     this.time = time;
     // Swept slabs whose wind has had its time: what still lies there goes (in sweep order).
     while (this.sweeps.length && this.sweeps[0]!.at <= time) this.carryOff(this.sweeps.shift()!.index);
@@ -515,7 +517,7 @@ export class HeavyDebris implements HeavySink {
    * after −λ·ln u of sliding; it is then pinned (no motion into the obstacle) until it moves
    * away from it or is lifted HEAVY.snagClear above the ground.
    */
-  private snag(h: Heavy, terrain: TerrainClass): void {
+  private snag(h: Heavy, terrain: Terrain): void {
     const b = h.body;
     const t = b.translation();
     const floor = this.floorAt(t);
@@ -539,9 +541,10 @@ export class HeavyDebris implements HeavySink {
     const d = Math.hypot(dx, dz);
     if (d < 1e-6) return;
     h.slid += d;
-    if (h.slid < -DEBRIS.snagDistance[terrain] * Math.log(h.snagU)) return;
+    const lambda = tableAt(DEBRIS.snagDistance, terrain, t.x, t.z);
+    if (h.slid < -lambda * Math.log(h.snagU)) return;
     // Caught: stopped dead against it, where it reached it.
-    const over = h.slid + DEBRIS.snagDistance[terrain] * Math.log(h.snagU);
+    const over = h.slid + lambda * Math.log(h.snagU);
     const dir = { x: dx / d, z: dz / d };
     const at = { x: t.x - dir.x * over, y: t.y, z: t.z - dir.z * over };
     b.setTranslation(at, true);

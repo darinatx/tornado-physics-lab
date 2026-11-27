@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v2.5) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
+Status: Approved (v2.7) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
 
 ## Purpose
 
@@ -57,7 +57,8 @@ for compact pieces (Tachikawa's autorotation measurements). It drives the visual
 
 The wind field (Spec 01) is a smooth mean flow, so every piece from one house would follow the
 same streamlines and land on one line. Real near-ground wind gusts by 20% (open), 30%
-(suburban) or 40% (urban) of its mean speed. Each flying or sliding piece therefore feels its
+(suburban) or 40% (urban) of its mean speed (over a roughness field, read at the piece's local
+z₀, Spec 17). Each flying or sliding piece therefore feels its
 own gust, a first-order random process (Ornstein–Uhlenbeck) with that intensity, a 2 s
 correlation time and half the intensity vertically, using the pool's seeded RNG. Tumbling
 sheets also get a random lift roll of up to ±90° about the relative wind, since their spin
@@ -87,7 +88,8 @@ fan a house's debris out downwind instead of leaving a thin streak.
   resting pieces; the wind at its own few-millimetre height would be the profile's floor value.
 - **Rough ground.** Real ground isn't flat: clods, furrows, grass tufts, ruts, curbs and other
   debris. A sliding piece runs over a bump with probability 1 − e^(−d/λ_b) over a slide of
-  distance d (bump spacing λ_b = 1 m open, 1.5 m suburban, 2 m urban). Each bump is a ramp of
+  distance d (bump spacing λ_b = 1 m open, 1.5 m suburban, 2 m urban; over a roughness field,
+  read at the piece's local z₀, Spec 17). Each bump is a ramp of
   slope tan θ drawn uniformly from 0 to 0.4 (up to ~22°). The piece is deflected along it: it
   keeps the speed along the ramp and loses the part into it (no rebound), so
   v_up = v_h·cos θ·sin θ and v_h → v_h·cos²θ; a piece longer than a bump (1 m) pivots over it
@@ -103,7 +105,8 @@ fan a house's debris out downwind instead of leaving a thin streak.
 - **Snagging:** light pieces (shingles, siding) can be pushed along by even moderate
   ground-level wind, and in reality they travel until they catch on a fence, crop row, shrub
   or other debris. A sliding piece snags with probability 1 − e^(−d/λ) over a slide of
-  distance d, with mean free path λ = 30 m (open), 15 m (suburban), 8 m (urban). A snagged
+  distance d, with mean free path λ = 30 m (open), 15 m (suburban), 8 m (urban; over a roughness
+  field, read at the piece's local z₀, Spec 17). A snagged
   piece is pinned against its obstacle by the wind: it's released only when the wind swings
   around to pull it back the way it came (and drag beats the holding friction), or when the
   wind lifts it over. A passing tornado's wind turns about 180°, so pinned debris moves in
@@ -308,7 +311,7 @@ function restingForces(p: Piece, w: Vec3): { drag: number; up: number; weight: n
 class DebrisField {
   constructor(seed: number, cap?: number);
   spawnFrom(b: Building, rec: FailureRecord): void;
-  step(dt: number, s: TornadoState, terrain: TerrainClass, checkResting: boolean): void;
+  step(dt: number, s: TornadoState, terrain: Terrain, checkResting: boolean): void;   // Terrain: Spec 17
   readonly pieces: readonly Piece[];
   readonly stats: DebrisStats;   // airborne, resting, skipped, maxSpeed, maxHeight
 }
@@ -420,6 +423,15 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- v2.7 (Phase 7 slice C): the pool tells the ground track (Spec 19) when a light piece lands on
+  open ground (with its speed before the step) and when it slides along it (`DebrisField.marks`);
+  read-only, no effect on the debris.
+- v2.6 (Phase 7): over a roughness field (Spec 17) the per-terrain tables (turbulence
+  intensity, snag mean free path, bump spacing) are read at the piece's local z₀, linear in
+  log z₀ between the class values (`tableAt`); a class gives its own values as before.
+  Also: pieces skipped by the far-field alternate stepping, and airborne heavy pieces, now count
+  in the pool's fastest and highest stats (they were counted airborne but left out of the maxima;
+  found when the new terrain moved INST-10's highest piece onto a skipped step).
 - v2.5: for debris replay (Spec 13): a dispersion switch (`DebrisField.dispersion`, on in every
   real run; off holds gusts at zero), and `launch` takes a piece's own state (shape and mass
   for reference missiles; lift roll, spin sign, gust, stepping phase, last-stepped time and

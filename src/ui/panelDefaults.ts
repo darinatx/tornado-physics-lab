@@ -6,6 +6,8 @@ export interface PanelState {
   funnel: boolean;
   tracers: boolean;
   debris: boolean;
+  /** Ground roughness tint (Spec 17). */
+  roughness: boolean;
   enlargeDebris: boolean;
   damageColors: boolean;
   brightness: number;
@@ -19,6 +21,7 @@ export const DEFAULT_PANEL_STATE: Readonly<PanelState> = {
   funnel: true,
   tracers: true,
   debris: true,
+  roughness: false,
   enlargeDebris: false,
   damageColors: false,
   brightness: 1,

@@ -15,6 +15,9 @@ import type { TerrainClass } from "../core/wind/types";
 import type { Sim } from "./loop";
 import type { TornadoParams } from "./types";
 import type { WindKey } from "./tunnelFlow";
+import { TERRAIN } from "../config/terrain";
+import { effLnZ0, isField, uniformField, z0At } from "../core/terrain/roughness";
+import type { RoughnessField, Terrain } from "../core/terrain/roughness";
 
 type Q = [number, number, number, number];
 
@@ -62,14 +65,56 @@ export interface DebrisRecording {
   dispersion: boolean;
   target: { width: number; depth: number; yaw: number; spec: Record<string, unknown> };
   wind: { kind: "pass"; presetId: string; track: TrackInTargetFrame; lifecycle: "mature" | "full" } | { kind: "steady"; keys: WindKey[] };
-  /** Terrain the wind blew over (Spec 01 roughness), part of the recorded wind. */
-  terrain: TerrainClass;
+  /** Terrain the wind blew over (Spec 01 roughness), part of the recorded wind: a class, or the
+   *  roughness at the target over time (Spec 17). */
+  terrain: TerrainClass | TerrainSeries;
   /** Seconds the recording covers (from sim time 0). */
   seconds: number;
   pieces: RecordedPiece[];
 }
 
 export const RECORDING_VERSION = 1;
+
+/**
+ * Roughness at a recording's target (Spec 17): at each field update, the local and the
+ * upwind-weighted ln z₀ for each of the 16 directions, the directions in the target's frame.
+ */
+export interface TerrainSeries {
+  kind: "series";
+  samples: { t: number; lnZ0: number; eff: number[] }[];
+}
+
+/** Sample a field at a house, directions in its frame (local angle = world angle + yaw). */
+export function sampleTerrain(field: RoughnessField, b: Pick<Building, "x" | "z" | "yaw">, t: number): TerrainSeries["samples"][number] {
+  const n = TERRAIN.directions;
+  return {
+    t,
+    lnZ0: Math.log(z0At(field, b.x, b.z)),
+    eff: Array.from({ length: n }, (_, k) => effLnZ0(field, b.x, b.z, (2 * Math.PI * k) / n - b.yaw)),
+  };
+}
+
+/**
+ * A series replayed at a receiving house turned by `yaw`: at sim time t, a one-node field
+ * holding the latest sample at or before t, its directions turned to the world.
+ */
+export function seriesTerrain(series: TerrainSeries, yaw: number): (t: number) => Terrain {
+  const n = TERRAIN.directions;
+  const fields = series.samples.map((smp, idx) => {
+    const local = uniformField(Math.exp(smp.lnZ0));
+    smp.eff.forEach((v, k) => (local.eff[k]![0] = v));
+    const world = uniformField(Math.exp(smp.lnZ0), idx + 1);
+    for (let k = 0; k < n; k++) world.eff[k]![0] = effLnZ0(local, 0, 0, (2 * Math.PI * k) / n + yaw);
+    return world;
+  });
+  return (t) => {
+    if (!fields.length) return "open";
+    let i = 0;
+    while (i + 1 < series.samples.length && series.samples[i + 1]!.t <= t + 1e-9) i++;
+    return fields[i]!;
+  };
+}
+
 
 /** World → target frame (and back) for a house at (x, z) turned by yaw. */
 export function frameOf(b: Pick<Building, "x" | "z" | "yaw">) {
@@ -131,6 +176,16 @@ export function recordDebrisAt(sim: Sim, index: number, wind: DebrisRecording["w
   /** Detailed members of other houses: last position and whether inside. */
   const members = new Map<string, { pos: Vec3; inside: boolean; out: boolean }>();
   const start = sim.time;
+  /** The roughness at the target (Spec 17), sampled at each field update. */
+  const terrainSamples: TerrainSeries["samples"] = [];
+  let terrainSeen = -1;
+  const sampleNow = (t: number) => {
+    const tr = sim.snapshot.terrain;
+    if (!isField(tr) || tr.version === terrainSeen) return;
+    terrainSeen = tr.version;
+    terrainSamples.push(sampleTerrain(tr, b, t));
+  };
+  sampleNow(start);
 
   const detach = sim.observe({
     impact: (house, _q, _path, p) => {
@@ -138,6 +193,7 @@ export function recordDebrisAt(sim: Sim, index: number, wind: DebrisRecording["w
     },
     debrisStep: (time) => {
       const t = time + debrisDt;
+      sampleNow(time);
       for (const p of sim.debris.pieces) {
         if (!p || p.hidden || out.has(p)) continue;
         const l = f.toLocal(p.pos);
@@ -236,7 +292,10 @@ export function recordDebrisAt(sim: Sim, index: number, wind: DebrisRecording["w
         dispersion: opts.dispersion ?? true,
         target: { width: b.width, depth: b.depth, yaw: b.yaw, spec },
         wind,
-        terrain: sim.snapshot.terrain,
+        terrain: (() => {
+          const tr = sim.snapshot.terrain;
+          return isField(tr) ? { kind: "series" as const, samples: terrainSamples } : tr;
+        })(),
         seconds: sim.time - start,
         pieces: order.map((i) => pieces[i]!),
       };

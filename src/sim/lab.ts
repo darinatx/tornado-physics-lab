@@ -25,7 +25,9 @@ import { generateNeighborhood, randomHouseSpec } from "./city";
 import { createLocalBackend, createWorkerBackend } from "./detailBackend";
 import { createWorkerHeavy } from "./heavyBackend";
 import type { DetailBackend } from "./detailBackend";
-import { frameOf, recordDebrisAt } from "./debrisRecorder";
+import { frameOf, recordDebrisAt, seriesTerrain } from "./debrisRecorder";
+import { layoutCover, TownRoughness } from "./terrain";
+import type { Terrain } from "../core/terrain/roughness";
 import type { DebrisRecorder, DebrisRecording } from "./debrisRecorder";
 import type { HeavyBackend } from "./heavyBackend";
 import { Launcher, toWorldPt } from "./launcher";
@@ -59,6 +61,9 @@ export interface LabSetup {
   dispersion?: boolean;
   /** Neighbor density, × the town's lot pattern (0.25–1.75, default 1; neighborhood only). */
   density?: number;
+  /** Terrain (Spec 17): "auto" (default) = the roughness of the surroundings; a class = that
+   *  class everywhere. */
+  terrain?: TerrainClass | "auto";
 }
 
 export type LabWind =
@@ -132,7 +137,8 @@ export interface Lab {
   readonly sim: Sim;
   readonly setup: LabSetup;
   readonly wind: LabWind;
-  readonly terrain: TerrainClass;
+  /** The terrain setting in use (Spec 17): "auto", a class, or "recorded" (a replay's). */
+  readonly terrain: TerrainClass | "auto" | "recorded";
   /** Sim building indices of the lab houses, the ring houses and the donors. */
   readonly block: number[];
   readonly ring: number[];
@@ -249,8 +255,11 @@ function presetParams(id: string): TornadoParams {
  * every house's roof wind is under 50 mph, to as far past the block; then calm. Full: the
  * preset's lifecycle, timed so the closest approach falls at the middle of its mature stage.
  */
-export function passTrack(w: Extract<LabWind, { kind: "pass" }>, houses: readonly HouseSpec[], terrain: TerrainClass, everyHouse: readonly HouseSpec[] = houses): { params: TornadoParams; start: { x: number; z: number }; startDistance: number } {
-  const base = { ...presetParams(w.presetId), ...w.params, heading: w.headingDeg, turnRate: 0, terrain };
+export function passTrack(w: Extract<LabWind, { kind: "pass" }>, houses: readonly HouseSpec[], terrainIn: TerrainClass | "auto" | Terrain, everyHouse: readonly HouseSpec[] = houses): { params: TornadoParams; start: { x: number; z: number }; startDistance: number } {
+  // The track's params keep the setting; the calm test reads the terrain itself (a field for "auto").
+  const terrain: Terrain = terrainIn === "auto" ? "open" : terrainIn;
+  const setting: TerrainClass | "auto" = typeof terrainIn === "string" ? terrainIn : "auto";
+  const base = { ...presetParams(w.presetId), ...w.params, heading: w.headingDeg, turnRate: 0, terrain: setting };
   const dir = headingDir(w.headingDeg);
   const right = { x: -dir.z, z: dir.x };
   let cx = 0;
@@ -358,11 +367,15 @@ export async function createLab(setupIn: LabSetup, windIn: LabWind, opts: LabOpt
   // A replay runs with no neighbors: their debris is already in the recording (Spec 13).
   const setup: LabSetup = { ...setupIn, ...(replay ? { surroundings: "open" as const } : {}) };
   const model = setup.model ?? "detail";
-  // Terrain follows the surroundings; a replay in its recorded wind keeps the recording's.
-  const terrain: TerrainClass = replay?.wind === "recorded" ? replay.recording.terrain : setupIn.surroundings === "neighborhood" ? "suburban" : "open";
   const blockSpecs = labBlockSpecs(setup);
   const ring = setup.surroundings === "neighborhood" ? ringSpecs(setup.seed, blockSpecs, setup.density ?? 1) : [];
   const houses: HouseSpec[] = [...blockSpecs, ...ring];
+  // Terrain (Spec 17): the setting; "auto" builds the field from the surroundings (lawn under a
+  // neighborhood, farmland around); a replay in its recorded wind keeps the recording's.
+  const recorded = replay?.wind === "recorded" ? replay.recording.terrain : undefined;
+  const terrain: TerrainClass | "auto" = recorded === undefined ? (setupIn.terrain ?? "auto") : typeof recorded === "string" ? recorded : "auto";
+  const cover = layoutCover([...blockSpecs, ...ring], setup.surroundings === "neighborhood");
+  const fieldNow = (): Terrain => (terrain === "auto" ? new TownRoughness(cover, houses).field : terrain);
   const block = blockSpecs.map((_, i) => i);
   const ringIdx = ring.map((_, i) => blockSpecs.length + i);
 
@@ -407,7 +420,7 @@ export async function createLab(setupIn: LabSetup, windIn: LabWind, opts: LabOpt
   let initial: Partial<TornadoParams> = { terrain };
   let start: { x: number; z: number } | undefined;
   if (wind.kind === "pass") {
-    const tr = passTrack(wind, blockSpecs, terrain, [...blockSpecs, ...ring]);
+    const tr = passTrack(wind, blockSpecs, typeof recorded === "object" ? "open" : fieldNow(), [...blockSpecs, ...ring]);
     initial = { ...tr.params, terrain };
     start = tr.start;
   } else if (wind.kind === "track") {
@@ -423,6 +436,8 @@ export async function createLab(setupIn: LabSetup, windIn: LabWind, opts: LabOpt
   const sim = createSim(
     {
       houses,
+      cover,
+      ...(typeof recorded === "object" ? { terrainAt: seriesTerrain(recorded, frameFor(replay!.house).yaw) } : {}),
       ...(detailSet.length ? { detailSet, detailPinned: true } : {}),
       ...(wind.kind === "steady" ? { tunnel: (t: number) => tunnelFlow(keys, t) } : {}),
       ...(start ? { start } : {}),
@@ -495,7 +510,7 @@ export async function createLab(setupIn: LabSetup, windIn: LabWind, opts: LabOpt
     sim,
     setup,
     wind,
-    terrain,
+    terrain: typeof recorded === "object" ? "recorded" : terrain,
     block,
     ring: ringIdx,
     donors,

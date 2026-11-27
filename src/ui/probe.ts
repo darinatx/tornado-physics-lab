@@ -30,6 +30,10 @@ const BACKGROUND_MB = BACKGROUND_PRESSURE_PA / PA_PER_MB;
 const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 const efColor = (r: ProbeReading) => hex(r.ef === null ? BELOW_EF0_COLOR : EF_COLORS[r.ef]);
 
+const CLASS_NAME = { open: "Open country", suburban: "Suburban", urban: "Urban" } as const;
+/** Roughness length for display (m), to two significant figures. */
+const fmtZ0 = (z0: number) => `${z0 >= 1 ? z0.toFixed(1) : z0.toPrecision(2)} m`;
+
 function fmt(r: ProbeReading): string {
   const ef = r.ef === null ? "Below EF0" : `EF${r.ef}`;
   const dir = COMPASS[Math.round(r.fromDeg / 22.5) % 16];
@@ -45,6 +49,7 @@ function fmt(r: ProbeReading): string {
     <div class="p-row"><b>Around</b> ${Math.abs(r.tangential).toFixed(0)} m/s · <b>${inOut}</b> ${Math.abs(r.radial).toFixed(0)} m/s · <b>${upDown}</b> ${Math.abs(r.vertical).toFixed(0)} m/s</div>
     <div class="p-row"><b>Air pressure</b> ${airPressureMb(r.pressureDeficit).toFixed(1)} mb <span class="p-dim">(−${(r.pressureDeficit / PA_PER_MB).toFixed(1)} mb)</span></div>
     <div class="p-row"><b>Wind pressure</b> ${qStr} (${(q / PA_PER_PSF).toFixed(0)} lb/ft²)</div>
+    <div class="p-row"><b>Ground</b> ${CLASS_NAME[r.terrain.cls]} · z₀ ${fmtZ0(r.terrain.z0Eff)} upwind <span class="p-dim">(${fmtZ0(r.terrain.z0)} here) · β ${r.terrain.beta.toFixed(2)}</span></div>
     <div class="p-row p-dim">${Math.round(r.distance)} m from center · ${side}${r.inCore ? " · inside core" : ""}</div>`;
 }
 

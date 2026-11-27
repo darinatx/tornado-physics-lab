@@ -19,7 +19,6 @@ import { inertialRelief } from "../core/structure/inertia";
 import { attachedToSlab, groupsOf, solveLoadPath } from "../core/structure/loadpath";
 import type { Vec3 } from "../core/math/vec";
 import { msToMph } from "../core/wind/efScale";
-import type { TerrainClass } from "../core/wind/types";
 import { createRng } from "../core/math/rng";
 import { DEBRIS, sheet } from "../config/debris";
 const DEBRIS_REST_SAMPLE = DEBRIS.restSampleHeight;
@@ -29,6 +28,8 @@ import { glassThreshold } from "../core/impact/impact";
 import { FIXED_GROUPS, SLAB_DEPTH } from "./townColliders";
 import { IMPACT } from "../config/impacts";
 import type { Piece } from "../core/debris/piece";
+import { tableAt } from "../core/terrain/roughness";
+import type { Terrain } from "../core/terrain/roughness";
 
 export interface StructureFailure {
   time: number;
@@ -150,7 +151,7 @@ export class StructureWorld {
   time = 0;
   stepCount = 0;
   /** Ground roughness for loose pieces' bumps (Spec 04 v1.7); the lab stands on open ground. */
-  terrain: TerrainClass = "open";
+  terrain: Terrain = "open";
   /** Houses around the zone (the engine's copies, Spec 10 v0.6): their slabs and standing
    *  walls and roofs, for light pieces; null in the lab. */
   townNear: ((x: number, z: number) => readonly Building[]) | null = null;
@@ -1901,7 +1902,7 @@ export class DetailHouse {
       // On the ground it feels the wind just above it (Spec 04 v1.6).
       stepPiece(p, wind.at({ x: p.pos.x, y: (p.grounded ? Math.max(p.pos.y, DEBRIS_REST_SAMPLE) : p.pos.y) + floor, z: p.pos.z }), STRUCT_DT);
       // Rough ground (Spec 04 v1.7): bumps hop sliding pieces into the wind.
-      if (isSliding(p)) bumpKick(p, Math.hypot(p.vel.x, p.vel.z) * STRUCT_DT, DEBRIS.bumpSpacing[this.sw.terrain], this.rng);
+      if (isSliding(p)) bumpKick(p, Math.hypot(p.vel.x, p.vel.z) * STRUCT_DT, tableAt(DEBRIS.bumpSpacing, this.sw.terrain, p.pos.x, p.pos.z), this.rng);
       p.pos.y += floor;
       // Anything standing in the way (houses, rubble, other slabs): stop at it and bounce.
       // (Only near a house: in open air there is nothing to hit, and the sweep costs a query.)

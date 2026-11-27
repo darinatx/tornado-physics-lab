@@ -14,7 +14,9 @@ import type { Vec3 } from "../core/math/vec";
 import { surveyDetail } from "../core/structure/survey";
 import { qconj, qrot } from "../core/structure/framing";
 import { pressureDeficit } from "../core/wind/pressure";
-import type { TerrainClass, TornadoState } from "../core/wind/types";
+import type { TornadoState } from "../core/wind/types";
+import { TerrainCache } from "../core/terrain/roughness";
+import type { Terrain, TerrainMsg } from "../core/terrain/roughness";
 import { windAt } from "../core/wind/windField";
 import { CITY, streetRowOf } from "./city";
 import { LOCAL_NORMALS } from "../core/damage/layout";
@@ -119,7 +121,7 @@ export interface DetailStep {
   /** Detail step number (0, 1, 2, …). */
   n: number;
   tornado: TornadoState;
-  terrain: TerrainClass;
+  terrain: TerrainMsg;
   /** Entering houses with the members their component failures already removed, and the
    *  physics group to put them in (default: their street row). */
   enter: { index: number; removed: number[]; group?: string }[];
@@ -184,7 +186,8 @@ export class DetailEngine {
   /** Lost members already reported per house. */
   private lostReported = new Map<number, number>();
   private tornado: TornadoState | null = null;
-  private terrain: TerrainClass = "suburban";
+  private terrain: Terrain = "suburban";
+  private readonly terrains = new TerrainCache();
   /** Debug: the phase of the group that ran last (for crash reports). */
   phase = "";
   private readonly wind: WindSource = {
@@ -292,9 +295,9 @@ export class DetailEngine {
   step(msg: DetailStep): DetailResult {
     const t0 = performance.now();
     this.tornado = msg.tornado;
-    this.terrain = msg.terrain;
+    this.terrain = this.terrains.resolve(msg.terrain);
     for (const sw of this.worlds.values()) {
-      sw.terrain = msg.terrain;
+      sw.terrain = this.terrain;
       sw.roofFactor = msg.tornado.tunnel ? 1 : DETAIL.tornadoRoofFactor;
     }
     if (msg.town?.length) this.applyTown(msg.town);
@@ -309,7 +312,7 @@ export class DetailEngine {
       let sw = this.worlds.get(key);
       if (!sw) {
         sw = new StructureWorld();
-        sw.terrain = msg.terrain;
+        sw.terrain = this.terrain;
         sw.roofFactor = msg.tornado.tunnel ? 1 : DETAIL.tornadoRoofFactor;
         this.attachTown(sw);
         this.worlds.set(key, sw);

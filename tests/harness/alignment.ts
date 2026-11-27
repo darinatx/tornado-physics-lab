@@ -81,7 +81,7 @@ export function patchTornado(spec: PatchSpec): { p: TornadoParams; start: { x: n
     const s = state(q.x - d.x * back, q.z - d.z * back);
     let worst = 0;
     for (const [ox, oz] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
-      const w = windAt({ x: spec.x + ox * spec.radius, y: 4, z: spec.z + oz * spec.radius }, s, p.terrain);
+      const w = windAt({ x: spec.x + ox * spec.radius, y: 4, z: spec.z + oz * spec.radius }, s, p.terrain === "auto" ? "open" : p.terrain);
       worst = Math.max(worst, Math.hypot(w.x, w.y, w.z));
     }
     if (worst < QUIET_MS) break;

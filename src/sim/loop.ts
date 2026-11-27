@@ -33,6 +33,14 @@ import { townState } from "./townColliders";
 import { tunnelState } from "./tunnelFlow";
 import { pressureDeficit } from "../core/wind/pressure";
 import type { TownState } from "./townColliders";
+import { TERRAIN } from "../config/terrain";
+import { CITY } from "./city";
+import { TerrainSender } from "../core/terrain/roughness";
+import type { GroundCover, Terrain } from "../core/terrain/roughness";
+import type { TerrainClass } from "../core/wind/types";
+import { TownRoughness, townCover } from "./terrain";
+import { GroundTrack } from "./groundTrack";
+import { TRACK } from "../config/terrain";
 
 export interface Sim {
   /** Profiling only: the heavy-debris world, if made. */
@@ -94,6 +102,32 @@ export function createSim(
   const withBuildings = config.buildings ?? true;
   let world: World = createWorld(seed, withBuildings, config.area, config.houses);
   let debris = new DebrisField(seed);
+  /** The roughness field (Spec 17), built on first use when the terrain is "auto". */
+  let roughness: TownRoughness | null = null;
+  /** Ground damage tracks (Spec 19), made at reset. */
+  let track!: GroundTrack;
+  const trackEvery = Math.max(1, Math.round(TRACK.updateInterval / dt));
+  const heavyTerrain = new TerrainSender();
+  const detailTerrain = new TerrainSender();
+  const roughnessEvery = Math.max(1, Math.round(TERRAIN.updateInterval / dt));
+  function terrainNow(): Terrain {
+    if (config.terrainAt) return config.terrainAt(stepCount * dt);
+    if (params.terrain !== "auto") return params.terrain;
+    if (!withBuildings) return "open";
+    roughness ??= new TownRoughness(config.cover ?? (config.houses ? { base: "farmland", rects: [] } : townCover(CITY.extent)), world.buildings);
+    return roughness.field;
+  }
+  /** The ground cover to draw (Spec 17): the setting's, memoized so it changes only with it. */
+  let coverMemo: { key: string; cover: GroundCover } | null = null;
+  function coverNow(): GroundCover {
+    const base: GroundCover = config.cover ?? (config.houses ? { base: "farmland", rects: [] } : townCover(CITY.extent));
+    const key = config.terrainAt || params.terrain === "auto" ? "auto" : params.terrain;
+    if (coverMemo?.key !== key) {
+      const kind = ({ open: "farmland", suburban: "lawn", urban: "pavement" } as const)[key as TerrainClass];
+      coverMemo = { key, cover: key === "auto" ? base : { base: kind, rects: [], ...(base.bounds ? { bounds: base.bounds } : {}) } };
+    }
+    return coverMemo.cover;
+  }
   /**
    * Heavy pieces as rigid bodies (Spec 04 v2.0), in the heavy-debris engine beside the sim (a
    * worker in the app, Spec 04 v2.1), made when the first one is. Its results are applied
@@ -121,6 +155,7 @@ export function createSim(
             throw new Error(`heavy debris needs Rapier: call initRapier() before running the sim (${(e as Error).message})`);
           }
           heavySent = world.buildings.map(() => 0);
+          heavyTerrain.reset();
         }
         const key = heavyKey++;
         heavyPieces.set(key, p);
@@ -148,7 +183,7 @@ export function createSim(
         }
       }
     });
-    heavy.post({ n: heavyN++, tornado: pre.tornado, terrain: pre.terrain, time: pre.time, takes: heavyTakes, town });
+    heavy.post({ n: heavyN++, tornado: pre.tornado, terrain: heavyTerrain.pack(pre.terrain), time: pre.time, takes: heavyTakes, town });
     heavyTakes = [];
   }
 
@@ -304,7 +339,7 @@ export function createSim(
     // The town's debris hits on detailed houses since the last step (Spec 10 slice B).
     const debrisHits = standIns.forward.splice(0).map(({ index, impact: q }) => ({ index, surface: q.surface, component: q.index, face: q.face, broke: q.broke, perforated: q.perforated, force: q.force, ...(q.coverTorn ? { coverTorn: true } : {}), ...(q.sidingTorn ? { sidingTorn: true } : {}), ...(q.at ? { at: q.at } : {}) }));
     const launches = config.inject?.detail?.(pre.time);
-    detail.post({ n: detailN++, tornado: pre.tornado, terrain: pre.terrain, enter, exit: ops.exit, town, debrisHits, ...(launches?.length ? { launches } : {}), ...(config.inspect?.length ? { inspect: config.inspect } : {}) });
+    detail.post({ n: detailN++, tornado: pre.tornado, terrain: detailTerrain.pack(pre.terrain), enter, exit: ops.exit, town, debrisHits, ...(launches?.length ? { launches } : {}), ...(config.inspect?.length ? { inspect: config.inspect } : {}) });
   }
 
   /**
@@ -393,7 +428,9 @@ export function createSim(
     return Object.freeze({
       time: t,
       step: stepCount,
-      terrain: params.terrain,
+      terrain: terrainNow(),
+      groundCover: coverNow(),
+      groundTrack: track,
       cloudBase: params.cloudBase,
       phase: lc.phase,
       lifetime: lifetime(params),
@@ -421,9 +458,13 @@ export function createSim(
     };
     headingDeg += params.turnRate * dt;
     stepCount++;
+    // Roughness follows the buildings as they fail, at fixed sim times (Spec 17).
+    if (roughness && params.terrain === "auto" && stepCount % roughnessEvery === 0) roughness.update(world.buildings, track);
     prev = curr;
     const pre = makeSnapshot();
     const damageStep = stepCount % DAMAGE_STEP_INTERVAL === 0;
+    // Ground damage tracks (Spec 19), at fixed sim times.
+    if (stepCount % trackEvery === 0) track.update(trackEvery * dt, pre.tornado, pre.terrain, debris.pieces);
     const T = config.timing;
     let t0 = T ? performance.now() : 0;
     if (stepCount % DETAIL.stepEvery === 0) detailStep(pre);
@@ -476,6 +517,11 @@ export function createSim(
     rng = createRng(currentSeed);
     world = createWorld(currentSeed, withBuildings, config.area, config.houses);
     debris = new DebrisField(currentSeed);
+    roughness = null;
+    track = new GroundTrack(coverNow());
+    debris.marks = track;
+    heavyTerrain.reset();
+    detailTerrain.reset();
     debris.dispersion = config.dispersion ?? true;
     heavy?.dispose();
     heavy = null;
