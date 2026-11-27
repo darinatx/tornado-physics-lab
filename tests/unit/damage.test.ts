@@ -12,6 +12,13 @@ import type { ReachSample } from "../../src/sim/calibrationTown";
 import { exactHouse, randomHouses, rec } from "../houseHelpers";
 import { DebrisField } from "../../src/core/debris/field";
 
+/** DMG-09 / DMG-16: a lone house (no town flattening) — inside the DI 2 bounds for DOD 1–6,
+ *  between the expected speed and 1.15 × the upper bound for DOD 7–10 (Spec 03 Decision 4). */
+function expectStage1Band(m: number, r: (typeof DI2_DODS)[number]): void {
+  expect(m, `DOD ${r.dod}`).toBeGreaterThanOrEqual(r.dod <= 6 ? r.lower : r.expected);
+  expect(m, `DOD ${r.dod}`).toBeLessThanOrEqual(r.dod <= 6 ? r.upper : 1.15 * r.upper);
+}
+
 describe("Spec 03 — damage (component houses)", () => {
   test("DMG-01: failures are permanent and DOD never decreases", () => {
     for (const { b, rng } of randomHouses(30, 3)) {
@@ -81,13 +88,9 @@ describe("Spec 03 — damage (component houses)", () => {
     expect(firstBay(breached)).toBeLessThan(firstBay(intact) - 10);
   });
 
-  test("DMG-16: isolated passes at town sites (calibration stage 1) reach each DOD inside the DI 2 bounds on the 10 m open basis", () => {
+  test("DMG-16: isolated passes at town sites (calibration stage 1) reach DOD 1–6 inside the DI 2 bounds, DOD 7–10 up to 1.15 × the upper bound", () => {
     const s = townPassSamples(800, 4242).samples;
-    for (const r of DI2_DODS) {
-      const m = kmMedian(s[r.dod]!);
-      expect(m, `DOD ${r.dod}`).toBeGreaterThanOrEqual(r.lower);
-      expect(m, `DOD ${r.dod}`).toBeLessThanOrEqual(r.upper);
-    }
+    for (const r of DI2_DODS) expectStage1Band(kmMedian(s[r.dod]!), r);
   }, 120000);
 
   test("DMG-05: weak < standard < strong for roof-structure loss (town sites, 10 m open basis)", () => {
@@ -134,7 +137,7 @@ describe("Spec 03 — damage (component houses)", () => {
     expect([efFromDamage(10, "weak").ef, efFromDamage(10).ef, efFromDamage(10, "strong").ef]).toEqual([3, 4, 5]);
   });
 
-  test("DMG-09: steady wind ramps, on the 10 m open basis, land inside the DI 2 bounds", () => {
+  test("DMG-09: steady wind ramps, on the 10 m open basis, land inside the DI 2 bounds (DOD 7–10 up to 1.15 × the upper bound)", () => {
     // The ramp's wind is the house's local roof-height wind; the calibration setting's own
     // 10 m open ÷ roof ratio at first reach puts it on the EF scale's basis.
     const ratio = townPassSamples(300, 32).ratio;
@@ -143,11 +146,7 @@ describe("Spec 03 — damage (component houses)", () => {
       const f = steadyRamp(b, rng() * Math.PI * 2);
       for (let d = 1; d <= 10; d++) s[d]!.push(Number.isFinite(f[d]!) ? { t: f[d]! * ratio[d]!, observed: true } : { t: 280 * ratio[d]!, observed: false });
     }
-    for (const r of DI2_DODS) {
-      const m = kmMedian(s[r.dod]!);
-      expect(m, `DOD ${r.dod}`).toBeGreaterThanOrEqual(r.lower);
-      expect(m, `DOD ${r.dod}`).toBeLessThanOrEqual(r.upper);
-    }
+    for (const r of DI2_DODS) expectStage1Band(kmMedian(s[r.dod]!), r);
   }, 120000);
 
   test("DMG-10: EF5-strength cores can produce EF5 surveys; EF4-strength ones cannot (town sites, 10 m open peak)", () => {
