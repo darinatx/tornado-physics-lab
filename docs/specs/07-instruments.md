@@ -1,6 +1,6 @@
 # Spec 07 — Instruments & UI
 
-Status: Approved (v1.14) — Phases 1–4
+Status: Approved (v1.15) — Phases 1–4
 
 ## Purpose
 
@@ -11,6 +11,11 @@ never change physics, except through the documented parameter controls.
 ## Model
 
 Phase 1 scope:
+- **Spawning:** the app opens with the tornado not yet spawned: the sim holds at time 0 (the
+  lifecycle's zero strength, so no funnel and no wind) and the town waits in calm air. A
+  **🌪 Spawn tornado** button at the top of the panel starts it at the chosen sim speed (the
+  hint line says to press it). Restart and choosing a preset return to waiting. Repeat-on-
+  dissipation keeps going without a new press.
 - **Presets:** one-click tornadoes from EF0 to EF5, each a realistic archetype (rope, cone,
   wedge) with matching size, forward speed, updraft, cloud base and lifetime. Choosing one
   restarts the run. Editing any slider afterwards switches the label to "Custom".
@@ -152,6 +157,9 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
   slow once ≥ 0.5 s is measured and the rate is below 95% of the speed setting (never when
   paused); the slow-motion status shows whenever it's slow, with or without detail houses, as
   "N× real time" to two significant figures.
+- **INST-17**: The tornado waits to be spawned: at start, and after Restart or a new preset,
+  the sim doesn't advance (time stays 0, no wind); Spawn starts it at the chosen speed, and a
+  speed chosen while waiting applies on spawn.
 
 ## Simplifications / out of scope
 
@@ -179,6 +187,8 @@ function mountReadout(host: HTMLElement): { update(r: Readout): void };
 
 ## Changelog
 
+- v1.15: at the user's request, the tornado waits to be spawned (Spawn tornado button;
+  Restart and presets wait again) (INST-17).
 - v1.14: follow starts off (INST-14), at the user's request (Spec 06 v1.13).
 - v1.13: after dissipation the building summary stops showing a live distance to the core
   edge (it kept climbing as the dissipated state drifted on with the storm) and shows

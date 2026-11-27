@@ -329,3 +329,27 @@ describe("Spec 07 — instruments", () => {
     expect(checked).toBeGreaterThan(3);
   }, 120000);
 });
+
+describe("Spec 07 — spawning", () => {
+  test("INST-17: the tornado waits to be spawned; Spawn starts it at the chosen speed; Restart waits again", async () => {
+    const { createSpawnGate } = await import("../../src/ui/spawnGate");
+    const sim = createSim({ buildings: false }, 1);
+    const gate = createSpawnGate(sim, 1);
+    expect(gate.waiting).toBe(true);
+    for (let i = 0; i < 30; i++) sim.advance(0.1);
+    expect(sim.time).toBe(0);
+    expect(sim.snapshot.tornado.vMax).toBe(0);
+    gate.setSpeed(2); // chosen while waiting: applies on spawn
+    expect(sim.timeScale).toBe(0);
+    gate.spawn();
+    expect(gate.waiting).toBe(false);
+    expect(sim.timeScale).toBe(2);
+    sim.advance(0.1);
+    expect(sim.time).toBeGreaterThan(0.19);
+    sim.reset();
+    gate.wait();
+    sim.advance(0.5);
+    expect(sim.time).toBe(0);
+    expect(gate.waiting).toBe(true);
+  });
+});
