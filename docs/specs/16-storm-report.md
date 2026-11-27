@@ -152,20 +152,30 @@ Printing the report puts the summary on page 1; **Print summary** prints it alon
 ## Interface
 
 ```ts
-// src/sim/stormRecord.ts — observes the sim
+// src/sim/stormRecord.ts — observes the sim through its taps (Spec 08: step, impact,
+// detailFailure, debrisStep, debrisGone) and snapshot
 class StormRecorder {
-  constructor(sim: Sim);
-  step(): void;                 // after each physics step
-  record(): StormRecord;        // a snapshot, safe mid-run
+  constructor(sim: Sim, opts?: { appVersion?: string; specs?: Record<string, string>; townCenter?: { x: number; z: number } });
+  record(): StormRecord;        // a snapshot, safe mid-run; plain data (JSON round-trips it)
+  dispose(): void;              // stop observing
 }
 
 // src/sim/report/ — pure
 function buildSurvey(record: StormRecord): Survey;
-function buildReport(record: StormRecord, survey: Survey, opts: { preliminary: boolean }): Report;
+function surveyRows(survey: Survey, center?: { x: number; z: number }): SurveyRow[];
+function buildReport(record: StormRecord, survey: Survey, opts: { preliminary: boolean; specs?: SpecDoc[] }): Report;
 function narrative(record: StormRecord, survey: Survey): string[];
+function summaryNarrative(record: StormRecord, survey: Survey): string[];
+function reportJson(record: StormRecord, survey: Survey, preliminary: boolean): string;
+function reportFromJson(text: string, specs?: SpecDoc[]): Report;   // throws on a changed file
+function surveyCsv(survey: Survey, center?: { x: number; z: number }): string;
+function parseSpecDoc(file: string, markdown: string): SpecDoc;     // Methods: versions, simplifications
 
-// src/ui/report/ — renders a Report as a page, prints and exports
-function showReport(report: Report): void;
+// src/ui/report/ — the page, the Run panel's control, print and downloads
+function renderReport(report: Report): string;                      // HTML with inline SVG
+function showReport(report: Report, opts?: { onClose?: () => void }): { readonly open: boolean; close(): void };
+function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: SpecDoc[] }): ReportControl;
+//   stopAndReport(), preview(), current(), tick() (stops the run when the lifecycle ends), reset()
 ```
 
 ## Parameters
@@ -228,6 +238,16 @@ function showReport(report: Report): void;
 - The survey has no human judgment beyond the Spec 03 construction-class rule (no surveyor
   disagreement, no missed buildings).
 - No saved-run library or replay from the report (Phase 15).
+- The track is sampled once a second; the timeline charts show those samples.
+- The true wind is sampled, not integrated: a peak can be missed by up to 0.5% between samples
+  (the sampling bound), and houses are sampled at their center only.
+- Debris landings are read every 0.25 s, so a landing time is known to within that; a piece
+  that lands and lifts again between reads keeps its earlier landing.
+- Contours are drawn section by section (stepped edges), not smoothed as a surveyor would draw
+  them by hand.
+- Impact counts are every contact the impact model resolves, including glancing and repeated
+  ones (Spec 10), so they run far above the number of pieces.
+- The report page is built for a desktop browser and US Letter paper.
 
 ## Decisions
 

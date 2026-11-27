@@ -1,7 +1,8 @@
 # Phase 8 — Storm Report
 
-Status: In progress, slices A–C built and the demo reviewed by the user; slice D (profiling) (started 2026-11-26 on `phase-8-storm-report`, from `main` after Phase 7's
-preliminary sign-off). Spec 16 approved (v1.0).
+Status: Gate review (preliminary). Slices A–D done; demo reviewed by the user (2026-11-26).
+Built on `phase-8-storm-report`, branched from `main` after Phase 7's preliminary sign-off.
+Spec 16 approved (v1.0, now v1.6).
 
 ## Goal
 
@@ -170,7 +171,7 @@ Preliminary (lets Phase 9 start):
 - [x] Benchmark run at the end of slices A, B and C; regressions over 10% explained (Phase 7's)
 - [x] Slice D, profiling: hotspots with estimated and confirmed gains; before/after recorded
 - [x] `npm run verify:fast` passes (251 tests, slice D)
-- [ ] Specs updated, simplifications note and retro written
+- [x] Specs updated, simplifications note and retro written; README updated
 - [ ] User's preliminary sign-off; tag `phase-8-prelim`; pull request into `main`, merged when
       the user says so; branch deleted
 
@@ -178,3 +179,63 @@ Final:
 
 - [ ] Validation (slice E) merged; every Phase 8 backlog item decided; "fix" items merged
 - [ ] Final sign-off; tag `phase-8-done` on `main`
+
+## Simplifications note
+
+The storm report (Spec 16) rates and describes the run; it changes no physics. What it leaves
+out or approximates:
+- **No people:** no deaths, injuries, warnings or shelters (the report says so).
+- **No real places:** positions are distances and compass directions from the town center until
+  Phase 13 names the town and its streets.
+- **One damage indicator** (DI 2, houses) until trees (Phase 9) and other buildings (Phase 11)
+  add theirs. No radar section until Phase 10.
+- **A mechanical surveyor:** the construction-class rule is the only judgment; every damaged
+  house is found and rated.
+- **The true wind is sampled:** a peak may be missed by up to 0.5% between samples, and houses
+  are sampled at their center.
+- **Coarser readings:** the track is sampled once a second; debris landings are read every
+  0.25 s.
+- **Stepped contours:** drawn in 50 m sections along the track, not smoothed by hand.
+- **Impact counts** include every glancing and repeated contact the impact model resolves
+  (Spec 10).
+- **Desktop and US Letter:** the page and its print layout are built for a desktop browser and
+  Letter paper.
+
+## Retro
+
+**The spec improved before any code.** Two choices in the v0.1 draft didn't hold up:
+- A second 3-second mean on the true wind would have averaged twice: Spec 01's speeds are
+  already gust-equivalent.
+- A fixed ±3·R_max swath band would miss EF0 wind beyond it on strong storms.
+Both were caught by reading Spec 01 and the ground-track code first. Merging BL-021 mid-slice
+moved the true wind to the open-terrain basis the EF readout now uses; otherwise town
+roughness would have shown up as survey bias.
+
+**Cost needed measuring twice.** Slice A measured the recorder at +4.2%, under budget. Slice C's
+validation test, on the benchmark's own window and best of two, found +12.8%. A breakdown by
+part showed where it went: wind sampling 0.40 ms per step, the debris scan 0.23 ms. The fix
+came from the physics: a fixed point's wind changes only as the core moves past it, so the
+sampling interval follows from the peak it may miss (0.2 s for a wedge instead of 1/30 s).
+Now +1.6%. Lesson: a one-off measurement in a script is not a budget check. Put the budget in
+a test early.
+
+**A record can grow without bound.** The first version kept every impact: 3.4 million in 50 s,
+a 498 MB JSON. The spec asked for counts by surface and result, and tallies are what it needed.
+The volume itself (about 400 contacts per launched piece) went into the slice notes for
+validation to look at.
+
+**The user's review found what tests can't.** The tests checked that every page had its parts:
+- a whole page repeated the summary's block word for word;
+- collapsed sections printed collapsed;
+- the survey table was cut off on paper;
+- the contours were hard to see.
+The map was framed on the whole true swath, which squeezed the damage into a corner. The first
+fix still left an older framing line in place. Reading the served code in the browser found it.
+Printing has no automated check beyond the stylesheet's rules, so print changes have to be
+looked at.
+
+**Browser checks need the pane visible.** Frame rates in a hidden pane are throttled to about one
+per second and mean nothing; per-call timings are still valid.
+
+**Process:** the README fell behind Phase 7's close. CLAUDE.md now has the README updated at
+both gates, and that's done for this phase (below).
