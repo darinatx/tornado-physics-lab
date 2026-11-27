@@ -1,9 +1,11 @@
 /**
- * Calibrates BASE_CAPACITY (Spec 03 v2.5, DMG-04): standard houses at the default town's sites,
+ * Stage 1 of Spec 03 v2.5's calibration (relative strengths; DMG-16): standard houses at the default town's sites,
  * in its roughness field, passed through simulated strong tornadoes, should reach each DI 2 DOD
  * at a median 10 m open-terrain peak (the EF scale's basis) equal to its expected speed.
  * Also prints the roof-height medians, the strong houses' DOD 10 median (DMG-15) and the
  * steady-ramp medians for reference.
+ * Its output is stage 2's starting point: save it as JSON and pass it to
+ * `scripts/calibrate-town.ts driver --caps`, which sets the scale in full town runs.
  *   npx tsx scripts/calibrate-houses.ts
  */
 import { BASE_CAPACITY, DI2_DODS, PARTS, PART_CALIBRATION_DOD as PART_DOD } from "../src/config/buildings";

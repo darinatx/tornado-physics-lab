@@ -112,25 +112,39 @@ A house's DOD is the highest of these that holds, judged the way a surveyor woul
 
 ### Calibration
 
-Base capacities are **calibrated against simulated tornado passes on the EF scale's own basis**
-(v2.5). DI 2's speeds are 3-second gusts at 10 m over open terrain, so that is the wind each DOD
-is matched to: for each DOD, the median **10 m open-terrain peak** at the house (the horizontal
-`windAt` wind at 10 m with terrain `"open"`, the quantity the EF readout and the storm
-recorder's true wind use, Spec 17 v1.1, Spec 16 v1.1) when the house first reached that DOD must
-match the table's expected value. The houses are loaded the way they are used: each one stands
-at a house site of the default town (seed `CALIBRATION.townSeed`), with the intact town's
-roughness field (Spec 17), and feels its own local roof-height wind in that field. Only the
-reading is on the 10 m open basis; the loads stay physical.
+Base capacities are **calibrated on the EF scale's own basis, in the town** (v2.5). DI 2's
+speeds are 3-second gusts at 10 m over open terrain, judged from damage in real towns, so that
+is what each DOD is matched to: for each DOD, the Kaplan–Meier median **10 m open-terrain peak**
+at a standard house (the horizontal `windAt` wind at 10 m with terrain `"open"`, the storm
+recorder's `peak10`, Spec 17 v1.1, Spec 16 v1.1) when it first reached that DOD must equal the
+table's expected value. The loads stay physical: each house feels its own local roof-height
+wind on the town's roughness field. Only the reading is on the 10 m open basis.
 
-The passes: standard houses near the core of strong translating tornadoes (V_max 55–80 m/s,
-R_max 150–300 m, 10–18 m/s forward speed, random headings, offsets within ±0.8·R_max of the
-house site). Houses whose peak wind never brought them to a DOD are *censored* at that peak
-(their 10 m open peak; they say nothing about their strength above it), so the median is a
-Kaplan–Meier estimate. `scripts/calibrate-houses.ts` reproduces the values. Garage doors
-(1.3 kPa) and roof deck (2.7 kPa) are fixed at typical engineering values instead: DOD 4 is
-usually reached through covering loss first, so calibrating them against it let them drift to
-unrealistic strengths. (A steady-wind calibration was tried in v1.0 and found biased; a
-roof-height calibration over open terrain was used until v2.4; see the changelog.)
+Houses whose peak never brought them to a DOD are *censored* at their 10 m peak (they say
+nothing about their strength above it), hence Kaplan–Meier. Garage doors (1.3 kPa) and roof
+deck (2.7 kPa) stay at typical engineering values: DOD 4 is usually reached through covering
+loss first, so calibrating them against it let them drift to unrealistic strengths.
+
+Two stages:
+
+1. **Relative strengths, isolated passes** (`scripts/calibrate-houses.ts`, seconds per round):
+   standard houses at random sites of the default town (seed `CALIBRATION.townSeed`) on its
+   intact roughness field, each passed by one of the EF1–EF5 presets at its mature strength,
+   size, speed and profile, random heading, house within ±4·R_max of the track. No debris, no
+   neighbors failing. This sets how strong each part is against the others.
+2. **Scale, full town runs** (`scripts/calibrate-town.ts driver`, minutes per round): the
+   EF2–EF5 presets' full lifecycles through the default town on terrain "auto", seeds 1–2, with
+   debris impacts and the roughness field updating as houses fall. Each calibrated part is
+   rescaled by (expected / median)^1.6 for its DOD (pressure ∝ speed², damped), for 2–3 rounds.
+   Checked on held-out seeds (3 and 7): every DOD's median within ±5% (DMG-04).
+
+Stage 2 is needed because a town does two things isolated passes can't: flying debris breaks
+glass, siding and shingles below the wind that would, and as houses fall the rubble is smoother
+than standing houses, so the wind at roof height deeper in the swath rises toward the
+open-terrain value (the 10 m ÷ roof ratio falls from ≈ 1.17 at DOD 1 to ≈ 1.08 at DOD 9 on an
+EF4 pass). Both are in the real towns DI 2 was judged from. (A steady-wind calibration was tried
+in v1.0 and found biased; a roof-height calibration over open terrain was used until v2.4; see
+the changelog.)
 
 ### Construction classes
 
@@ -171,13 +185,16 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
   partition; a panel's capacity includes the 1.6× bracing exactly when its bay stands.
 - **DMG-03**: Cascade: for otherwise identical houses in the same wind, a windward garage
   breach makes the first roof bay fail at a lower wind speed than with no breach.
-- **DMG-04** *(validation)*: In simulated tornado passes over town house sites (independent
-  sample, the calibration setting), standard houses reach each DOD at a Kaplan–Meier median
-  10 m open-terrain peak within ±5% of the DI 2 expected value.
-- **DMG-05**: In the same setting, weak houses reach DOD 6 at a lower median 10 m open-terrain
-  peak than standard ones, and strong houses at a higher one.
-- **DMG-15**: In the same setting, strong houses reach DOD 10 at a Kaplan–Meier median 10 m
-  open-terrain peak within ±5% of the DI 2 upper bound (220 mph).
+- **DMG-04** *(validation)*: In full town runs of the EF2–EF5 presets (default town, terrain
+  "auto", debris on) on a held-out seed (3; the scale is fitted on seeds 1–2), standard houses
+  reach each DOD at a Kaplan–Meier median 10 m open-terrain peak within ±5% of the DI 2
+  expected value.
+- **DMG-05**: In isolated passes at town sites (calibration stage 1), weak houses reach DOD 6 at
+  a lower median 10 m open-terrain peak than standard ones, and strong houses at a higher one.
+- **DMG-15** *(validation)*: In the same runs as DMG-04, strong houses reach DOD 10 at a
+  Kaplan–Meier median 10 m open-terrain peak within ±5% of the DI 2 upper bound (220 mph).
+- **DMG-16**: In isolated passes at town sites (calibration stage 1), standard houses reach each
+  DOD at a Kaplan–Meier median 10 m open-terrain peak inside the DI 2 lower–upper bounds.
 - **DMG-06**: Below 50 mph steady wind on the 10 m open basis (the local wind put on that basis
   as in DMG-09), fewer than 1% of standard houses show any damage.
 - **DMG-07**: Same seed → identical layouts, capacities and damage histories.
@@ -218,8 +235,13 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
 2. **DOD speeds on the EF scale's basis, houses in the town (v2.5, BL-029):** the survey (Spec 16),
    the EF readout and DI 2 all mean the 10 m open-terrain gust, so the capacities are calibrated
    to it; calibrating to the roof-height wind made the town's houses too strong by the town's
-   roughness ratio. Calibrated at the default town's sites and roughness, since that is where
-   houses are used; the loads stay the local roof-height wind, so the physics is unchanged.
+   roughness ratio. The loads stay the local roof-height wind, so the physics is unchanged.
+3. **Scaled in full town runs, not isolated passes (v2.5, BL-029):** DI 2's speeds come from
+   real towns, with debris and a town that flattens as it is hit. Calibrating on isolated
+   passes alone (first try) left town houses failing ≈ 5–10% low in speed: the EF4 preset rated
+   EF5 and the survey read 7 mph high. Isolated passes still set the parts' relative strengths
+   (cheap, many cases); full runs set the scale. Fitted on seeds 1–2 and checked on held-out
+   seeds so it doesn't fit one town's sample.
 
 ## Changelog
 
@@ -230,17 +252,20 @@ function buildingReport(b: Building): BuildingReport;   // failures grouped by p
   report's survey read 5–15 mph low at EF2–EF4 for that reason alone (Phase 8 validation).
   Now the DOD speed is the 10 m open-terrain peak, with houses at town sites in the town's
   roughness field (loads unchanged: local roof-height wind). `tornadoPass` takes a site and
-  returns both peaks; DMG-04, -05, -10, -15 restated on the 10 m basis.
-  `scripts/calibrate-houses.ts` rerun (all ten DODs within 0.7%; strong DOD 10 at 217 mph, so
-  the strong sweep factor ×1.21 stays). Calibrated parts fell to 0.64–0.70 of their v2.4 values
-  (Pa): siding 633 → 428, covering 2288 → 1540, windows 2094 → 1342, anchorage 2718 → 1746,
-  roof bays 1593 → 1035, wall panels 1020 → 653, partitions 2637 → 1913, core room
-  3967 → 2820, slab sweep 6152 → 4318; garage door and deck stay at their engineering values.
-  The drop is (1/1.19–1.23)², the mean 10 m open ÷ roof-height ratio at first reach in the
-  setting: the town's roughness (×0.89 at roof height) and open terrain's own height profile
-  (the 10 m wind is ≈ 1.08× the ~4 m roof-height wind at β 0.11). DMG-09 now puts the steady
-  ramp on the same basis with that ratio, and DMG-06 its 50 mph (≈ 41 mph local). Knock-on:
-  Spec 13 v1.1's lab pass calm threshold 50 → 40 mph.
+  returns both peaks; DMG-04, -05, -06, -09, -10, -15 restated on the 10 m basis.
+  Two-stage calibration (see Calibration): isolated passes at town sites set the parts'
+  relative strengths, then three rounds of full town runs (EF2–EF5, seeds 1–2) set the scale.
+  A first try on isolated passes alone overshot (town houses failed 4–10% low in speed: the
+  EF4 preset rated EF5, survey bias +7 mph); the town adds debris and roughness that falls as
+  houses do. Final capacities (Pa, v2.4 in brackets): siding 426 (633), covering 1743 (2288),
+  windows 2240 (2094), anchorage 2050 (2718), roof bays 989 (1593), wall panels 979 (1020),
+  partitions 2497 (2637), core room 3527 (3967), slab sweep 5535 (6152); garage door and deck
+  unchanged; strong sweep factor ×1.21 unchanged. Held-out seeds 3 and 7: every DOD within
+  ±5% (DOD 3 −4.6%, DOD 4 +4.1%, the rest within ±0.5%), strong DOD 10 −1.9%. DMG-04 and
+  DMG-15 became validation tests on full town runs (held-out seed 3); DMG-16 added for stage
+  1; DMG-06 and DMG-09 put the steady ramp's local wind on the 10 m basis with stage 1's
+  mean 10 m ÷ roof ratio at first reach (≈ 1.19–1.23). Knock-on: Spec 13 v1.1's lab pass
+  calm threshold 50 → 40 mph (siding is weaker in local wind: 8% of houses lost some at 50).
 
 - v2.4: siding recalibrated 716 → 633 Pa for Spec 01 v1.10. The smaller pressure deficit
   outside the core (the free-vortex outer decay) put less outward load on siding as the tornado

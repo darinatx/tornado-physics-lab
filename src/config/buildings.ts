@@ -112,19 +112,19 @@ export const PART_UNIT: Record<Part, string> = {
  * EF scale's basis: the 10 m open-terrain peak at first reaching each DOD (Spec 03 v2.5, DMG-04).
  */
 export const BASE_CAPACITY: Record<Part, number> = {
-  siding: 428,
-  roofCover: 1540,
-  window: 1342,
+  siding: 426,
+  roofCover: 1743,
+  window: 2240,
   /** Fixed, not calibrated: standard non-reinforced garage door, ~27 psf. */
   garage: 1300,
   /** Fixed, not calibrated: 8d nails at typical spacing, ~56 psf. */
   roofDeck: 2700,
-  anchorage: 1746,
-  roofBay: 1035,
-  wallPanel: 653,
-  partition: 1913,
-  coreRoom: 2820,
-  sweep: 4318,
+  anchorage: 2050,
+  roofBay: 989,
+  wallPanel: 979,
+  partition: 2497,
+  coreRoom: 3527,
+  sweep: 5535,
 };
 
 /**
@@ -147,9 +147,14 @@ export const PART_CALIBRATION_DOD: Record<Part, number> = {
 };
 
 /** Calibration setting (Spec 03 v2.5): the town whose house sites and intact roughness field
- *  the calibration passes use. Seed 1 is the default town (Spec 05). */
+ *  the calibration passes use (seed 1 is the default town, Spec 05), and the passes: the
+ *  EF1–EF5 presets at mature strength, houses within ±offsetRmax·R_max of the track (–), out
+ *  to about where EF5's outer flow falls under DOD 1's lower bound (r ∝ V^(−1/α): 175 → 53 mph
+ *  at α 0.6 is ≈ 7·R_max at the ground; past 4·R_max few houses reach DOD 1 and are censored). */
 export const CALIBRATION = {
   townSeed: 1,
+  presets: ["ef1-small", "ef2-cone", "ef3-strong", "ef4-wedge", "ef5-extreme"],
+  offsetRmax: 4,
 } as const;
 
 /** Fragility: lognormal dispersion (β = σ of ln). */
