@@ -8,11 +8,14 @@ import { defaultParams } from "../sim/types";
 import { buildControlDefs } from "./controls";
 import { DEFAULT_PANEL_STATE } from "./panelDefaults";
 import type { PanelState } from "./panelDefaults";
+import { createSpawnGate } from "./spawnGate";
 
 export type { PanelState } from "./panelDefaults";
 
 export interface Panel {
   readonly state: PanelState;
+  /** The tornado is waiting to be spawned (INST-17). */
+  readonly waiting: boolean;
   dispose(): void;
 }
 
@@ -38,6 +41,16 @@ export function createPanel(
   const presetOptions: Record<string, string> = { Custom: CUSTOM };
   for (const p of PRESETS) presetOptions[p.name] = p.id;
   let applyingPreset = false;
+  // The tornado waits until it's spawned (INST-17).
+  const gate = createSpawnGate(sim, 1);
+  const spawnCtl = tip(
+    gui.add({ spawn: () => gate.spawn() }, "spawn").name("🌪 Spawn tornado"),
+    "Start the tornado. The town waits in calm air until you do; Restart and a new preset wait again.",
+  );
+  gate.onChange = (waiting) => {
+    spawnCtl.enable(waiting);
+    spawnCtl.name(waiting ? "🌪 Spawn tornado" : "🌪 Tornado running");
+  };
   const presetCtl = tip(
     gui.add(presetChoice, "preset", presetOptions).name("Preset"),
     "Pick a ready-made tornado. Each is a realistic example of its EF rating.",
@@ -54,6 +67,7 @@ export function createPanel(
     Object.assign(values, next);
     sim.setParams(next);
     sim.reset();
+    gate.wait();
     for (const c of controllers) c.updateDisplay();
     descEl.textContent = p.description;
     applyingPreset = false;
@@ -68,7 +82,10 @@ export function createPanel(
     presetCtl.updateDisplay();
     descEl.textContent = "Your own settings.";
   };
-  tip(gui.add({ restart: () => sim.reset() }, "restart").name("↻ Restart tornado"), "Start this tornado over from the beginning.");
+  tip(
+    gui.add({ restart: () => (sim.reset(), gate.wait()) }, "restart").name("↻ Restart tornado"),
+    "Start this tornado over from the beginning. It waits until you spawn it.",
+  );
   if (actions.pickDetailSpot)
     tip(
       gui.add({ spot: actions.pickDetailSpot }, "spot").name("📍 Pick detail spot"),
@@ -158,12 +175,13 @@ export function createPanel(
 
   // --- Run -------------------------------------------------------------------
   const run = { speed: 1 };
+  const gateSpeed = (k: number) => gate.setSpeed(k);
   const runFolder = gui.addFolder("Run");
   tip(
     runFolder
       .add(run, "speed", Object.fromEntries(TIME_SCALES.map((k) => [k === 0 ? "Paused" : `${k}×`, k])))
       .name("Sim speed")
-      .onChange((k: number) => sim.setTimeScale(k)),
+      .onChange(gateSpeed),
     "Speed up, slow down or pause the simulation.",
   );
   tip(runFolder.add(state, "follow").name("Camera follows tornado").listen().onChange(emit), "Keep the camera centered on the tornado.");
@@ -173,6 +191,10 @@ export function createPanel(
 
   return {
     state,
+    /** Whether the tornado is waiting to be spawned (INST-17). */
+    get waiting() {
+      return gate.waiting;
+    },
     dispose: () => gui.destroy(),
   };
 }

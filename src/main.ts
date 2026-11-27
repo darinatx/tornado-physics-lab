@@ -132,7 +132,8 @@ function frame(now: number): void {
     const slow = simRate.isSlow(sim.timeScale);
     const parts: string[] = [];
     if (n > 0) parts.push(`${n} house${n === 1 ? "" : "s"} in full structural detail`);
-    if (slow) parts.push(`slow motion${n > 0 ? " while they come apart" : ""} · ${rateText(simRate.rate!)}`);
+    if (panel.waiting) parts.push("Press 🌪 Spawn tornado to start");
+    else if (slow) parts.push(`slow motion${n > 0 ? " while they come apart" : ""} · ${rateText(simRate.rate!)}`);
     detailStatus.hidden = parts.length === 0;
     detailStatus.textContent = parts.join(" · ");
     readoutTimer = 0.1;
