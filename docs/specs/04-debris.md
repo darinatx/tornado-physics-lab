@@ -1,6 +1,6 @@
 # Spec 04 — Debris
 
-Status: Approved (v2.7) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
+Status: Approved (v2.8) — flight, landing, re-lofting; heavy pieces as rigid bodies; hits on houses per Spec 10
 
 ## Purpose
 
@@ -183,7 +183,9 @@ step on the sim thread, the same treatment the detail zone gives its members abo
   about its base edge in its fall direction, its top edge starting at 1.5 m/s; a roof piece
   whose bearing wall fell drops from the roof. For its first 0.5 s it passes the walls and roof of its own house
   that it overlaps when made (it is tearing away from them), and only while it still overlaps
-  them; the rest of its house and its own slab stop it from the start.
+  them and keeps tearing away (v2.8): the overlap is taken where it was made, before it moves,
+  and a surface its center comes back toward (2 cm closer than it has been) stops it from then
+  on. The rest of its house and its own slab stop it from the start.
 - **Hits:** contact with a house's wall, roof or gable is an impact on that surface (Spec 10),
   with the body's mass and the normal speed from the contact impulse, ignoring the source house
   for the first 0.5 s and resting contact.
@@ -239,6 +241,15 @@ Decisions:
   panels' flight threshold lower still), but the detailed houses' loose members lack it too.
   The user chose rubble near houses and speed. Without it a panel lying flat gets no lift
   (zero angle of attack), so the swept slab's carry-off after 2 s remains.
+- **Its own house lets it go only while it tears away (v2.8, BL-001):** the grace exists so a
+  piece made inside the surfaces it tore from isn't caught by them; it never meant a piece could
+  move into a standing part of its own house. The overlap was found after its first step, with
+  every own surface passed meanwhile, so a fast roof section slid 0.2 m into the next bay's
+  standing slope, kept it, and crossed it over the ridge (IMP-01). Taken before it moves, and
+  dropped for a surface it heads back toward, the grace can't carry its center through anything
+  still standing, whatever the damage sequence. The center's distance to the surface is the test
+  (cheap, one point projection per overlapped surface for 0.5 s); a penetration depth wouldn't
+  do: a sheet sliding edgewise along a coplanar section keeps the same depth.
 - **A swept slab takes heavy pieces too (v2.3):** since v2.0 heavy rubble left the rubble list
   the sweep clears, so EF5 slabs rated DOD 10 kept their wall panels and roof sections. A flat
   panel on a slab shows the wind little area, and the 400-body cap retires sleepers to the
@@ -377,8 +388,13 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
   in still air comes to rest lying on it, inside no slab and no other box; two dropped on each
   other stack.
 - **DEB-23**: A heavy piece driven into a standing house's wall stops at it (no pass-through)
-  and its hit is an impact on that wall (Spec 10); its own house's walls don't stop it for its
-  first 0.5 s, its own slab does.
+  and its hit is an impact on that wall (Spec 10); its own house's walls it overlaps as it tears
+  away from them don't stop it for its first 0.5 s, its own slab does.
+- **DEB-32**: Its own house lets a heavy piece go only while it tears away (v2.8): one driven
+  into a wall of its own house it overlaps when made stops at it, as does one made just clear
+  of a wall and thrown at it (one step's travel into it is no overlap when made), and one
+  sliding along its roof into the next bay's standing roof section; none ends with its center
+  through a standing surface.
 - **DEB-24**: Rubble stays: in the alignment patch on the town model (EF4, track 330 m from
   the patch, houses out to 130 m), the compared houses keep at least 15% of their failed mass
   within 5 m of their footprints (detailed houses there: 20–48%; before v2.0: 1%), and at least
@@ -423,6 +439,11 @@ Piece table above; μ_k = 0.5, μ_s = 1.2, restitution 0.2, cap 3,000. Values li
 
 ## Changelog
 
+- v2.8 (BL-001): a heavy piece's own-house grace is taken where it was made, before its first
+  step (it was taken after it, with every own surface passed meanwhile), and a surface it moves
+  back toward (its center 2 cm closer than it has been) stops it from then on (DEB-23 reworded,
+  DEB-32). Fixes a roof section crossing its own house's standing front slope over the ridge
+  (IMP-01 on `main` after BL-029).
 - v2.7 (Phase 7 slice C): the pool tells the ground track (Spec 19) when a light piece lands on
   open ground (with its speed before the step) and when it slides along it (`DebrisField.marks`);
   read-only, no effect on the debris.

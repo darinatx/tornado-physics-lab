@@ -19,6 +19,7 @@ import type { Missile } from "../../src/core/impact/impact";
 import { createRng } from "../../src/sim/rng";
 import { baseState } from "../helpers";
 import { exactHouse, rec } from "../houseHelpers";
+import { PassThroughMonitor } from "../../src/sim/passThrough";
 
 // exactHouse: 14 × 11 m at the origin, yaw 0, walls 3 m on a 0.3 m slab, roof rise 2 m.
 const still = baseState({ vMax: 0, updraftMax: 0, velocity: { x: 0, z: 0 } });
@@ -359,12 +360,65 @@ describe("Spec 10 — debris impacts", () => {
     const f = fieldWith(b, p, q);
     run(f, b, 1);
     for (const x of [p, q]) expect(x.pos.y - supportHeight(x)).toBeGreaterThan(IMPACT.slabTop - 0.011);
+    // A thin sheet coming down fast onto the slab from beside it, its center ending 2 mm below
+    // the top (its box only 4.5 mm in): put on the top, not left with its center in the slab.
+    const t = piece("shingle", { x: -h.x - 0.3, y: IMPACT.slabTop + 0.05, z: 0 }, { x: 30, y: -3.12, z: 0 });
+    const g0 = fieldWith(b, t);
+    g0.step(1 / 60, still, "urban", false, 0, Infinity, targets(b));
+    expect(Math.abs(t.pos.x) < h.x).toBe(true);
+    expect(t.pos.y).toBeGreaterThanOrEqual(IMPACT.slabTop);
     // Sliding across a slab until it snags: it stays on the top.
     const r = piece("shingle", { x: -h.x + 0.2, y: IMPACT.slabTop + 0.0025, z: 0 }, { x: 3, y: 0, z: 0 }, { grounded: true });
     const g = new DebrisField(5, 100);
     g.pieces.push(r);
     for (let i = 0; i < 600 && !r.snagged; i++) g.step(1 / 60, still, "urban", false, i / 60, Infinity, targets(b));
     expect(r.pos.y - supportHeight(r)).toBeGreaterThan(IMPACT.slabTop - 1e-6);
+  });
+  test("IMP-27: a piece sliding off a slab's edge falls from it: never set down on the ground beyond the edge in the step it leaves, even inside a house shifted off its slab", () => {
+    const b = exactHouse();
+    // Shifted 1.5 m along +x off its foundation (Spec 03): between the slab's edge and the
+    // shifted +X end wall, the house stands on bare ground.
+    b.shift = { x: 1.5, z: 0 };
+    const h = slabHalf(b);
+    // A shingle sliding flat on the slab top, about to run off the slab's +x edge.
+    const p = piece("shingle", { x: h.x - 0.25, y: IMPACT.slabTop + 0.0025, z: 0 }, { x: 20, y: 0, z: 0 }, { grounded: true });
+    const f = fieldWith(b, p);
+    // Every slide snags (the worst case for this rule).
+    (f as unknown as { rng: () => number }).rng = () => 0;
+    const mon = new PassThroughMonitor([b]);
+    let y = p.pos.y;
+    for (let i = 0; i < 90; i++) {
+      f.step(1 / 60, still, "urban", false, i / 60, Infinity, targets(b));
+      mon.observe((i + 1) / 60, [{ key: "p", source: "debris", label: p.def.label, pos: p.pos }]);
+      // Off the slab it falls (0.3 m takes 0.25 s), it isn't put straight on the ground.
+      expect(y - p.pos.y).toBeLessThan(0.1);
+      y = p.pos.y;
+    }
+    expect(mon.violations).toEqual([]);
+    // It ends on the ground beyond the edge.
+    expect(p.pos.x).toBeGreaterThan(h.x);
+    expect(p.pos.y - supportHeight(p)).toBeLessThan(0.01);
+  });
+  test("IMP-28: a piece that lands at a wall's foot in the step it reaches the wall stops at the wall, though the landing took its speed into it", () => {
+    for (const inside of [false, true]) {
+      const b = exactHouse();
+      const hx = b.width / 2;
+      // A shingle on its long edge, thin side toward the +X end wall, 7.5 mm from touching it
+      // (outside or inside), dropping onto the slab at 4 m/s while drifting toward the wall at
+      // 1 m/s: the landing's friction stops its drift in the same step.
+      const s = inside ? -1 : 1;
+      const p = piece("shingle", { x: hx + s * 0.01, y: IMPACT.slabTop + 0.55, z: -1.2 }, { x: -s, y: -4, z: 0 }, { q: [0, 0, Math.SQRT1_2, Math.SQRT1_2] });
+      expect(supportHeight(p)).toBeCloseTo(0.5, 3);
+      const f = fieldWith(b, p);
+      const mon = new PassThroughMonitor([b]);
+      mon.observe(0, [{ key: "p", source: "debris", label: p.def.label, pos: { ...p.pos } }]);
+      for (let i = 0; i < 30; i++) {
+        f.step(1 / 60, still, "urban", false, i / 60, Infinity, targets(b));
+        mon.observe((i + 1) / 60, [{ key: "p", source: "debris", label: p.def.label, pos: { ...p.pos } }]);
+      }
+      expect(mon.violations).toEqual([]);
+      expect(s * (p.pos.x - hx)).toBeGreaterThan(0);
+    }
   });
   test("IMP-18: town debris hits a detailed house's stand-in, which follows its members as of the cutoff", async () => {
     const { DetailStandIns } = await import("../../src/sim/detailStandIns");
