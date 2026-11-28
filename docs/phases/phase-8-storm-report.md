@@ -1,9 +1,9 @@
 # Phase 8 — Storm Report
 
-Status: Preliminary sign-off (2026-11-26); validation (slice E) and the final gate to come.
+Status: Done. Final sign-off 2026-11-27 (tag `phase-8-done`); preliminary sign-off 2026-11-26.
 Slices A–D done; demo reviewed by the user.
 Built on `phase-8-storm-report`, branched from `main` after Phase 7's preliminary sign-off.
-Spec 16 approved (v1.0, now v1.6).
+Spec 16 approved (v1.0, now v1.11).
 
 ## Goal
 
@@ -196,13 +196,15 @@ Preliminary (lets Phase 9 start):
 - [x] `npm run verify:fast` passes (251 tests, slice D)
 - [x] Specs updated, simplifications note and retro written; README updated
 - [x] User's preliminary sign-off (2026-11-26); tag `phase-8-prelim`
-- [ ] Pull request from `phase-8-storm-report` into `main`, merged when the user says so; branch
-      deleted
+- [x] Pull request from `phase-8-storm-report` into `main`, merged when the user says so; branch
+      deleted (PR #18)
 
 Final:
 
-- [ ] Validation (slice E) merged; every Phase 8 backlog item decided; "fix" items merged
-- [ ] Final sign-off; tag `phase-8-done` on `main`
+- [x] Validation (slice E) merged (PR #19); every Phase 8 backlog item decided; "fix" items merged:
+      BL-031 (PR #20), BL-029 (PRs #21, #22), BL-028 (PRs #23, #25; remainder accepted), BL-030
+      (PR #26; remainder accepted)
+- [x] Final sign-off (user, 2026-11-27); tag `phase-8-done` on `main`
 
 ## Simplifications note
 
