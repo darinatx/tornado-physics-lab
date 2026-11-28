@@ -403,10 +403,12 @@ export function buildSurvey(record: StormRecord): Survey {
   for (const c of cells) if (!top || c.v > top.v) top = c;
   const located = cells.map((c) => ({ ...line.project(c.x, c.z), ef: efRating(c.v) }));
 
-  // Start and end: the first and last damaged points along the track.
+  // The path (length, width, start and end): wind-damage points the survey rates EF0 or more,
+  // as the EF0 contour outlines (v1.11); a point rated below EF0 is mapped, not counted.
+  const onPath = wind.filter((p) => p.ef !== null);
   let first: SurveyPoint | null = null;
   let last: SurveyPoint | null = null;
-  for (const p of wind) {
+  for (const p of onPath) {
     if (!first || p.along < first.along) first = p;
     if (!last || p.along > last.along) last = p;
   }
@@ -426,7 +428,7 @@ export function buildSurvey(record: StormRecord): Survey {
     uncorroborated,
     debrisOnly: points.flatMap((p, i) => (p.debrisOnly ? [i] : [])),
     truePeak: top ? { mph: mph(top.v), ef: efRating(top.v), x: top.x, z: top.z } : null,
-    path: { survey: pathFigures(wind), true: pathFigures(located, record.swath.cell) },
+    path: { survey: pathFigures(onPath), true: pathFigures(located, record.swath.cell) },
     contours: { survey: contours(contourPts), true: contours(located) },
     start: first ? pathEnd({ x: first.x, z: first.z, t: first.firstDamaged }, record.townCenter) : null,
     end: last ? pathEnd({ x: last.x, z: last.z, t: last.firstDamaged }, record.townCenter) : null,
