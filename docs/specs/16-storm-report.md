@@ -290,6 +290,14 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
   these from context; the survey doesn't (no surveyor judgment, above). Narrowing the scatter
   enough to remove them (σ ≲ 0.04) would make the houses more alike than real ones.
   On 12 records (EF2–EF5, seeds 1, 3, 7) this affects 4: EF2 seed 1 and EF3 seeds 1, 3, 7.
+- The survey's maximum width can run wider than the true EF0 swath (accepted by the user,
+  2026-11-27, BL-030): at the swath's edge, standard houses that lose some siding (DOD 1,
+  rated 65 mph, EF0) at true 10 m winds of 40–64 mph count for the path, the low tail of the
+  capacity scatter (σ ≈ 0.095 in ln speed, Spec 03) over thousands of houses near the edge. The
+  survey rates them as a real one would; it can't know their wind. On 12 records (seeds 1, 3,
+  7) survey ÷ true width is −4 to +8% (EF2), +13 to +24% (EF3), +12 to +17% (EF4), 0 to +5%
+  (EF5). Requiring a second damaged house within 100 m barely changes it (EF4 seed 1: 1,846 →
+  1,786 m, true 1,578 m).
 - No saved-run library or replay from the report (Phase 15).
 - The track is sampled once a second; the timeline charts show those samples.
 - The true wind is sampled, not integrated: a peak can be missed by up to 0.5% between samples
@@ -372,12 +380,13 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 
 ## Changelog
 
-- v1.11 (BL-030): debris-damage points (no wind-caused failure) are marked and kept in the
+- v1.11 (BL-030, closed): debris-damage points (no wind-caused failure) are marked and kept in the
   table, map and DOD counts, but left out of the rating, path, contours, start and end, and
   bias, and from the failure sequences and the map's framing; the path (length, width, start
   and end) counts only wind-damage points rated EF0 or more, like the EF0 contour. "Damaged by
   debris alone" now uses the same rule (debris impacts and the bays they dropped, not debris
-  impacts only). REP-18 added; REP-07 and REP-08 now over the points the path and contours use.
+  impacts only). REP-18 added; REP-07 and REP-08 now over the points the path and contours use. The remaining
+  extra width at the swath's edge accepted as a documented limitation (Simplifications).
 
 - v1.10 (BL-028 closed): the remaining one-EF-high ratings were accepted as a documented
   limitation (Simplifications), after a recheck found the DOD 9 capacity scatter matches DI 2's
