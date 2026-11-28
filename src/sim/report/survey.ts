@@ -46,6 +46,10 @@ export interface SurveyPoint {
   /** Its EF is above the rating: no second point within the corroboration radius reaches its
    *  speed, so it was set aside for the rating (kept in the table, map and statistics). */
   uncorroborated: boolean;
+  /** No failure of the house was caused by the wind (only debris impacts and the roof bays that
+   *  fell with a wall, Spec 16 v1.11): kept in the table, map and DOD counts, but not used for
+   *  the rating, path, contours, start and end, or bias. */
+  debrisOnly: boolean;
 }
 
 /** One along-track section of a contour: its along range and the cross-track span it covers. */
@@ -98,6 +102,8 @@ export interface Survey {
   corroborated: boolean;
   /** Points whose EF is above the rating (indices into points), in point order. */
   uncorroborated: number[];
+  /** Debris-damage points (indices into points), in point order. */
+  debrisOnly: number[];
   /** The true peak: the swath's maximum (mph), its EF and where. */
   truePeak: { mph: number; ef: EFRating | null; x: number; z: number } | null;
   path: { survey: PathFigures; true: PathFigures };
@@ -372,21 +378,24 @@ export function buildSurvey(record: StormRecord): Survey {
       outside: t10 < row.lower || t10 > row.upper,
       firstDamaged: first ? first[0] : b.firstFail,
       uncorroborated: false,
+      debrisOnly: b.failures.length > 0 && b.failures.every((f) => f.cause !== "wind"),
     });
   }
 
-  const { ratingPoint, corroboratingPoint } = corroboratedRating(points);
+  // Wind-damage points rate the storm and outline its path; debris-damage points don't (v1.11).
+  const wind = points.filter((p) => !p.debrisOnly);
+  const { ratingPoint, corroboratingPoint } = corroboratedRating(points.map((p) => (p.debrisOnly ? { ...p, ef: null } : p)));
   const rp = ratingPoint === null ? null : points[ratingPoint]!;
   const rating = rp ? rp.ef : null;
   const uncorroborated: number[] = [];
   points.forEach((p, i) => {
-    if (rating !== null && p.ef !== null && p.ef > rating) {
+    if (!p.debrisOnly && rating !== null && p.ef !== null && p.ef > rating) {
       p.uncorroborated = true;
       uncorroborated.push(i);
     }
   });
   // Contours: each point at its EF or the rating, whichever is lower (v1.9).
-  const contourPts = points.map((p) => ({ along: p.along, cross: p.cross, ef: rating === null || p.ef === null ? p.ef : (Math.min(p.ef, rating) as EFRating) }));
+  const contourPts = wind.map((p) => ({ along: p.along, cross: p.cross, ef: rating === null || p.ef === null ? p.ef : (Math.min(p.ef, rating) as EFRating) }));
 
   // True swath.
   const cells = swathCells(record);
@@ -394,17 +403,19 @@ export function buildSurvey(record: StormRecord): Survey {
   for (const c of cells) if (!top || c.v > top.v) top = c;
   const located = cells.map((c) => ({ ...line.project(c.x, c.z), ef: efRating(c.v) }));
 
-  // Start and end: the first and last damaged points along the track.
+  // The path (length, width, start and end): wind-damage points the survey rates EF0 or more,
+  // as the EF0 contour outlines (v1.11); a point rated below EF0 is mapped, not counted.
+  const onPath = wind.filter((p) => p.ef !== null);
   let first: SurveyPoint | null = null;
   let last: SurveyPoint | null = null;
-  for (const p of points) {
+  for (const p of onPath) {
     if (!first || p.along < first.along) first = p;
     if (!last || p.along > last.along) last = p;
   }
 
-  const n = points.length;
-  const mean = n ? points.reduce((s, p) => s + p.biasMph, 0) / n : 0;
-  const sd = n > 1 ? Math.sqrt(points.reduce((s, p) => s + (p.biasMph - mean) ** 2, 0) / (n - 1)) : 0;
+  const n = wind.length;
+  const mean = n ? wind.reduce((s, p) => s + p.biasMph, 0) / n : 0;
+  const sd = n > 1 ? Math.sqrt(wind.reduce((s, p) => s + (p.biasMph - mean) ** 2, 0) / (n - 1)) : 0;
 
   return {
     points,
@@ -415,11 +426,12 @@ export function buildSurvey(record: StormRecord): Survey {
     corroboratingPoint,
     corroborated: corroboratingPoint !== null,
     uncorroborated,
+    debrisOnly: points.flatMap((p, i) => (p.debrisOnly ? [i] : [])),
     truePeak: top ? { mph: mph(top.v), ef: efRating(top.v), x: top.x, z: top.z } : null,
-    path: { survey: pathFigures(points), true: pathFigures(located, record.swath.cell) },
+    path: { survey: pathFigures(onPath), true: pathFigures(located, record.swath.cell) },
     contours: { survey: contours(contourPts), true: contours(located) },
     start: first ? pathEnd({ x: first.x, z: first.z, t: first.firstDamaged }, record.townCenter) : null,
     end: last ? pathEnd({ x: last.x, z: last.z, t: last.firstDamaged }, record.townCenter) : null,
-    bias: { mean, sd, outside: points.flatMap((p, i) => (p.outside ? [i] : [])) },
+    bias: { mean, sd, outside: points.flatMap((p, i) => (p.outside && !p.debrisOnly ? [i] : [])) },
   };
 }

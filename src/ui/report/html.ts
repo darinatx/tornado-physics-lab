@@ -266,7 +266,7 @@ function summaryPage(r: Report): string {
 const COL_LABEL: Record<keyof SurveyRow, string> = {
   point: "Point", building: "Bldg", x: "x (m)", z: "z (m)", along: "Along (m)", cross: "Cross (m)", di: "DI", dod: "DOD", description: "Damage", construction: "Construction",
   surveyMph: "Survey (mph)", surveyMs: "(m/s)", ef: "EF", rangeMph: "DOD range (mph)", rangeEf: "EF range", true10Mph: "True 10 m (mph)", trueRoofMph: "True roof (mph)", biasMph: "Bias (mph)",
-  outsideBounds: "Outside range", firstDamagedS: "First damaged (s)", corroborated: "Corroborated",
+  outsideBounds: "Outside range", firstDamagedS: "First damaged (s)", corroborated: "Corroborated", debrisOnly: "Debris damage",
 };
 
 /** Columns shown on the page (the CSV has every one). */
@@ -278,8 +278,8 @@ export function tableHtml(rows: SurveyRow[]): string {
     .map((r) => {
       const cells = PAGE_COLS.map((c) => {
         const v = r[c];
-        const shown = c === "construction" ? String(v).split(" ")[0] : c === "firstDamagedS" && v !== null ? timeText(Number(v)) : c === "ef" && !r.corroborated ? `${v} (not corroborated)` : v === null ? "—" : v;
-        const cls = c === "biasMph" && r.outsideBounds ? ' class="rp-out"' : c === "dod" ? ` style="--dod:${dodColor(r.dod)}" class="rp-dod"` : "";
+        const shown = c === "construction" ? String(v).split(" ")[0] : c === "firstDamagedS" && v !== null ? timeText(Number(v)) : c === "ef" && r.debrisOnly ? `${v} (debris damage)` : c === "ef" && !r.corroborated ? `${v} (not corroborated)` : v === null ? "—" : v;
+        const cls = c === "biasMph" && r.outsideBounds && !r.debrisOnly ? ' class="rp-out"' : c === "dod" ? ` style="--dod:${dodColor(r.dod)}" class="rp-dod"` : "";
         return `<td${cls} data-v="${esc(v ?? "")}">${esc(shown)}</td>`;
       }).join("");
       return `<tr id="rp-row-${r.point}" data-point="${r.point}">${cells}</tr>`;
@@ -375,7 +375,7 @@ export function renderReport(r: Report): string {
     lineChart("Forward speed", "mph", [{ t: tl.t, v: tl.speed.map((s) => s / MS_PER_MPH), color: "#7d3c98", label: "speed" }]) +
     lineChart("Damaged houses (DOD 1+)", "houses", [{ t: tl.t, v: tl.damaged, color: "#c0392b", label: "damaged" }]);
   const toggles = `<div class="rp-toggles rp-noprint"><label><input type="checkbox" data-layer="contours" checked> EF contours (survey)</label><label><input type="checkbox" data-layer="points" checked> Survey points</label><label><input type="checkbox" data-layer="swath"> True-wind swath and contours (dashed)</label><label><input type="checkbox" data-layer="landings"> Debris landing points</label><span class="rp-hint">Click a survey point for its row in the table.</span></div>`;
-  const tableIntro = `<p>One row per survey point, along the track (P1 first). The survey speed comes from the DOD and construction class alone; the true peaks are what the simulation recorded at the house. Bias is survey minus true 10 m wind; <span class="rp-out">highlighted</span> rows had a true wind outside their DOD's range. A point marked "not corroborated" is rated above the tornado's rating with no second house within ${REPORT.corroborationRadius} m at its speed (see Methods). Click a column to sort.</p>`;
+  const tableIntro = `<p>One row per survey point, along the track (P1 first). The survey speed comes from the DOD and construction class alone; the true peaks are what the simulation recorded at the house. Bias is survey minus true 10 m wind; <span class="rp-out">highlighted</span> rows had a true wind outside their DOD's range. A point marked "not corroborated" is rated above the tornado's rating with no second house within ${REPORT.corroborationRadius} m at its speed (see Methods). A point marked "debris damage" had no failure caused by the wind (only debris impacts), so it isn't used for the rating, the path or the contours. Click a column to sort.</p>`;
   return `<article class="rp-doc">
 ${summaryPage(r)}
 ${section(r, "rp-narrative", 2, "Narrative", `<div class="rp-narr">${r.narrative.map((s) => `<p>${esc(s)}</p>`).join("")}</div>`)}

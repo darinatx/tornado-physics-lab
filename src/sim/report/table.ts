@@ -32,12 +32,14 @@ export interface SurveyRow {
   firstDamagedS: number | null;
   /** False for a point above the rating with no second point near it (Spec 16 v1.9). */
   corroborated: boolean;
+  /** Debris damage: no wind-caused failure, so not used for the rating or path (Spec 16 v1.11). */
+  debrisOnly: boolean;
 }
 
 export const SURVEY_COLUMNS: readonly (keyof SurveyRow)[] = [
   "point", "building", "x", "z", "along", "cross", "di", "dod", "description", "construction",
   "surveyMph", "surveyMs", "ef", "rangeMph", "rangeEf", "true10Mph", "trueRoofMph", "biasMph",
-  "outsideBounds", "firstDamagedS", "corroborated",
+  "outsideBounds", "firstDamagedS", "corroborated", "debrisOnly",
 ];
 
 /** EF of a speed; below EF0 (65 mph) reads "<EF0", as a DOD's lower bound can be. */
@@ -70,5 +72,6 @@ export function surveyRows(survey: Survey, center = { x: 0, z: 0 }): SurveyRow[]
       outsideBounds: p.outside,
       firstDamagedS: p.firstDamaged === null ? null : r1(p.firstDamaged),
       corroborated: !p.uncorroborated,
+      debrisOnly: p.debrisOnly,
     }));
 }

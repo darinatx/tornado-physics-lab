@@ -1,6 +1,6 @@
 # Spec 16 — Storm Report
 
-Status: Approved (v1.10) — Phase 8. Requested by the user 2026-11-26.
+Status: Approved (v1.11) — Phase 8. Requested by the user 2026-11-26.
 
 ## Purpose
 
@@ -70,9 +70,17 @@ Built from the record by pure functions in `src/sim/report/`, the way survey tea
   DOD, construction class, and the Spec 03 survey speed (lower, expected or upper bound by
   construction quality) with its EF. Buildings in the true swath with no damage are "no damage"
   points (shown on the map, not rated).
+- **Debris-damage points (v1.11, BL-030):** a survey point none of whose failures was caused
+  by the wind (only debris impacts, and roof bays that fell with a wall) is marked **debris
+  damage**. It stays on the map, in the table and CSV (marked) and in the counts by DOD and
+  the damaged total, with its own DOD and speed, but the survey doesn't use it for the
+  rating or its corroboration, the path length and width, the contours, the start and end,
+  or the bias statistics: debris can damage a house far outside the damaging wind, so
+  surveyors note such damage without rating the wind from it. A point with no recorded
+  failure counts as wind damage.
 - **Rating (corroborated, v1.9):** the highest survey speed that two survey points within
   100 m of each other both reach, i.e. the largest, over every pair of points within 100 m, of
-  the lower of their two speeds; its EF is the rating and that speed the estimated peak wind.
+  the lower of their two speeds (debris-damage points excluded); its EF is the rating and that speed the estimated peak wind.
   A single house can't set the rating alone: surveyors weigh one structure against its
   neighbours and rate the highest EF supported by more than one damage indicator (Edwards et
   al. 2013). The **rating point** is the pair's lower point, the **corroborating point** the
@@ -84,17 +92,19 @@ Built from the record by pure functions in `src/sim/report/`, the way survey tea
   the map and in the bias statistics with their own DOD and speed; the table marks them
   "not corroborated", and the summary block and Methods list them (point, DOD, class, speed,
   EF) under the rating, as a survey notes a lone structure it didn't rate on.
-- **Path length:** along-track distance from the first to the last survey point with DOD ≥ 1,
-  projected on the track. **Maximum width:** the widest cross-track span of DOD ≥ 1 points in
-  any 50 m along-track section. Both also given for the true swath (EF0 wind or more).
+- **Path length:** along-track distance from the first to the last wind-damage survey point
+  rated EF0 or more (DOD ≥ 1, not debris damage, survey speed ≥ 65 mph: the points the EF0
+  contour outlines), projected on the track; a point the survey rates below EF0 (DI 2's DOD 1
+  and 2 lower bounds, 53 and 63 mph) stays on the map and in the table. **Maximum width:** the widest
+  cross-track span of those points in any 50 m along-track section. Both also given for the true swath (EF0 wind or more).
 - **EF contours:** for each EF level, in 50 m along-track sections, the cross-track span of
-  survey points rated at or above it, joined into a polygon (the way NWS survey maps outline
+  wind-damage survey points rated at or above it, joined into a polygon (the way NWS survey maps outline
   each rating). A point counts for the contours at its EF or the rating, whichever is lower,
   so no contour is drawn above the rating (v1.9). True-wind contours from the swath are drawn the same way, toggled on the map.
-- **Start and end:** time and position of the first and last survey points, given as distance
+- **Start and end:** time and position of the first and last of those points, given as distance
   and compass direction from the town center (e.g. "1.2 km WSW of the town center").
 - **Survey bias:** for each point, the survey speed minus the true 10 m peak; the report gives
-  the mean and spread, and lists points outside the DOD's bounds.
+  the mean and spread over the wind-damage points, and lists those outside the DOD's bounds.
 
 ### Full report
 
@@ -115,8 +125,8 @@ In order (the summary page first):
    10 m and at roof height, bias, time first damaged. Sortable.
 5. **Intensity timeline:** charts of peak wind with EF bands, R_max, forward speed and
    lifecycle phase over time, and damaged buildings over time.
-6. **How the houses failed:** for the most damaged houses (every house at the rated EF, up to
-   10), the failure sequence in order: time, part, roof-height wind, load against capacity,
+6. **How the houses failed:** for the most damaged houses (every wind-damage house at the rated EF,
+   up to 10), the failure sequence in order: time, part, roof-height wind, load against capacity,
    cause (wind: the net pressure beat the part's capacity; debris impact, with its missile;
    or a roof bay that fell with its bearing wall, which no wind load broke). Then the failure modes across the town: how often each part was
    the first to fail, and which cascades led to the highest DODs (Spec 03).
@@ -223,8 +233,8 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - **REP-06**: The rating is the EF of the corroborated speed (REP-16); a scripted track whose
   peak is over open ground is rated below its true peak, and the report shows both.
 - **REP-07**: Path length and maximum width match hand-computed values for a scripted set of
-  survey points, for both the survey and the true swath.
-- **REP-08**: EF contours: every survey point rated EFn (capped at the rating) lies inside
+  survey points (wind damage rated EF0 or more), for both the survey and the true swath.
+- **REP-08**: EF contours: every wind-damage survey point rated EFn (capped at the rating) lies inside
   the EFn contour; no contour section spans a gap with no point at or above its level; no
   contour is above the rating.
 - **REP-09**: The survey table matches the buildings: DOD, description, survey speed, range,
@@ -250,6 +260,13 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
   (and only those), keeps its own DOD, speed and bias in the table and the statistics, is
   marked "not corroborated" in the table and CSV, and is named in the summary block and
   Methods.
+- **REP-18**: Debris-damage points: a point whose failures include no wind-caused one is
+  marked debris damage (and only those; a point with no failures is wind damage); it stays in
+  the table, CSV, map and the counts by DOD, marked in the table and CSV; on scripted points,
+  adding debris-damage points far off the track, at a higher DOD than any other, or next to the
+  highest point, or a wind-damage point rated below EF0 far off the track, changes none of the rating, its corroboration, the path length and width, the
+  contours, the start and end, or the bias statistics; the report's "damaged by debris alone"
+  count equals the number of debris-damage points.
 - **REP-15**: Cost: the recorder adds under 5% to physics step time on an EF4 town pass, and
   the report builds in under 2 s.
 
@@ -273,6 +290,14 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
   these from context; the survey doesn't (no surveyor judgment, above). Narrowing the scatter
   enough to remove them (σ ≲ 0.04) would make the houses more alike than real ones.
   On 12 records (EF2–EF5, seeds 1, 3, 7) this affects 4: EF2 seed 1 and EF3 seeds 1, 3, 7.
+- The survey's maximum width can run wider than the true EF0 swath (accepted by the user,
+  2026-11-27, BL-030): at the swath's edge, standard houses that lose some siding (DOD 1,
+  rated 65 mph, EF0) at true 10 m winds of 40–64 mph count for the path, the low tail of the
+  capacity scatter (σ ≈ 0.095 in ln speed, Spec 03) over thousands of houses near the edge. The
+  survey rates them as a real one would; it can't know their wind. On 12 records (seeds 1, 3,
+  7) survey ÷ true width is −4 to +8% (EF2), +13 to +24% (EF3), +12 to +17% (EF4), 0 to +5%
+  (EF5). Requiring a second damaged house within 100 m barely changes it (EF4 seed 1: 1,846 →
+  1,786 m, true 1,578 m).
 - No saved-run library or replay from the report (Phase 15).
 - The track is sampled once a second; the timeline charts show those samples.
 - The true wind is sampled, not integrated: a peak can be missed by up to 0.5% between samples
@@ -321,6 +346,17 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
   class judgment the table makes (Spec 03) instead of checking it. The lower speed of the pair
   is the one both support. The isolated-house exception keeps a tornado that hit one farmstead
   rated, as real surveys rate it.
+- **Debris-damage points kept but not rated (v1.11, BL-030):** on 12 seeded records the
+  survey's maximum width exceeded the true EF0 swath's in 9, by up to 23% (EF4 seed 1: 1,940 m
+  against 1,578 m, set by one house 1,186 m off the track whose 28 mph wind broke nothing; its
+  wall panels were broken by debris). Real debris travels that far, so the damage is real, but
+  it says nothing about the wind there; survey guidance rates the wind from wind damage and
+  notes debris damage separately. Chosen over a wind-speed cut (only points with EF0 wind),
+  which a survey can't make because it doesn't know the wind, and over dropping the points,
+  which would hide real damage from the table and the counts. The test is the failure record's
+  cause, which a surveyor reads from the damage (impact marks). Bays that fell with a wall
+  count with the cause that brought the wall down, so a house whose only failures are debris
+  impacts and the bays they dropped is debris damage.
 - **Contours capped at the rating (v1.9):** a contour above the headline EF would contradict
   it; the lone point keeps its own DOD colour on the map and its row in the table.
 - **Rate only from damage, like real surveys:** it reproduces their known low bias over open
@@ -343,6 +379,14 @@ function createReportControl(sim: Sim, o: { autoRepeat: () => boolean; specs?: S
 - None.
 
 ## Changelog
+
+- v1.11 (BL-030, closed): debris-damage points (no wind-caused failure) are marked and kept in the
+  table, map and DOD counts, but left out of the rating, path, contours, start and end, and
+  bias, and from the failure sequences and the map's framing; the path (length, width, start
+  and end) counts only wind-damage points rated EF0 or more, like the EF0 contour. "Damaged by
+  debris alone" now uses the same rule (debris impacts and the bays they dropped, not debris
+  impacts only). REP-18 added; REP-07 and REP-08 now over the points the path and contours use. The remaining
+  extra width at the swath's edge accepted as a documented limitation (Simplifications).
 
 - v1.10 (BL-028 closed): the remaining one-EF-high ratings were accepted as a documented
   limitation (Simplifications), after a recheck found the DOD 9 capacity scatter matches DI 2's
